@@ -13,6 +13,7 @@ if (/\bwv\b/.test(navigator.userAgent)) {
 }
 
 const MEAL_NAMES = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '零食' };
+const MEAL_EMOJI = { breakfast: '🌅', lunch: '🍚', dinner: '🌙', snack: '🍎' };
 const state = {
   date: localIso(new Date()),
   summary: null, records: [], mealChosen: 'lunch',
@@ -401,14 +402,14 @@ function renderWater() {
   const ml = n * WATER_CUP_ML;
   const reached = ml >= goal;
   const pct = Math.min(100, ml / goal * 100);
-  $('#water-ml').textContent = ml;
+  animateNum($('#water-ml'), ml);   // anime.js 数字滚动
   $('#water-goal-ml').textContent = goal;
   $('#water-fill').style.width = pct + '%';
   $('#water-cup-level').style.height = pct + '%';
   const seg = 100 / (goal / WATER_CUP_ML);
   $('#water-ticks').style.background =
     `repeating-linear-gradient(90deg, transparent 0, transparent calc(${seg}% - 2px), var(--surface) calc(${seg}% - 2px), var(--surface) ${seg}%)`;
-  $('#water-hint').textContent = reached ? `目标 ${goal}ml 已达成 🎉` : `已喝 ${n} 杯 · 每杯 200ml`;
+  $('#water-hint').innerHTML = reached ? '目标已达成 🎉' : `已喝 ${n} 杯<br><span class="wh-sub">每杯 200ml</span>`;
   $('#water-undo').style.visibility = n > 0 ? 'visible' : 'hidden';
 }
 
@@ -505,7 +506,7 @@ function renderRecordLists() {
     const sum = list.reduce((a, r) => a + r.kcal, 0);
     return `
     <section class="meal-section">
-      <div class="sec-head">${MEAL_NAMES[meal]}<span class="sum">${sum} kcal</span></div>
+      <div class="sec-head"><span class="sec-emoji">${MEAL_EMOJI[meal]}</span>${MEAL_NAMES[meal]}<span class="sum">${sum} kcal</span></div>
       ${list.length ? list.map(r => `
         <div class="food-item">
           <span class="thumb">${r.image ? `<img class="thumb-img" src="${r.image}" alt="">` : r.emoji}</span>

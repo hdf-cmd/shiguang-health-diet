@@ -24,8 +24,15 @@ ul, li { list-style: none; }
   background: linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,0) 45%), var(--primary);
   color: var(--on-primary);
   box-shadow: 0 6px 18px -6px var(--primary-glow), 0 1px 2px rgba(28,36,24,.10);
+  position: relative; overflow: hidden;   /* Uiverse 式按压流光 */
 }
-.btn-primary:active { background: var(--primary-deep); box-shadow: none; }
+.btn-primary::after {
+  content: ''; position: absolute; top: 0; bottom: 0; width: 40%; left: -60%;
+  background: linear-gradient(100deg, transparent, rgba(255,255,255,.35), transparent);
+  transform: skewX(-20deg); transition: left .5s var(--ease-out); pointer-events: none;
+}
+.btn-primary:active { background: var(--primary-deep); box-shadow: 0 0 0 4px var(--primary-glow); }
+.btn-primary:active::after { left: 130%; }
 .btn-soft { background: var(--primary-soft); color: var(--primary-deep); }
 .btn-soft:active { background: #D6E7D2; }
 .btn-ghost { border: 1px solid var(--line); color: var(--ink-2); background: var(--surface); }
@@ -179,7 +186,7 @@ ul, li { list-style: none; }
 /* ---------- 11 统计卡 StatCard（扁平编辑感：去阴影留发丝线） ---------- */
 .stat-card { background: var(--surface-2); border-radius: var(--radius-md); padding: var(--sp-4); border: 1px solid var(--hairline); }
 .stat-card .label { font-size: var(--text-xs); color: var(--ink-3); letter-spacing: var(--ls-wide); }
-.stat-card .num { font-family: var(--font-display); font-size: var(--text-xl); color: var(--ink); margin-top: 4px; font-variant-numeric: tabular-nums; }
+.stat-card .num { font-family: var(--font-display); font-size: 26px; color: var(--ink); margin-top: 4px; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
 .stat-card .num small { font-size: var(--text-xs); font-family: var(--font-body); color: var(--ink-3); }
 
 /* ---------- 12 图标基线 ---------- */
