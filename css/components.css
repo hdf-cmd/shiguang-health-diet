@@ -1,0 +1,187 @@
+/* ============================================================
+ * 食光 · 组件库 v2（Soft Premium）
+ * 类名与结构保持不变（app.js/index.html 零改动），只升级质感：
+ * 发丝线描边 + 双层阴影 + 弹簧过渡 + 按压微缩。
+ * ============================================================ */
+
+/* ---------- 通用重置 ---------- */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+input { font: inherit; color: inherit; border: 0; outline: none; background: none; }
+ul, li { list-style: none; }
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 6px; }
+
+/* ---------- 01 按钮 Button ---------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2);
+  padding: 13px 22px; border-radius: var(--radius-full);
+  font-size: var(--text-md); font-weight: 600; line-height: 1; letter-spacing: .01em;
+  transition: background var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out),
+              box-shadow var(--dur-fast) var(--ease-out);
+}
+.btn:active { transform: scale(.96); }
+.btn-primary {
+  background: linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,0) 45%), var(--primary);
+  color: var(--on-primary);
+  box-shadow: 0 6px 18px -6px var(--primary-glow), 0 1px 2px rgba(28,36,24,.10);
+}
+.btn-primary:active { background: var(--primary-deep); box-shadow: none; }
+.btn-soft { background: var(--primary-soft); color: var(--primary-deep); }
+.btn-soft:active { background: #D6E7D2; }
+.btn-ghost { border: 1px solid var(--line); color: var(--ink-2); background: var(--surface); }
+.btn-danger { color: var(--danger); }
+.btn-block { width: 100%; }
+.btn-icon {
+  width: 40px; height: 40px; padding: 0; border-radius: var(--radius-full);
+  background: var(--surface-soft); display: inline-flex; align-items: center; justify-content: center;
+  transition: transform var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
+}
+.btn-icon:active { transform: scale(.92); }
+
+/* ---------- 02 标签 Chip / Tag ---------- */
+.chip {
+  padding: 9px 16px; border-radius: var(--radius-full); white-space: nowrap;
+  background: var(--surface); color: var(--ink-2); font-size: var(--text-sm);
+  border: 1px solid var(--hairline); box-shadow: 0 1px 2px rgba(28,36,24,.03);
+  transition: all var(--dur-fast) var(--ease-out);
+}
+.chip.active {
+  background: var(--primary); color: var(--on-primary); font-weight: 600;
+  border-color: transparent; box-shadow: 0 4px 14px -4px var(--primary-glow);
+}
+.tag {
+  display: inline-block; padding: 3px 9px; border-radius: 7px;
+  font-size: var(--text-xs); background: var(--primary-soft); color: var(--primary-deep);
+}
+.tag-warn { background: var(--warn-soft); color: var(--warn); }
+.tag-muted { background: var(--surface-soft); color: var(--ink-3); }
+
+/* ---------- 03 卡片 Card（发丝线 + 双层阴影，边缘更 crisp） ---------- */
+.card {
+  background: var(--surface); border-radius: var(--radius-lg);
+  padding: var(--sp-5); box-shadow: var(--shadow-card);
+  border: 1px solid var(--hairline);
+}
+.card-title {
+  font-size: var(--text-md); font-weight: 600; color: var(--ink); letter-spacing: .01em;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.card-title .more { font-size: var(--text-xs); font-weight: 400; color: var(--ink-3); letter-spacing: var(--ls-wide); }
+
+/* ---------- 04 搜索栏 SearchBar ---------- */
+.searchbar {
+  display: flex; align-items: center; gap: var(--sp-2);
+  background: var(--surface-2); border-radius: var(--radius-full);
+  padding: 12px 18px; border: 1px solid var(--hairline);
+  box-shadow: 0 1px 2px rgba(28,36,24,.03);
+  transition: border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
+}
+.searchbar:focus-within { border-color: var(--primary); background: var(--surface); }
+.searchbar input { flex: 1; font-size: var(--text-md); color: var(--ink); }
+.searchbar input::placeholder { color: var(--ink-3); }
+.searchbar .icon { color: var(--ink-3); display: inline-flex; }
+
+/* ---------- 05 营养素进度条 NutrientBar（更细更静） ---------- */
+.nutrient-bar { display: flex; flex-direction: column; gap: 8px; }
+.nutrient-bar .row { display: flex; align-items: center; gap: var(--sp-3); font-size: var(--text-sm); }
+.nutrient-bar .name { flex-shrink: 0; color: var(--ink-2); }
+.nutrient-bar .track {
+  flex: 1; height: 6px; border-radius: var(--radius-full);
+  background: var(--surface-soft); overflow: hidden;
+}
+.nutrient-bar .fill { display: block; height: 100%; border-radius: var(--radius-full); transition: width .6s var(--ease-out); }
+.nutrient-bar .fill.carb { background: var(--nut-carb); }
+.nutrient-bar .fill.protein { background: var(--nut-protein); }
+.nutrient-bar .fill.fat { background: var(--nut-fat); }
+.nutrient-bar .val { flex-shrink: 0; text-align: right; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+/* ---------- 06 食物列表项 FoodListItem（发丝分隔 + 缩略图圆角加大） ---------- */
+.food-item {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-3) 0; border-bottom: 1px solid var(--hairline);
+}
+.food-item:last-child { border-bottom: 0; }
+.food-item .thumb {
+  width: 46px; height: 46px; border-radius: 14px;
+  background: var(--surface-soft); display: flex; align-items: center; justify-content: center;
+  font-size: 22px; flex-shrink: 0;
+  overflow: hidden; border: 1px solid var(--hairline);
+}
+.food-item .thumb .thumb-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.food-item .info { flex: 1; min-width: 0; }
+.food-item .name { font-size: var(--text-md); color: var(--ink); font-weight: 500; }
+.food-item .meta { font-size: var(--text-xs); color: var(--ink-3); margin-top: 2px; }
+.food-item .kcal {
+  font-family: var(--font-display); font-size: var(--text-lg); font-weight: 600; color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.food-item .kcal small { font-size: var(--text-xs); font-weight: 400; color: var(--ink-3); font-family: var(--font-body); }
+
+/* ---------- 07 空状态 EmptyState ---------- */
+.empty {
+  padding: var(--sp-8) var(--sp-4); text-align: center; color: var(--ink-3);
+}
+.empty .art { font-size: 40px; margin-bottom: var(--sp-3); opacity: .9; }
+.empty p { font-size: var(--text-sm); line-height: 1.7; }
+
+/* ---------- 08 轻提示 Toast（墨玉玻璃） ---------- */
+.toast {
+  position: absolute; left: 50%; bottom: 118px; transform: translateX(-50%) translateY(10px) scale(.96);
+  background: rgba(28, 36, 24, .88); backdrop-filter: blur(12px); color: #fff;
+  font-size: var(--text-sm); padding: 11px 20px; border-radius: var(--radius-full);
+  opacity: 0; pointer-events: none;
+  transition: all var(--dur) var(--ease);
+  z-index: 60; white-space: nowrap; box-shadow: var(--shadow-float);
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+
+/* ---------- 09 底部弹层 Sheet（白面 + 大圆角 + 弹簧） ---------- */
+.sheet-mask {
+  position: absolute; inset: 0; background: var(--mask);
+  opacity: 0; pointer-events: none; transition: opacity var(--dur) var(--ease-out); z-index: 40;
+  backdrop-filter: blur(2px);
+}
+.sheet-mask.show { opacity: 1; pointer-events: auto; }
+.sheet {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 50;
+  background: var(--surface); border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
+  padding: var(--sp-3) var(--sp-5) var(--sp-8);
+  transform: translateY(105%); transition: transform .42s var(--ease);
+  max-height: 80%; overflow-y: auto;
+  box-shadow: 0 -18px 50px -20px rgba(28, 36, 24, .28);
+}
+.sheet.show { transform: translateY(0); }
+.sheet .grab { width: 44px; height: 5px; border-radius: 3px; background: var(--line); margin: var(--sp-2) auto var(--sp-4); }
+.sheet .sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--sp-4); }
+.sheet .sheet-head h3 { font-size: var(--text-lg); color: var(--ink); font-weight: 700; letter-spacing: .01em; }
+.sheet-head-actions { display: flex; align-items: center; gap: var(--sp-2); }
+/* 自定义食物图片行 */
+.cf-img-row { display: flex; align-items: center; justify-content: center; gap: var(--sp-4); }
+.cf-img-preview {
+  width: 64px; height: 64px; border-radius: 14px; background: var(--surface-soft);
+  border: 1px solid var(--hairline); display: flex; align-items: center; justify-content: center;
+  font-size: 28px; overflow: hidden; flex-shrink: 0;
+}
+.cf-img-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* ---------- 10 分段控件 Segmented（滑块感） ---------- */
+.segmented {
+  display: inline-flex; background: var(--surface-soft);
+  border-radius: var(--radius-full); padding: 4px; border: 1px solid var(--hairline);
+}
+.segmented button {
+  padding: 8px 20px; border-radius: var(--radius-full);
+  font-size: var(--text-sm); color: var(--ink-2);
+  transition: all var(--dur) var(--ease);
+}
+.segmented button.active { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 2px 8px -2px rgba(28,36,24,.14); }
+
+/* ---------- 11 统计卡 StatCard（扁平编辑感：去阴影留发丝线） ---------- */
+.stat-card { background: var(--surface-2); border-radius: var(--radius-md); padding: var(--sp-4); border: 1px solid var(--hairline); }
+.stat-card .label { font-size: var(--text-xs); color: var(--ink-3); letter-spacing: var(--ls-wide); }
+.stat-card .num { font-family: var(--font-display); font-size: var(--text-xl); color: var(--ink); margin-top: 4px; font-variant-numeric: tabular-nums; }
+.stat-card .num small { font-size: var(--text-xs); font-family: var(--font-body); color: var(--ink-3); }
+
+/* ---------- 12 图标基线 ---------- */
+.icon { display: inline-flex; align-items: center; justify-content: center; }
+.icon svg { width: 22px; height: 22px; }

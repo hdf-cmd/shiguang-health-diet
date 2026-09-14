@@ -1,0 +1,13 @@
+# 构建产物
+HealthyDiet/app/build/
+HealthyDiet/build/
+HealthyDiet/.gradle/
+HealthyDiet/.idea/
+HealthyDiet/local.properties
+*.iml
+
+# 临时/验证产物（截图、patch 脚本、npm 包存档）
+.mimosa/
+
+# 日志
+*.log

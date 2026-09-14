@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.HealthyDiet" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowBackground">#F6F8F1</item>
+        <!-- Android 15 强制 edge-to-edge 的临时 opt-out：避免 WebView 内容顶进状态栏/导航栏 -->
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
+    </style>
+    <color name="ic_launcher_background">#2E7D32</color>
+</resources>

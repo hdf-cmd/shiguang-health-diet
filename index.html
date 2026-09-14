@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>食光 · 健康饮食 App 界面原型</title>
+<!-- 字体走系统回退（Fraunces→Georgia serif / Noto Sans SC→萍方/雅黑），不阻塞渲染，避免 CDN 不可达时白屏 -->
+<link rel="stylesheet" href="css/swiper-bundle.min.css">
+<link rel="stylesheet" href="css/design-tokens.css">
+<link rel="stylesheet" href="css/components.css">
+<link rel="stylesheet" href="css/screens.css">
+</head>
+<body>
+
+<!-- 桌面端侧栏说明（移动端自动隐藏） -->
+<aside class="stage-note">
+  <h1>食光 <em>Shíguāng</em></h1>
+  <p class="sub">健康饮食 App · 高保真界面原型。把每一餐，记成时光。</p>
+  <div class="legend">
+    <span><i class="dot" style="background:var(--primary)"></i>抹茶绿 · 主操作与热量进度</span>
+    <span><i class="dot" style="background:var(--nut-carb)"></i>谷物黄 · 碳水</span>
+    <span><i class="dot" style="background:var(--nut-protein)"></i>浆果红 · 蛋白质</span>
+    <span><i class="dot" style="background:var(--nut-fat)"></i>深海蓝 · 脂肪 / 饮水</span>
+  </div>
+</aside>
+
+<!-- 手机壳 -->
+<div class="phone">
+  <div class="statusbar"><span>9:41</span><span>●●●</span></div>
+
+  <!-- ============ 界面 0 · 登录/注册（独立遮罩，不参与 swiper） ============ -->
+  <section class="login-screen" id="screen-login">
+      <div class="login-wrap">
+        <div class="login-brand">
+          <h1>食光 <em>Shíguāng</em></h1>
+          <p>把每一餐，记成时光</p>
+        </div>
+        <div class="card login-card">
+          <div class="segmented" style="margin-bottom:var(--sp-4)">
+            <button class="active" data-auth="login">登录</button>
+            <button data-auth="register">注册</button>
+          </div>
+          <input class="login-input" id="auth-username" type="text" maxlength="28"
+                 placeholder="用户名（中文/字母/数字/下划线）" autocomplete="username">
+          <input class="login-input" id="auth-password" type="password" maxlength="64"
+                 placeholder="密码（至少 8 位）" autocomplete="current-password">
+          <p class="login-error" id="auth-error"></p>
+          <button class="btn btn-primary btn-block" id="auth-submit">登录</button>
+          <p class="hint" style="text-align:center;display:block;margin-top:var(--sp-3)">
+            注册后可在任意设备登录，数据云端同步
+          </p>
+        </div>
+      </div>
+  </section>
+
+  <div class="screens swiper">
+    <div class="swiper-wrapper">
+
+    <!-- ============ 界面 1 · 首页 ============ -->
+    <section class="screen swiper-slide" id="screen-home">
+      <header class="home-head">
+        <div class="hello">
+          <h2 id="home-greeting">早上好</h2>
+          <p id="home-date">9月13日 · 星期六</p>
+        </div>
+        <button class="avatar" id="home-avatar" aria-label="进入我的">满</button>
+      </header>
+
+      <!-- 签名组件：营养餐盘环 -->
+      <div class="card plate-card">
+        <div class="plate-head">
+          <button class="plate-nav" id="plate-prev" aria-label="前一天">‹</button>
+          <span class="plate-date" id="plate-date">今天</span>
+          <button class="plate-nav" id="plate-next" aria-label="后一天">›</button>
+        </div>
+        <div class="plate-top">
+          <div class="plate-ring" id="plate-ring">
+            <svg viewBox="0 0 168 168" aria-hidden="true">
+              <circle cx="84" cy="84" r="78" fill="none" stroke="var(--line)" stroke-width="7"/>
+              <circle id="ring-kcal" cx="84" cy="84" r="78" fill="none" stroke="var(--primary)"
+                      stroke-width="7" stroke-linecap="round" stroke-dasharray="490" stroke-dashoffset="490"/>
+              <circle cx="84" cy="84" r="62" fill="none" stroke="var(--surface-soft)" stroke-width="15"/>
+              <circle id="ring-carb"    cx="84" cy="84" r="62" fill="none" stroke="var(--nut-carb)"
+                      stroke-width="15" stroke-dasharray="0 390"/>
+              <circle id="ring-protein" cx="84" cy="84" r="62" fill="none" stroke="var(--nut-protein)"
+                      stroke-width="15" stroke-dasharray="0 390"/>
+              <circle id="ring-fat"     cx="84" cy="84" r="62" fill="none" stroke="var(--nut-fat)"
+                      stroke-width="15" stroke-dasharray="0 390"/>
+            </svg>
+            <div class="center">
+              <span class="num" id="ring-num">0</span>
+              <span class="unit">还可摄入 kcal</span>
+            </div>
+          </div>
+          <div class="aside">
+            <p class="goal-line">目标 <b id="ring-target">1800</b> kcal</p>
+            <p class="goal-line">已摄入 <b id="ring-eaten">0</b> kcal</p>
+            <p class="goal-line">运动消耗 <b id="ring-exercise">0</b> kcal</p>
+            <p class="goal-note">内环为三大营养素配比，颜色即营养</p>
+          </div>
+        </div>
+        <div class="nutrient-bar" id="home-nutrients" style="margin-top:var(--sp-4)"></div>
+      </div>
+
+      <div class="card advice-home">
+        <div class="card-title">每日建议<span class="more">根据今日记录实时生成</span></div>
+        <ul class="advice-list" id="home-advice"></ul>
+      </div>
+
+      <div class="card water-card">
+        <div class="water-head">
+          <div>
+            <p class="water-title" id="water-title">喝水打卡</p>
+            <p class="water-num"><b id="water-ml">600</b><small> ml</small></p>
+            <button class="water-goal-edit" id="water-goal-edit">目标 <span id="water-goal-ml">1600</span> ml · 点击修改</button>
+          </div>
+          <button class="water-cup" id="water-cup" aria-label="喝一杯 200ml">
+            <span class="level" id="water-cup-level"></span>
+            <span class="ml">200ml</span>
+          </button>
+        </div>
+        <div class="water-bar" aria-label="今日饮水进度">
+          <span class="water-fill" id="water-fill"></span>
+          <span class="ticks" id="water-ticks"></span>
+        </div>
+        <div class="water-foot">
+          <span class="hint" id="water-hint">已喝 3 杯 · 每杯 200ml</span>
+          <button class="water-undo" id="water-undo">撤销上一杯</button>
+        </div>
+      </div>
+
+      <div class="card exercise-card">
+        <div class="card-title"><span id="exercise-title">今日运动</span><span class="more" id="exercise-total">消耗 0 kcal</span></div>
+        <div id="exercise-list"></div>
+        <button class="btn btn-soft btn-block" id="btn-add-exercise" style="margin-top:var(--sp-3)">＋ 记运动</button>
+      </div>
+    </section>
+
+    <!-- ============ 界面 2 · 记录 ============ -->
+    <section class="screen swiper-slide" id="screen-record">
+      <header class="page-head"><h2>饮食记录</h2></header>
+
+      <div class="date-row" id="date-row"></div>
+      <div id="record-lists"></div>
+    </section>
+
+    <!-- ============ 界面 3 · 报告 ============ -->
+    <section class="screen swiper-slide" id="screen-report">
+      <header class="page-head">
+        <h2>健康报告</h2>
+        <div class="segmented" style="margin-top:var(--sp-3)">
+          <button class="active" data-range="week">本周</button>
+          <button data-range="month">月</button>
+        </div>
+      </header>
+
+      <div class="card">
+        <div class="card-title">每日热量 · 对比目标<span class="more" id="report-avg"></span></div>
+        <div class="week-chart" id="week-chart"></div>
+      </div>
+
+      <div class="report-stats" id="report-stats"></div>
+
+      <div class="card advice-card">
+        <div class="card-title" style="color:var(--primary-deep)" id="advice-title">本周建议</div>
+        <p id="report-advice"></p>
+      </div>
+
+      <div class="card weight-trend">
+        <div class="card-title">体重趋势<span class="more" id="weight-delta"></span></div>
+        <svg id="weight-svg" viewBox="0 0 320 90" preserveAspectRatio="none" aria-hidden="true"></svg>
+        <button class="btn btn-soft btn-block" id="btn-log-weight" style="margin-top:var(--sp-3)">＋ 记今日体重</button>
+      </div>
+    </section>
+
+    <!-- ============ 界面 4 · 我的 ============ -->
+    <section class="screen swiper-slide" id="screen-profile">
+      <button class="profile-head" id="profile-head" aria-label="编辑资料">
+        <span class="avatar avatar-btn" id="profile-avatar">食</span>
+        <span class="ph-info">
+          <span class="ph-name" id="profile-name">食光用户</span>
+          <span class="ph-sig" id="profile-signature">把每一餐，记成时光</span>
+        </span>
+        <span class="ph-edit">编辑 ›</span>
+        <input type="file" id="avatar-input" accept="image/png,image/jpeg,image/webp" hidden>
+      </button>
+
+      <div class="goal-banner">
+        <div>
+          <p class="label">每日基准目标 · 系统</p>
+          <p class="num" id="goal-kcal">1800 <small>kcal</small></p>
+        </div>
+        <div>
+          <p class="label">目标体重</p>
+          <p class="num" id="goal-weight">55 <small>kg</small></p>
+        </div>
+        <button class="edit" id="btn-edit-goal">编辑</button>
+      </div>
+
+      <button class="card body-card" id="body-card" aria-label="编辑身体档案">
+        <div class="card-title">身体档案<span class="more">点击编辑 ›</span></div>
+        <div class="body-grid">
+          <div class="stat-card"><p class="label">身高</p><p class="num" id="body-height">165<small> cm</small></p></div>
+          <div class="stat-card"><p class="label">体重</p><p class="num" id="body-weight">57.2<small> kg</small></p></div>
+          <div class="stat-card"><p class="label">BMI</p><p class="num" id="body-bmi">21.0</p></div>
+          <div class="stat-card"><p class="label">年龄</p><p class="num" id="body-age">28<small> 岁</small></p></div>
+          <div class="stat-card"><p class="label">性别</p><p class="num" id="body-gender">女</p></div>
+          <div class="stat-card"><p class="label">活动量</p><p class="num" id="body-activity">轻度</p></div>
+        </div>
+      </button>
+
+      <div class="card metab-card">
+        <div class="card-title">代谢与减脂计划<span class="more" id="metab-note"></span></div>
+        <div class="metab-grid">
+          <div><p class="label">基础代谢 BMR</p><p class="num" id="metab-bmr">—<small> kcal</small></p></div>
+          <div><p class="label">每日消耗 TDEE</p><p class="num" id="metab-tdee">—<small> kcal</small></p></div>
+          <div><p class="label">今日建议摄入</p><p class="num" id="metab-suggest">—<small> kcal</small></p></div>
+          <div><p class="label">每日缺口</p><p class="num" id="metab-deficit">—<small> kcal</small></p></div>
+          <div><p class="label">今日运动</p><p class="num" id="metab-exercise">—<small> kcal</small></p></div>
+        </div>
+        <p class="metab-eta" id="metab-eta">完善身体档案后估算达标时间</p>
+      </div>
+
+      <!-- 系统通知提醒：原生桥接 SGNative（仅 APK 内生效） -->
+      <div class="card remind-card">
+        <div class="remind-row">
+          <div>
+            <p class="remind-title">消息提醒 · 系统通知</p>
+            <p class="remind-sub">三餐定点 8:00/12:00/18:30 + 喝水每天 8 次随机（8:00–24:00），横幅弹出</p>
+          </div>
+          <button class="switch" id="remind-switch" role="switch" aria-checked="false" aria-label="消息提醒"><span class="knob"></span></button>
+        </div>
+        <button class="btn btn-soft btn-block" id="remind-test" style="margin-top:var(--sp-3)">发一条测试通知</button>
+      </div>
+
+      
+    </section>
+    </div>
+  </div>
+
+  <!-- 记录页底部操作栏（挂 .phone 下 absolute，不受切屏动画 transform 影响） -->
+  <div class="add-row">
+    <button class="btn btn-primary" id="btn-add-food">＋ 记一笔</button>
+    <button class="btn btn-ghost" id="btn-scan" title="拍照识别（预留）" aria-label="拍照识别">📷</button>
+  </div>
+
+  <!-- 底部导航 -->
+  <nav class="tabbar" aria-label="主导航" style="display:none">
+    <span class="tab-glide" aria-hidden="true"></span>
+    <button class="tab active" data-screen="home">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 11 12 4l8 7v8a1 1 0 0 1-1 1h-5v-5h-4v5H5a1 1 0 0 1-1-1z"/></svg></span>首页
+    </button>
+    <button class="tab" data-screen="record">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 12h6M12 9v6"/></svg></span>记录
+    </button>
+    <button class="tab" data-screen="report">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V9M10 19V5M16 19v-8M21 19H3"/></svg></span>报告
+    </button>
+    <button class="tab" data-screen="profile">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-3.5 4.5-5 8-5s6.5 1.5 8 5"/></svg></span>我的
+    </button>
+  </nav>
+
+  <!-- 添加食物弹层 -->
+  <div class="sheet-mask" id="sheet-mask"></div>
+  <div class="sheet" id="add-sheet" role="dialog" aria-modal="true" aria-label="添加食物">
+    <div class="grab"></div>
+    <div class="sheet-head">
+      <h3 id="sheet-title">记一笔 · 午餐</h3>
+      <span class="sheet-head-actions">
+        <button class="btn btn-soft" id="sheet-cf-open" style="padding:8px 14px;font-size:var(--text-sm)">＋ 自定义</button>
+        <button class="btn-icon" id="sheet-close" aria-label="关闭">✕</button>
+      </span>
+    </div>
+    <div class="segmented meal-seg" id="meal-seg" style="margin-top:var(--sp-3)">
+      <button data-meal="breakfast">早餐</button>
+      <button data-meal="lunch" class="active">午餐</button>
+      <button data-meal="dinner">晚餐</button>
+      <button data-meal="snack">零食</button>
+    </div>
+    <div class="searchbar" style="box-shadow:none;border:1.5px solid var(--line)">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></span>
+      <input id="sheet-search" type="search" placeholder="搜索食物库">
+    </div>
+    <div id="sheet-results" style="margin-top:var(--sp-3)"></div>
+    <button class="btn btn-primary btn-block" id="sheet-done" style="margin-top:var(--sp-3)">完成</button>
+  </div>
+
+  <!-- 喝水目标设置弹层 -->
+  <div class="sheet" id="goal-sheet" role="dialog" aria-modal="true" aria-label="设置喝水目标">
+    <div class="grab"></div>
+    <div class="sheet-head">
+      <h3>喝水目标</h3>
+      <button class="btn-icon" id="goal-sheet-close" aria-label="关闭">✕</button>
+    </div>
+    <div class="goal-stepper">
+      <button class="stepper-btn" id="water-goal-dec" aria-label="减少 200ml">−</button>
+      <div class="stepper-val"><input class="stepper-input" id="water-goal-val" type="number" inputmode="numeric" value="1600" aria-label="喝水目标 ml"><small>ml</small></div>
+      <button class="stepper-btn" id="water-goal-inc" aria-label="增加 200ml">＋</button>
+    </div>
+    <p class="hint" style="text-align:center;display:block">每杯 200ml · 可设范围 800–3000ml</p>
+    <button class="btn btn-primary btn-block" id="water-goal-save" style="margin-top:var(--sp-4)">保存目标</button>
+  </div>
+
+  <div class="toast" id="toast" role="status"></div>
+
+  <!-- 今日未打卡提醒弹层 -->
+  <div class="sheet-mask" id="checkin-mask"></div>
+  <div class="sheet checkin-sheet" id="checkin-sheet" role="dialog" aria-modal="true" aria-label="今日未打卡提醒">
+    <div class="grab"></div>
+    <div class="checkin-icon">📝</div>
+    <h3 class="checkin-title">今天还没打卡</h3>
+    <p class="checkin-desc" id="checkin-desc">记录第一餐，看看今天的营养缺口吧</p>
+    <button class="btn btn-primary btn-block" id="checkin-go">去记录</button>
+    <button class="btn btn-ghost btn-block" id="checkin-later" style="margin-top:var(--sp-2)">稍后再说</button>
+  </div>
+
+  <!-- 删除确认弹层 -->
+  <div class="sheet-mask" id="confirm-mask"></div>
+  <div class="sheet confirm-sheet" id="confirm-sheet" role="dialog" aria-modal="true" aria-label="确认操作">
+    <div class="grab"></div>
+    <div class="checkin-icon">🗑️</div>
+    <h3 class="checkin-title" id="confirm-title">确认删除</h3>
+    <p class="checkin-desc" id="confirm-desc">删除后无法恢复，确定要删除吗？</p>
+    <button class="btn btn-danger btn-block" id="confirm-ok">确认删除</button>
+    <button class="btn btn-ghost btn-block" id="confirm-cancel" style="margin-top:var(--sp-2)">取消</button>
+  </div>
+
+  <!-- 目标编辑弹层 -->
+  <div class="sheet-mask" id="goal-edit-mask"></div>
+  <div class="sheet" id="goal-edit-sheet" role="dialog" aria-modal="true" aria-label="编辑目标">
+    <div class="grab"></div>
+    <div class="sheet-head">
+      <h3>编辑目标体重</h3>
+      <button class="btn-icon" id="goal-edit-close" aria-label="关闭">✕</button>
+    </div>
+    <div class="goal-edit-section">
+      <p class="goal-edit-label">目标体重</p>
+      <div class="goal-stepper">
+        <button class="stepper-btn" id="weight-goal-dec" aria-label="减少 0.5 kg">−</button>
+        <div class="stepper-val"><input class="stepper-input" id="weight-goal-val" type="number" inputmode="decimal" value="55" aria-label="目标体重 kg"><small>kg</small></div>
+        <button class="stepper-btn" id="weight-goal-inc" aria-label="增加 0.5 kg">＋</button>
+      </div>
+    </div>
+    <p class="hint" style="text-align:center;display:block">体重范围 30–150 kg · 点数字可直接输入 · 热量目标由系统按档案自动计算</p>
+    <button class="btn btn-primary btn-block" id="goal-edit-save" style="margin-top:var(--sp-4)">保存目标</button>
+  </div>
+
+  <!-- 身体档案编辑弹层 -->
+  <div class="sheet-mask" id="body-mask"></div>
+  <div class="sheet" id="body-sheet" role="dialog" aria-modal="true" aria-label="编辑身体档案">
+    <div class="grab"></div>
+    <div class="sheet-head">
+      <h3>身体档案</h3>
+      <button class="btn-icon" id="body-sheet-close" aria-label="关闭">✕</button>
+    </div>
+    <div class="goal-edit-section">
+      <p class="goal-edit-label">身高</p>
+      <div class="goal-stepper">
+        <button class="stepper-btn" id="height-dec" aria-label="减少 1cm">−</button>
+        <div class="stepper-val"><input class="stepper-input" id="height-val" type="number" inputmode="numeric" value="165" aria-label="身高 cm"><small>cm</small></div>
+        <button class="stepper-btn" id="height-inc" aria-label="增加 1cm">＋</button>
+      </div>
+    </div>
+    <div class="goal-edit-section">
+      <p class="goal-edit-label">体重</p>
+      <div class="goal-stepper">
+        <button class="stepper-btn" id="weight-dec" aria-label="减少 0.5kg">−</button>
+        <div class="stepper-val"><input class="stepper-input" id="weight-val" type="number" inputmode="decimal" value="55" aria-label="体重 kg"><small>kg</small></div>
+        <button class="stepper-btn" id="weight-inc" aria-label="增加 0.5kg">＋</button>
+      </div>
+    </div>
+    <div class="goal-edit-section">
+      <p class="goal-edit-label">年龄</p>
+      <div class="goal-stepper">
+        <button class="stepper-btn" id="age-dec" aria-label="减少 1岁">−</button>
+        <div class="stepper-val"><input class="stepper-input" id="age-val" type="number" inputmode="numeric" value="28" aria-label="年龄 岁"><small>岁</small></div>
+        <button class="stepper-btn" id="age-inc" aria-label="增加 1岁">＋</button>
+      </div>
+    </div>
+    <p class="hint" style="text-align:center;display:block;margin-top:var(--sp-3)">点中间数字可直接输入（体重支持一位小数），也可用两侧 ＋/−</p>
+    <div class="goal-edit-section">
+      <p class="goal-edit-label">性别</p>
+      <div class="segmented" id="gender-seg">
+        <button data-gender="female" class="active">女</button>
+        <button data-gender="male">男</button>
+      </div>
+    </div>
+    <div class="goal-edit-section">
+      <p class="goal-edit-label">活动量</p>
+      <div class="meal-chips" id="activity-chips" style="flex-wrap:wrap">
+        <button class="chip" data-activity="sedentary">久坐</button>
+        <button class="chip" data-activity="light">轻度</button>
+        <button class="chip" data-activity="moderate">中度</button>
+        <button class="chip" data-activity="active">重度</button>
+        <button class="chip" data-activity="extreme">极大</button>
+      </div>
+    </div>
+    <div class="goal-edit-section">
+      <p class="goal-edit-label">每日热量缺口</p>
+      <div class="segmented" id="deficit-seg">
+        <button data-deficit="300">温和 300</button>
+        <button data-deficit="500" class="active">标准 500</button>
+        <button data-deficit="750">积极 750</button>
+      </div>
+    </div>
+    <button class="btn btn-primary btn-block" id="body-save" style="margin-top:var(--sp-4)">保存档案</button>
+  </div>
+
+  <!-- 运动记录弹层 -->
+  <div class="sheet-mask" id="exercise-mask"></div>
+  <div class="sheet" id="exercise-sheet" role="dialog" aria-modal="true" aria-label="记录运动">
+    <div class="grab"></div>
+    <div class="sheet-head">
+      <h3>记运动</h3>
+      <button class="btn-icon" id="exercise-sheet-close" aria-label="关闭">✕</button>
+    </div>
+    <div class="ex-chips" id="exercise-chips"></div>
+    <div class="goal-edit-section">
+      <p class="goal-edit-label" id="exercise-amount-label">距离</p>
+      <div class="goal-stepper">
+        <button class="stepper-btn" id="exercise-amount-dec" aria-label="减少">−</button>
+        <div class="stepper-val"><input class="stepper-input" id="exercise-amount-val" type="number" inputmode="decimal" value="5" aria-label="运动量"><small id="exercise-amount-unit">km</small></div>
+        <button class="stepper-btn" id="exercise-amount-inc" aria-label="增加">＋</button>
+      </div>
+    </div>
+    <div class="ex-preview" id="exercise-kcal-preview">预计消耗 <b>—</b> kcal</div>
+    <button class="btn btn-primary btn-block" id="exercise-save" style="margin-top:var(--sp-4)">保存记录</button>
+  </div>
+  <!-- 编辑资料弹层：改名/换头像/退出登录 -->
+  <div class="sheet-mask" id="pe-mask"></div>
+  <div class="sheet" id="pe-sheet" role="dialog" aria-modal="true" aria-label="编辑资料">
+    <div class="grab"></div>
+    <div class="sheet-head">
+      <h3>编辑资料</h3>
+      <button class="btn-icon" id="pe-close" aria-label="关闭">✕</button>
+    </div>
+    <div class="pe-avatar-row">
+      <span class="avatar avatar-lg" id="pe-avatar">食</span>
+      <button class="btn btn-soft" id="pe-change-avatar">更换头像</button>
+    </div>
+    <div class="goal-edit-section">
+      <p class="goal-edit-label">昵称</p>
+      <input class="login-input" id="pe-nickname" type="text" maxlength="28" placeholder="昵称">
+    </div>
+    <div class="goal-edit-section">
+      <p class="goal-edit-label">签名</p>
+      <input class="login-input" id="pe-signature" type="text" maxlength="40" placeholder="个性签名">
+    </div>
+    <button class="btn btn-primary btn-block" id="pe-save" style="margin-top:var(--sp-4)">保存</button>
+    <button class="btn btn-ghost btn-block" id="pe-logout" style="margin-top:var(--sp-2);color:var(--danger)">退出登录</button>
+  </div>
+
+  <!-- 记体重弹层：直接输入 + 步进（反馈5） -->
+  <div class="sheet-mask" id="weight-log-mask"></div>
+  <div class="sheet" id="weight-log-sheet" role="dialog" aria-modal="true" aria-label="记体重">
+    <div class="grab"></div>
+    <div class="sheet-head">
+      <h3>记体重</h3>
+      <button class="btn-icon" id="weight-log-close" aria-label="关闭">✕</button>
+    </div>
+    <div class="goal-edit-section">
+      <p class="goal-edit-label">今日体重</p>
+      <div class="goal-stepper">
+        <button class="stepper-btn" id="weight-log-dec" aria-label="减少 0.5kg">−</button>
+        <div class="stepper-val"><input class="stepper-input" id="weight-log-val" type="number" inputmode="decimal" value="55" aria-label="体重 kg"><small>kg</small></div>
+        <button class="stepper-btn" id="weight-log-inc" aria-label="增加 0.5kg">＋</button>
+      </div>
+    </div>
+    <p class="hint" style="text-align:center;display:block">点数字可直接输入（支持 0.1 精度）· 建议每天固定时间称</p>
+    <button class="btn btn-primary btn-block" id="weight-log-save" style="margin-top:var(--sp-4)">保存</button>
+  </div>
+
+  <!-- 克数份量弹层：per100 食物按克数换算营养（米饭等） -->
+  <div class="sheet-mask" id="portion-mask"></div>
+  <div class="sheet" id="portion-sheet" role="dialog" aria-modal="true" aria-label="自定义份量">
+    <div class="grab"></div>
+    <div class="sheet-head">
+      <h3 id="portion-title">自定义份量</h3>
+      <button class="btn-icon" id="portion-close" aria-label="关闭">✕</button>
+    </div>
+    <div class="goal-edit-section">
+      <p class="goal-edit-label">克数</p>
+      <div class="goal-stepper">
+        <button class="stepper-btn" id="portion-g-dec" aria-label="减少 10g">−</button>
+        <div class="stepper-val"><input class="stepper-input" id="portion-g-val" type="number" inputmode="numeric" value="150" aria-label="克数"><small>g</small></div>
+        <button class="stepper-btn" id="portion-g-inc" aria-label="增加 10g">＋</button>
+      </div>
+    </div>
+    <p class="hint" style="text-align:center;display:block">点数字可直接输入克数，营养按每 100g 换算</p>
+    <div class="ex-preview" id="portion-preview">—</div>
+    <button class="btn btn-primary btn-block" id="portion-save" style="margin-top:var(--sp-4)">确认添加</button>
+  </div>
+
+  <!-- 自定义食物弹层：名称+热量+份量 -->
+  <div class="sheet-mask" id="cf-mask"></div>
+  <div class="sheet" id="cf-sheet" role="dialog" aria-modal="true" aria-label="自定义食物">
+    <div class="grab"></div>
+    <div class="sheet-head">
+      <h3>自定义食物</h3>
+      <button class="btn-icon" id="cf-close" aria-label="关闭">✕</button>
+    </div>
+    <div class="goal-edit-section">
+      <p class="goal-edit-label">食物名称</p>
+      <input class="login-input" id="cf-name" type="text" maxlength="30" placeholder="如：妈妈牌红烧肉">
+    </div>
+    <div class="goal-edit-section">
+      <p class="goal-edit-label">热量（kcal）</p>
+      <input class="login-input" id="cf-kcal" type="number" min="1" max="5000" placeholder="如：350">
+    </div>
+    <div class="goal-edit-section">
+      <p class="goal-edit-label">份量描述（可选）</p>
+      <input class="login-input" id="cf-portion" type="text" maxlength="30" placeholder="如：1 碗 · 约 200g">
+    </div>
+    <div class="goal-edit-section">
+      <p class="goal-edit-label">图片（可选）</p>
+      <div class="cf-img-row">
+        <span class="cf-img-preview" id="cf-img-preview">🍽️</span>
+        <button class="btn btn-soft" id="cf-img-pick" style="padding:8px 14px;font-size:var(--text-sm)">添加图片</button>
+        <input type="file" id="cf-img-input" accept="image/png,image/jpeg,image/webp" hidden>
+      </div>
+    </div>
+    <button class="btn btn-primary btn-block" id="cf-save-add" style="margin-top:var(--sp-4)">保存并记入本餐</button>
+    <button class="btn btn-ghost btn-block" id="cf-save-only" style="margin-top:var(--sp-2)">仅存入食物库</button>
+  </div>
+</div>
+
+<script src="js/lib/swiper-bundle.min.js"></script>
+<script src="js/lib/better-scroll.min.js"></script>
+<script src="js/lib/alloy_finger.js"></script>
+<script src="js/lib/anime.min.js"></script>
+<script src="js/api.js"></script>
+<script src="js/app.js"></script>
+<script type="module" src="js/lib/auto-animate-setup.js"></script>
+</body>
+</html>
