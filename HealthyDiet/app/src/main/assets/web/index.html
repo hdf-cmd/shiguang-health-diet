@@ -221,6 +221,17 @@
         <p class="metab-eta" id="metab-eta">完善身体档案后估算达标时间</p>
       </div>
 
+      <!-- 我的食物库：管理自定义食物与内置常菜（移除只影响自己的列表） -->
+      <div class="card foodlib-card">
+        <div class="foodlib-row">
+          <div>
+            <p class="foodlib-title">我的食物库</p>
+            <p class="foodlib-sub" id="foodlib-sub">管理自定义食物 · 移除不想看到的常菜</p>
+          </div>
+          <button class="btn btn-soft" id="foodlib-open" style="padding:8px 16px;font-size:var(--text-sm)">管理 ›</button>
+        </div>
+      </div>
+
       <!-- 系统通知提醒：原生桥接 SGNative（仅 APK 内生效） -->
       <div class="card remind-card">
         <div class="remind-row">
@@ -241,7 +252,6 @@
   <!-- 记录页底部操作栏（挂 .phone 下 absolute，不受切屏动画 transform 影响） -->
   <div class="add-row">
     <button class="btn btn-primary" id="btn-add-food">＋ 记一笔</button>
-    <button class="btn btn-ghost" id="btn-scan" title="拍照识别（预留）" aria-label="拍照识别">📷</button>
   </div>
 
   <!-- 底部导航 -->
@@ -505,12 +515,20 @@
       <input class="login-input" id="cf-name" type="text" maxlength="30" placeholder="如：妈妈牌红烧肉">
     </div>
     <div class="goal-edit-section">
-      <p class="goal-edit-label">热量（kcal）</p>
-      <input class="login-input" id="cf-kcal" type="number" min="1" max="5000" placeholder="如：350">
+      <p class="goal-edit-label">这一份有多少克</p>
+      <input class="login-input" id="cf-grams" type="number" min="1" max="2000" placeholder="如：200（填了才能按克加）">
     </div>
     <div class="goal-edit-section">
-      <p class="goal-edit-label">份量描述（可选）</p>
-      <input class="login-input" id="cf-portion" type="text" maxlength="30" placeholder="如：1 碗 · 约 200g">
+      <p class="goal-edit-label">三大营养素（这一份的克数）</p>
+      <div class="cf-macro-row">
+        <label class="cf-macro-item">蛋白质<input class="login-input" id="cf-protein" type="number" min="0" max="500" step="0.1" placeholder="0"></label>
+        <label class="cf-macro-item">碳水<input class="login-input" id="cf-carb" type="number" min="0" max="500" step="0.1" placeholder="0"></label>
+        <label class="cf-macro-item">脂肪<input class="login-input" id="cf-fat" type="number" min="0" max="500" step="0.1" placeholder="0"></label>
+      </div>
+    </div>
+    <div class="goal-edit-section">
+      <p class="goal-edit-label">热量 kcal（按营养自动算，可修改）</p>
+      <input class="login-input" id="cf-kcal" type="number" min="1" max="5000" placeholder="如：350">
     </div>
     <div class="goal-edit-section">
       <p class="goal-edit-label">图片（可选）</p>
@@ -522,6 +540,22 @@
     </div>
     <button class="btn btn-primary btn-block" id="cf-save-add" style="margin-top:var(--sp-4)">保存并记入本餐</button>
     <button class="btn btn-ghost btn-block" id="cf-save-only" style="margin-top:var(--sp-2)">仅存入食物库</button>
+  </div>
+
+  <!-- 我的食物库：管理自定义食物 + 移除/恢复内置常菜（只影响自己的列表） -->
+  <div class="sheet-mask" id="lib-mask"></div>
+  <div class="sheet" id="lib-sheet" role="dialog" aria-modal="true" aria-label="我的食物库">
+    <div class="grab"></div>
+    <div class="sheet-head">
+      <h3>我的食物库</h3>
+      <button class="btn-icon" id="lib-close" aria-label="关闭">✕</button>
+    </div>
+    <div class="segmented" id="lib-seg" style="margin-bottom:var(--sp-3)">
+      <button class="active" data-lib="custom">我的自定义</button>
+      <button data-lib="builtin">内置常菜</button>
+    </div>
+    <div class="lib-list" id="lib-list"><div class="empty"><div class="art">⏳</div><p>加载中…</p></div></div>
+    <button class="btn btn-primary btn-block" id="lib-add" style="margin-top:var(--sp-3)">＋ 添加自定义食物</button>
   </div>
 </div>
 

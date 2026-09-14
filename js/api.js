@@ -77,7 +77,11 @@ const ROUTES = {
   deleteExercise:   '/diet/exercises/:id',        // DELETE 删除运动记录
 
   searchFoods:      '/foods/search',              // GET  食物搜索（?keyword=）
-  addCustomFood:    '/foods/custom',              // POST 添加自定义食物（名称+热量）
+  addCustomFood:    '/foods/custom',              // POST 添加自定义食物（名称+克数+三素+图片）
+  listCustomFoods:  '/foods/custom',              // GET  我的自定义食物列表
+  deleteCustomFood: '/foods/custom/:id',          // DELETE 删除自定义食物
+  builtinFoods:     '/foods/builtin',             // GET  内置食物库（带 hidden 标记）
+  hiddenFoods:      '/foods/hidden',              // PUT  设置已从列表移除的内置食物 id
   foodDetail:       '/foods/:id',                 // GET  食物营养详情
   recognizeFood:    '/foods/recognize',           // POST 拍照识别【预留：multipart 图片】
 
@@ -324,8 +328,13 @@ const HealthAPI = {
   /* ---------- 食物库 ---------- */
   searchFoods: (keyword, meal) => request('searchFoods', { params: { keyword, meal } }),
   addCustomFood: food => request('addCustomFood', { method: 'POST', body: food }),
+  /** 我的食物库：自定义食物列表 / 删除自定义 / 内置库（含 hidden 标记）/ 设置移除列表 */
+  listCustomFoods: () => request('listCustomFoods'),
+  deleteCustomFood: id => request('deleteCustomFood', { method: 'DELETE', params: { id } }),
+  getBuiltinFoods: () => request('builtinFoods'),
+  setHiddenFoods: ids => request('hiddenFoods', { method: 'PUT', body: { ids } }),
   getFoodDetail: id => request('foodDetail', { params: { id } }),
-  /** 【预留】拍照识别食物，相机/相册入口已在记录页预留挂载点 */
+  /** 【预留】拍照识别食物（记录页的相机入口已按需求移除，接口保留备用） */
   recognizeFood: imageFile => request('recognizeFood', { method: 'POST', body: { image: imageFile } }),
 
   /* ---------- 推荐 ---------- */

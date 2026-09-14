@@ -241,7 +241,6 @@ body.lock-scroll .screen { overflow: hidden; }
 .add-row.show { display: flex; }
 #screen-record .screen-content { padding-bottom: 150px; }   /* 给固定操作栏让位，避免遮住最后一张卡 */
 .add-row .btn-primary { flex: 1; box-shadow: var(--shadow-float); }
-.add-row .btn-ghost { flex: 0 0 52px; padding: 0; font-size: 20px; }
 /* 运动弹层：类型网格卡 + 消耗预览大数字 */
 .ex-chips {
   display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--sp-2);

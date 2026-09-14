@@ -51,25 +51,39 @@ function emojiFor(name) {
 async function searchFoods(keyword, uid, meal) {
   const results = [];
   const kw = (keyword || "").trim();
+  const prof = await getOrCreateProfile(uid);
+  const hidden = prof.hiddenFoods || [];   // 用户从自己列表移除的内置食物 id
   // 3) 内置常见食物库（仍无结果时兜底）
   if (!results.length) {
     for (const f of BUILTIN_FOODS) {
+      if (hidden.indexOf(f.id) > -1) continue;
       if ((!kw || f.name.includes(kw)) && (!meal || !f.meals || f.meals.indexOf(meal) > -1)) results.push({ ...f });
     }
   }
-  // 3) 自定义食物库
+  // 3) 自定义食物库（关键词转义后按字面匹配：否则 '*' '(' 等元字符会让正则编译失败、搜不到自己）
+  const esc = kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const where = kw
-    ? { uid, name: db.RegExp({ regexp: kw, options: "i" }) }
+    ? { uid, name: db.RegExp({ regexp: esc, options: "i" }) }
     : { uid };
   const customs = await db.collection("custom_foods").where(where).limit(20).get();
   for (const doc of customs.data || []) {
+    const g = doc.grams || 0;   // 录入份量克数：派生 per100 供前端「按克加」换算
+    const per100 = g > 0 ? {
+      kcal: Math.round((doc.kcal || 0) * 100 / g),
+      protein: +((doc.protein || 0) * 100 / g).toFixed(1),
+      carb: +((doc.carb || 0) * 100 / g).toFixed(1),
+      fat: +((doc.fat || 0) * 100 / g).toFixed(1)
+    } : null;
     results.push({
       id: "cf_" + doc._id,
       name: doc.name,
       meta: doc.portion ? "自定义 · " + doc.portion : "自定义 · 每 100g",
       kcal: doc.kcal || doc.caloriesPer100g || 0,
       emoji: doc.emoji || emojiFor(doc.name || ""),
-      image: doc.image || ""
+      image: doc.image || "",
+      baseG: g || 100,
+      protein: doc.protein || 0, carb: doc.carb || 0, fat: doc.fat || 0,
+      per100
     });
   }
   return results;
@@ -86,7 +100,7 @@ async function foodDetail(foodId) {
 const BUILTIN_FOODS = [
   // 早餐（protein/carb/fat 单位 g/份，依据中国食物成分表第6版/包装配料表核算）
   { id: "u_01", name: "纯牛奶", meta: "奶类 · 1 盒 250ml", kcal: 175, emoji: "🥛", image: "img/foods/milk.jpg", meals: ["breakfast", "snack"], protein: 8, carb: 12, fat: 9 },
-  { id: "u_02", name: "面包", meta: "主食 · 80g", kcal: 256, emoji: "🍞", image: "img/foods/bread.jpg", meals: ["breakfast", "snack"], protein: 7, carb: 44, fat: 4 },
+  { id: "u_02", name: "库迪面包", meta: "主食 · 80g", kcal: 256, emoji: "🍞", image: "img/foods/bread.jpg", meals: ["breakfast", "snack"], protein: 7, carb: 44, fat: 4 },
   { id: "u_03", name: "糯玉米", meta: "主食 · 1 根约 250g(可食165g)", kcal: 270, emoji: "🌽", image: "img/foods/corn.jpg", meals: ["breakfast", "snack"], protein: 6, carb: 55, fat: 3 },
   { id: "u_04", name: "煮鸡蛋", meta: "蛋类 · 1 个约 50g", kcal: 78, emoji: "🥚", image: "img/foods/egg.jpg", meals: ["breakfast", "snack"], protein: 7, carb: 1, fat: 5 },
   { id: "u_05", name: "肉包", meta: "主食 · 1 个约 100g", kcal: 230, emoji: "🥟", image: "img/foods/meatbun.jpg", meals: ["breakfast"], protein: 8, carb: 30, fat: 10 },
@@ -112,6 +126,8 @@ const BUILTIN_FOODS = [
   { id: "u_27", name: "泡面", meta: "主食 · 1 桶面饼+配料 128g", kcal: 600, emoji: "🍜", image: "img/foods/cupnoodle.jpg", meals: ["lunch", "dinner"], protein: 10.5, carb: 76.8, fat: 27.8, per100: { kcal: 469, protein: 8.2, carb: 60, fat: 21.7 }, baseG: 128 },
   { id: "u_28", name: "啤酒", meta: "饮品 · 500ml(能量含酒精)", kcal: 170, emoji: "🍺", image: "img/foods/beer.jpg", meals: ["lunch", "dinner", "snack"], protein: 2, carb: 18, fat: 0, per100: { kcal: 34, protein: 0.4, carb: 3.6, fat: 0 }, baseG: 500 },
   { id: "u_29", name: "咸鸭蛋", meta: "蛋类 · 1 个约 50g", kcal: 95, emoji: "🥚", image: "img/foods/saltedegg.jpg", meals: ["breakfast", "lunch", "dinner"], protein: 6.4, carb: 3.2, fat: 6.4, per100: { kcal: 190, protein: 12.7, carb: 6.3, fat: 12.7 }, baseG: 50 },
+  // 比比赞面包：配料表 100g = 1464kJ / 蛋白 9.0g / 脂肪 10.8g（50g 为其一半）；碳水无标签值，按能量守恒反推 54.2g
+  { id: "u_30", name: "比比赞面包", meta: "主食 · 每 50g", kcal: 175, emoji: "🍞", image: "img/foods/bibizanbread.jpg", meals: ["breakfast", "snack"], protein: 4.5, carb: 27.1, fat: 5.4, per100: { kcal: 350, protein: 9, carb: 54.2, fat: 10.8 }, baseG: 50 },
   // 零食/饮品
   { id: "u_19", name: "冰红茶", meta: "饮品 · 500ml", kcal: 190, emoji: "🧋", image: "img/foods/icetea.jpg", meals: ["snack"], protein: 0, carb: 47, fat: 0 },
   { id: "u_20", name: "可乐", meta: "饮品 · 500ml", kcal: 215, emoji: "🥤", image: "img/foods/cola.jpg", meals: ["snack"], protein: 0, carb: 53, fat: 0 },
@@ -163,7 +179,8 @@ function profileToClient(p) {
       gender: p.gender || "female",
       activity: p.activity || "light",
       deficit: p.deficit == null ? 500 : p.deficit
-    }
+    },
+    bodyUpdatedAt: p.bodyUpdatedAt || 0   // 身体档案最后修改时间（前端与本地缓存比新旧用）
   };
 }
 
@@ -235,15 +252,17 @@ async function handle(path, method, params, body, uid) {
     if (body.nickname) patch.nickname = body.nickname;
     if (body.signature) patch.signature = body.signature;
     const H = Number(body.heightCm), W = Number(body.weightKg);
-    if (body.heightCm) patch.heightCm = Math.max(100, Math.min(250, H));
-    if (body.weightKg) patch.weightKg = Math.max(30, Math.min(200, W));
+    let bodyTouched = false;   // 身体档案任一字段变更 → 打 bodyUpdatedAt，前端据此判断云端更新
+    if (body.heightCm) { patch.heightCm = Math.max(100, Math.min(250, H)); bodyTouched = true; }
+    if (body.weightKg) { patch.weightKg = Math.max(30, Math.min(200, W)); bodyTouched = true; }
     if (patch.heightCm && patch.weightKg) {
       patch.bmi = +(patch.weightKg / Math.pow(patch.heightCm / 100, 2)).toFixed(1);
     }
-    if (body.age) patch.age = Math.max(10, Math.min(100, Number(body.age) || 28));
-    if (body.gender) patch.gender = body.gender === "male" ? "male" : "female";
-    if (body.activity) patch.activity = String(body.activity);
-    if (body.deficit) patch.deficit = Number(body.deficit) || 500;
+    if (body.age) { patch.age = Math.max(10, Math.min(100, Number(body.age) || 28)); bodyTouched = true; }
+    if (body.gender) { patch.gender = body.gender === "male" ? "male" : "female"; bodyTouched = true; }
+    if (body.activity) { patch.activity = String(body.activity); bodyTouched = true; }
+    if (body.deficit) { patch.deficit = Number(body.deficit) || 500; bodyTouched = true; }
+    if (bodyTouched) patch.bodyUpdatedAt = Date.now();
     await profiles.where({ uid }).update({ ...patch, updatedAt: Date.now() });
     return { ok: true };
   }
@@ -286,15 +305,56 @@ async function handle(path, method, params, body, uid) {
     const name = String(body.name || "").trim().slice(0, 60);
     const kcal = Math.max(0, Math.round(Number(body.kcal) || 0));
     if (!name || !kcal) return { ok: false, message: "请填写食物名称和热量" };
+    const grams = Math.max(0, Math.round(Number(body.grams) || 0));
+    const p0 = Math.max(0, Number(body.protein) || 0);
+    const c0 = Math.max(0, Number(body.carb) || 0);
+    const f0 = Math.max(0, Number(body.fat) || 0);
     const doc = {
       uid, name, kcal,
-      portion: String(body.portion || "1 份").slice(0, 60),
+      grams,                                   // 录入份量的克数（按克加换算用）
+      protein: +p0.toFixed(1), carb: +c0.toFixed(1), fat: +f0.toFixed(1),
+      portion: String(body.portion || (grams ? grams + "g" : "1 份")).slice(0, 60),
       emoji: String(body.emoji || "") || emojiFor(name),
       image: String(body.image || "").slice(0, 300000),   // 自定义食物图片（压缩后 dataURL）
       createdAt: Date.now()
     };
     const added = await db.collection("custom_foods").add(doc);
     return { ok: true, id: added.id, ...doc };
+  }
+
+  /* 我的食物库：列出全部自定义食物（管理界面用） */
+  if (path === "/foods/custom" && method === "GET") {
+    const res = await db.collection("custom_foods").where({ uid }).orderBy("createdAt", "desc").limit(200).get();
+    return (res.data || []).map(d => ({
+      id: d._id, name: d.name, kcal: d.kcal, grams: d.grams || 0,
+      protein: d.protein || 0, carb: d.carb || 0, fat: d.fat || 0,
+      portion: d.portion || "", emoji: d.emoji || "🍽️", image: d.image || ""
+    }));
+  }
+
+  /* 删除自定义食物 */
+  if (path.startsWith("/foods/custom/") && method === "DELETE") {
+    const id = path.split("/").pop();
+    await db.collection("custom_foods").where({ uid, _id: id }).remove();
+    return { ok: true };
+  }
+
+  /* 内置食物库（管理界面用：带 hidden 标记，含已移除的） */
+  if (path === "/foods/builtin" && method === "GET") {
+    const prof = await getOrCreateProfile(uid);
+    const hidden = prof.hiddenFoods || [];
+    return BUILTIN_FOODS.map(f => ({
+      id: f.id, name: f.name, meta: f.meta, kcal: f.kcal, emoji: f.emoji,
+      image: f.image || "", hidden: hidden.indexOf(f.id) > -1
+    }));
+  }
+
+  /* 设置"从我的列表移除"的内置食物 id 列表（per-uid，不动公共库） */
+  if (path === "/foods/hidden" && method === "PUT") {
+    await getOrCreateProfile(uid);
+    const ids = Array.isArray(body.ids) ? body.ids.map(String).slice(0, 200) : [];
+    await profiles.where({ uid }).update({ hiddenFoods: ids, updatedAt: Date.now() });
+    return { ok: true, ids };
   }
 
   if (path === "/diet/exercises" && method === "GET") {
@@ -519,7 +579,7 @@ async function handle(path, method, params, body, uid) {
     if (date === today()) {
       const p = await getOrCreateProfile(uid);
       const bmi = +(weightKg / Math.pow((p.heightCm || 165) / 100, 2)).toFixed(1);
-      await profiles.where({ uid }).update({ weightKg, bmi, updatedAt: Date.now() });
+      await profiles.where({ uid }).update({ weightKg, bmi, updatedAt: Date.now(), bodyUpdatedAt: Date.now() });
       patch = { weightKg, bmi };
     }
     return { ok: true, weightKg, date, patch };

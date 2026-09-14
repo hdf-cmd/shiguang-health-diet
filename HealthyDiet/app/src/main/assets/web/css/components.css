@@ -192,3 +192,26 @@ ul, li { list-style: none; }
 /* ---------- 12 图标基线 ---------- */
 .icon { display: inline-flex; align-items: center; justify-content: center; }
 .icon svg { width: 22px; height: 22px; }
+
+/* ---------- 13 我的食物库：入口卡 + 管理弹层 ---------- */
+.foodlib-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
+.foodlib-title { font-size: var(--text-md); color: var(--ink); font-weight: 600; }
+.foodlib-sub { font-size: var(--text-xs); color: var(--ink-3); margin-top: 3px; }
+/* 自定义食物表单：三素并排输入 */
+.cf-macro-row { display: flex; gap: var(--sp-3); }
+.cf-macro-item {
+  flex: 1; min-width: 0; font-size: var(--text-xs); color: var(--ink-3);
+  display: flex; flex-direction: column; gap: 5px;
+}
+.cf-macro-item .login-input { padding: 10px 8px; text-align: center; font-size: var(--text-md); }
+/* 管理弹层列表 */
+.lib-list { min-height: 140px; }
+.lib-item-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.lib-act {
+  padding: 6px 12px; border-radius: var(--radius-full); font-size: var(--text-xs);
+  border: 1px solid var(--hairline); background: var(--surface-soft); color: var(--ink-2);
+  transition: all var(--dur) var(--ease);
+}
+.lib-act.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 30%, transparent); }
+.lib-act.restore { color: var(--primary-ink, var(--ink)); }
+.lib-item-removed { opacity: .45; }

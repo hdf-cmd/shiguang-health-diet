@@ -753,9 +753,7 @@ $('#portion-save').addEventListener('click', () => {
   });
 });
 
-/* 【预留】拍照识别入口：接口 recognizeFood 已就位，待接相机能力 */
-['btn-scan'].forEach(id =>
-  $(`#${id}`).addEventListener('click', () => toast('拍照识别即将上线，先用搜索吧')));
+/* 拍照识别入口已按需求移除（接口 recognizeFood 仍保留在 api.js，将来要用再接） */
 
 /* ============================================================
  * 报告页
@@ -851,7 +849,7 @@ $('#weight-log-save').addEventListener('click', async () => {
     if (state.body) {
       state.body.weightKg = r.weightKg;
       state.body.bmi = +(r.weightKg / Math.pow(state.body.heightCm / 100, 2)).toFixed(1);
-      saveBodyLocal(state.body);
+      saveBodyLocal(currentUid(), state.body);
       renderBodyCard();
       renderMetab();
     }
@@ -889,7 +887,9 @@ function renderProfile(p) {
   $('#goal-kcal').innerHTML = `${p.goal.dailyKcal} <small>kcal</small>`;
   $('#goal-weight').innerHTML = `${p.goal.targetWeight} <small>kg</small>`;
   state.profileData = p;
-  state.body = effectiveBody(p.body);
+  const cloudTs = Number(p.bodyUpdatedAt) || 0;
+  state.body = effectiveBody(p.body, p.id, cloudTs);
+  if (loadBodyTs(p.id) < cloudTs) saveBodyLocal(p.id, state.body, cloudTs);   // 云端更新 → 刷新本地缓存
   renderBodyCard();
   renderMetab();
   updatePeAvatar(p);
@@ -1009,16 +1009,30 @@ $('#pe-logout').addEventListener('click', () => { HealthAPI.logout(); location.r
 
 /* ---------- 自定义食物：名称+热量+图片入库，可选记入本餐 ---------- */
 let cfImageData = '';   // 压缩后的 dataURL，空串=无图
+let cfKcalManual = false;   // 用户手改热量后，不再被三素自动计算覆盖
+function cfAutoKcal() {
+  if (cfKcalManual) return;
+  const p = Number($('#cf-protein').value) || 0;
+  const c = Number($('#cf-carb').value) || 0;
+  const f = Number($('#cf-fat').value) || 0;
+  if (!p && !c && !f) return;   // 三素未填时不动热量（允许只按包装标签填热量）
+  $('#cf-kcal').value = Math.round(p * 4 + c * 4 + f * 9);
+}
 function renderCfPreview() {
   const el = $('#cf-img-preview');
   el.innerHTML = cfImageData ? `<img src="${cfImageData}" alt="">` : '🍽️';
 }
-function openCustomFoodSheet() {
+function openCustomFoodSheet(fromLib) {
   $('#cf-name').value = state.sheetKeyword || '';
+  $('#cf-grams').value = '';
+  $('#cf-protein').value = '';
+  $('#cf-carb').value = '';
+  $('#cf-fat').value = '';
   $('#cf-kcal').value = '';
-  $('#cf-portion').value = '';
+  cfKcalManual = false;
   cfImageData = '';
   renderCfPreview();
+  $('#cf-save-add').style.display = fromLib ? 'none' : '';   // 从食物库进入只入库、不记餐
   $('#cf-mask').classList.add('show');
   $('#cf-sheet').classList.add('show');
 }
@@ -1029,14 +1043,18 @@ function closeCustomFoodSheet() {
 async function saveCustomFood(andAdd) {
   const name = $('#cf-name').value.trim();
   const kcal = Number($('#cf-kcal').value);
-  const portion = $('#cf-portion').value.trim() || '1 份';
+  const grams = Number($('#cf-grams').value) || 0;
+  const protein = Number($('#cf-protein').value) || 0;
+  const carb = Number($('#cf-carb').value) || 0;
+  const fat = Number($('#cf-fat').value) || 0;
+  const portion = grams ? `${grams}g` : '1 份';
   if (!name) { toast('请填写食物名称'); return; }
-  if (!kcal || kcal <= 0) { toast('请填写有效热量'); return; }
+  if (!kcal || kcal <= 0) { toast('请填热量，或先填三大营养素自动算'); return; }
   try {
-    await HealthAPI.addCustomFood({ name, kcal, portion, image: cfImageData });
+    await HealthAPI.addCustomFood({ name, kcal, grams, protein, carb, fat, portion, image: cfImageData });
     closeCustomFoodSheet();
     if (andAdd) {
-      await HealthAPI.addFoodRecord({ date: state.date, meal: state.mealChosen, name, portion, kcal, emoji: '🍽️', image: cfImageData });
+      await HealthAPI.addFoodRecord({ date: state.date, meal: state.mealChosen, name, portion, kcal, emoji: '🍽️', image: cfImageData, protein, carb, fat });
       closeSheet();
       await refreshToday();
       await loadRecordPage();
@@ -1070,6 +1088,111 @@ $('#cf-mask').addEventListener('click', closeCustomFoodSheet);
 $('#sheet-cf-open').addEventListener('click', () => openCustomFoodSheet());   // 记一笔弹层常驻入口
 $('#cf-save-add').addEventListener('click', () => saveCustomFood(true));
 $('#cf-save-only').addEventListener('click', () => saveCustomFood(false));
+/* 三素输入 → 自动算热量；用户手改热量后不再覆盖 */
+['#cf-protein', '#cf-carb', '#cf-fat'].forEach(sel => {
+  $(sel).addEventListener('input', cfAutoKcal);
+  $(sel).addEventListener('change', cfAutoKcal);
+});
+$('#cf-kcal').addEventListener('input', () => { cfKcalManual = true; });
+
+/* ---------- 我的食物库：自定义食物管理 + 内置常菜移除/恢复 ---------- */
+let libTab = 'custom';
+let libBuiltinCache = null;   // 内置库（含 hidden 标记）缓存
+
+function openFoodLib() {
+  libTab = 'custom';
+  $$('#lib-seg button').forEach(b => b.classList.toggle('active', b.dataset.lib === 'custom'));
+  $('#lib-mask').classList.add('show');
+  $('#lib-sheet').classList.add('show');
+  renderLibList();
+}
+function closeFoodLib() {
+  $('#lib-mask').classList.remove('show');
+  $('#lib-sheet').classList.remove('show');
+}
+async function renderLibList() {
+  const box = $('#lib-list');
+  box.innerHTML = '<div class="empty"><div class="art"></div><p>加载中…</p></div>';
+  try {
+    if (libTab === 'custom') {
+      const list = await HealthAPI.listCustomFoods();
+      $('#foodlib-sub').textContent = `自定义 ${list.length} 条 · 可删除`;
+      box.innerHTML = list.length ? list.map(f => `
+        <div class="food-item">
+          <span class="thumb">${f.image ? `<img class="thumb-img" src="${f.image}" alt="">` : (f.emoji || '🍽️')}</span>
+          <span class="info">
+            <span class="name">${f.name}</span>
+            <span class="meta" style="display:block">${f.grams ? f.grams + 'g · ' : ''}蛋白 ${f.protein}g / 碳水 ${f.carb}g / 脂肪 ${f.fat}g</span>
+          </span>
+          <span class="kcal">${f.kcal}<small> kcal</small></span>
+          <span class="lib-item-actions"><button class="lib-act danger" data-del-cf="${f.id}">删除</button></span>
+        </div>`).join('')
+        : `<div class="empty"><div class="art">🍽️</div><p>还没有自定义食物<br>点下方按钮添加你的常吃菜</p></div>`;
+    } else {
+      const list = libBuiltinCache || (libBuiltinCache = await HealthAPI.getBuiltinFoods());
+      const hiddenCount = list.filter(f => f.hidden).length;
+      $('#foodlib-sub').textContent = `内置 ${list.length} 条 · 已移除 ${hiddenCount}`;
+      box.innerHTML = list.map(f => `
+        <div class="food-item ${f.hidden ? 'lib-item-removed' : ''}">
+          <span class="thumb">${f.image ? `<img class="thumb-img" src="${f.image}" alt="">` : f.emoji}</span>
+          <span class="info">
+            <span class="name">${f.name}</span>
+            <span class="meta" style="display:block">${f.meta} · ${f.kcal} kcal</span>
+          </span>
+          <span class="lib-item-actions">
+            <button class="lib-act ${f.hidden ? 'restore' : 'danger'}" data-toggle-builtin="${f.id}">${f.hidden ? '恢复' : '移除'}</button>
+          </span>
+        </div>`).join('');
+    }
+  } catch (e) {
+    box.innerHTML = `<div class="empty"><div class="art">⚠️</div><p>加载失败：${e.message || '网络异常'}</p>
+      <button class="btn btn-soft" id="lib-retry" style="margin-top:var(--sp-3)">重试</button></div>`;
+  }
+}
+$('#foodlib-open').addEventListener('click', openFoodLib);
+$('#lib-close').addEventListener('click', closeFoodLib);
+$('#lib-mask').addEventListener('click', closeFoodLib);
+$('#lib-add').addEventListener('click', () => { closeFoodLib(); openCustomFoodSheet(true); });
+$('#lib-seg').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  libTab = b.dataset.lib;
+  $$('#lib-seg button').forEach(x => x.classList.toggle('active', x === b));
+  renderLibList();
+});
+$('#lib-list').addEventListener('click', async e => {
+  if (e.target.closest('#lib-retry')) { renderLibList(); return; }
+  const del = e.target.closest('[data-del-cf]');
+  if (del) {
+    const ok = await showConfirm('删除自定义食物', '删除后不可恢复；已记录的饮食不受影响。');
+    if (!ok) return;
+    del.disabled = true;
+    try {
+      await HealthAPI.deleteCustomFood(del.dataset.delCf);
+      toast('已删除');
+      renderLibList();
+    } catch (err) { toast('删除失败：' + (err.message || '网络异常')); del.disabled = false; }
+    return;
+  }
+  const tog = e.target.closest('[data-toggle-builtin]');
+  if (tog) {
+    const id = tog.dataset.toggleBuiltin;
+    const list = libBuiltinCache || [];
+    const item = list.find(f => f.id === id);
+    if (!item) return;
+    const ids = list.filter(f => f.hidden).map(f => f.id);
+    if (item.hidden) {
+      const i = ids.indexOf(id); if (i > -1) ids.splice(i, 1);
+    } else if (ids.indexOf(id) === -1) ids.push(id);
+    tog.disabled = true;
+    try {
+      await HealthAPI.setHiddenFoods(ids);
+      item.hidden = !item.hidden;
+      renderLibList();
+      toast(item.hidden ? `已移除「${item.name}」` : `已恢复「${item.name}」`);
+    } catch (err) { toast('操作失败：' + (err.message || '网络异常')); tog.disabled = false; }
+    return;
+  }
+});
 
 /* ============================================================
  * 今日未打卡提醒（当日无任何记录时打开 App 弹一次）
@@ -1156,11 +1279,34 @@ const ACTIVITY = {
 const KCAL_PER_KG = 7700;   // 减 1kg 体脂约需缺口
 const BODY_DEFAULT = { heightCm: 165, weightKg: 55, bmi: 20.2, age: 28, gender: 'female', activity: 'light', deficit: 500 };
 
-/* 本地兜底：后端字段就绪前编辑不丢；就绪后云端与本地一致 */
-const BODY_LOCAL_KEY = 'sg_body_local';
-function loadBodyLocal() { try { return JSON.parse(localStorage.getItem(BODY_LOCAL_KEY)) || {}; } catch (e) { return {}; } }
-function saveBodyLocal(b) { localStorage.setItem(BODY_LOCAL_KEY, JSON.stringify(b)); }
-function effectiveBody(cloudBody) { return Object.assign({}, BODY_DEFAULT, cloudBody || {}, loadBodyLocal()); }
+/* 身体档案本地缓存：按 uid 隔离（同设备换账号不串），带时间戳与云端比"谁新用谁" */
+const BODY_LOCAL_PREFIX = 'sg_body_';        // 值键：sg_body_<uid>；时间戳键：sg_body_ts_<uid>
+const BODY_LOCAL_LEGACY = 'sg_body_local';   // 旧版单键（无 uid），首次读取时迁移给当前账号
+function bodyLocalKey(uid) { return BODY_LOCAL_PREFIX + (uid || 'anon'); }
+function bodyTsKey(uid) { return BODY_LOCAL_PREFIX + 'ts_' + (uid || 'anon'); }
+function currentUid() { return (state.profileData && state.profileData.id) || ''; }
+function loadBodyLocal(uid) {
+  try {
+    const k = bodyLocalKey(uid);
+    let raw = localStorage.getItem(k);
+    if (!raw && uid) {   // 旧版单键迁移：设备上通常只有一个使用者，归属当前登录账号
+      const legacy = localStorage.getItem(BODY_LOCAL_LEGACY);
+      if (legacy) { localStorage.setItem(k, legacy); localStorage.removeItem(BODY_LOCAL_LEGACY); raw = legacy; }
+    }
+    return raw ? (JSON.parse(raw) || {}) : {};
+  } catch (e) { return {}; }
+}
+function loadBodyTs(uid) { return Number(localStorage.getItem(bodyTsKey(uid))) || 0; }
+function saveBodyLocal(uid, b, ts) {
+  localStorage.setItem(bodyLocalKey(uid), JSON.stringify(b));
+  localStorage.setItem(bodyTsKey(uid), String(ts || Date.now()));
+}
+/* 本地有值且不旧于云端才用它：离线改的档案不被云端旧值盖掉，云端更新后又能覆盖本地旧值 */
+function effectiveBody(cloudBody, uid, cloudTs) {
+  const local = loadBodyLocal(uid);
+  const useLocal = Object.keys(local).length > 0 && loadBodyTs(uid) >= (Number(cloudTs) || 0);
+  return Object.assign({}, BODY_DEFAULT, cloudBody || {}, useLocal ? local : {});
+}
 
 function computeMetabolism(b, targetWeight) {
   const W = b.weightKg, H = b.heightCm, A = b.age;
@@ -1299,7 +1445,7 @@ $('#body-save').addEventListener('click', async () => {
   };
   b.bmi = +(b.weightKg / Math.pow(b.heightCm / 100, 2)).toFixed(1);
   state.body = b;
-  saveBodyLocal(b);
+  saveBodyLocal(currentUid(), b);
   renderBodyCard();
   renderMetab();
   closeBodySheet();
