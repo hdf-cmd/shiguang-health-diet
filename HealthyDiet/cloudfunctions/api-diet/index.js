@@ -110,7 +110,7 @@ const BUILTIN_FOODS = [
   { id: "u_25", name: "葱姜鸡", meta: "粤菜 · 1 份约 135g", kcal: 266, emoji: "🐔", image: "img/foods/congjiangji.jpg", meals: ["lunch", "dinner"], protein: 23, carb: 3, fat: 18 },
   { id: "u_26", name: "饼干", meta: "零食 · 1 块约 35g", kcal: 152, emoji: "🍪", image: "img/foods/biscuit.jpg", meals: ["breakfast", "snack"], protein: 3.2, carb: 25.1, fat: 4.4, per100: { kcal: 435, protein: 9, carb: 71.7, fat: 12.7 }, baseG: 35 },
   { id: "u_27", name: "泡面", meta: "主食 · 1 桶面饼+配料 128g", kcal: 600, emoji: "🍜", image: "img/foods/cupnoodle.jpg", meals: ["lunch", "dinner"], protein: 10.5, carb: 76.8, fat: 27.8, per100: { kcal: 469, protein: 8.2, carb: 60, fat: 21.7 }, baseG: 128 },
-  { id: "u_28", name: "啤酒", meta: "饮品 · 500ml(能量含酒精)", kcal: 215, emoji: "🍺", image: "img/foods/beer.jpg", meals: ["lunch", "dinner", "snack"], protein: 2.5, carb: 18, fat: 0, per100: { kcal: 43, protein: 0.5, carb: 3.6, fat: 0 }, baseG: 500 },
+  { id: "u_28", name: "啤酒", meta: "饮品 · 500ml(能量含酒精)", kcal: 170, emoji: "🍺", image: "img/foods/beer.jpg", meals: ["lunch", "dinner", "snack"], protein: 2, carb: 18, fat: 0, per100: { kcal: 34, protein: 0.4, carb: 3.6, fat: 0 }, baseG: 500 },
   { id: "u_29", name: "咸鸭蛋", meta: "蛋类 · 1 个约 50g", kcal: 95, emoji: "🥚", image: "img/foods/saltedegg.jpg", meals: ["breakfast", "lunch", "dinner"], protein: 6.4, carb: 3.2, fat: 6.4, per100: { kcal: 190, protein: 12.7, carb: 6.3, fat: 12.7 }, baseG: 50 },
   // 零食/饮品
   { id: "u_19", name: "冰红茶", meta: "饮品 · 500ml", kcal: 190, emoji: "🧋", image: "img/foods/icetea.jpg", meals: ["snack"], protein: 0, carb: 47, fat: 0 },
