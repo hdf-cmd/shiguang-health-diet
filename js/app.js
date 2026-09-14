@@ -114,8 +114,8 @@ function initScreenScroll(s) {
   if (!Ctor) { s.firstElementChild.style.overflowY = 'auto'; return; }
   const pull = s.id === 'screen-home' || s.id === 'screen-record';
   const bs = new Ctor(s, {
-    click: false,              // 不用 BScroll 合成 click（横拖会误点）；交互标签走原生 click
-    preventDefaultException: { tagName: /^(INPUT|TEXTAREA|SELECT|BUTTON|A|LABEL)$/ },   // 交互标签不 preventDefault → 原生 click 存活
+    click: true,               // 由 BScroll 合成 click：按钮内 span 子元素被 preventDefault 时原生 click 会吞，合成可达
+    preventDefaultException: { tagName: /^(INPUT|TEXTAREA|SELECT|BUTTON|A|LABEL)$/ },
     bounce: true,              // 边缘回弹 rubber-band
     momentum: true,            // 惯性滚动
     pullDownRefresh: pull ? { threshold: 64, stop: 44 } : false,
@@ -133,8 +133,8 @@ function initScreenScroll(s) {
   let t = 0;
   new MutationObserver(() => { clearTimeout(t); t = setTimeout(() => bs.refresh(), 90); })
     .observe(s.firstElementChild, { childList: true, subtree: true, characterData: true });
-  // 横向拖拽后抑制 BScroll 合成的误点（竖滚容器把横拖当“未移动”→ tap → click）
-  let suppress = false, px = 0, py = 0;
+  // 拖拽后抑制误点 + 同目标 400ms 内去重（防 native+synthetic 双触发）
+  let suppress = false, px = 0, py = 0, lastClick = { t: 0, el: null };
   s.addEventListener('pointerdown', e => { px = e.clientX; py = e.clientY; }, { passive: true });
   s.addEventListener('pointerup', e => {
     if (Math.abs(e.clientX - px) > 12 || Math.abs(e.clientY - py) > 12) {
@@ -143,7 +143,10 @@ function initScreenScroll(s) {
     }
   }, { passive: true });
   s.addEventListener('click', e => {
-    if (suppress) { e.stopPropagation(); e.preventDefault(); suppress = false; }
+    const now = Date.now();
+    if (suppress) { e.stopPropagation(); e.preventDefault(); suppress = false; return; }
+    if (lastClick.el === e.target && now - lastClick.t < 400) { e.stopPropagation(); e.preventDefault(); }
+    lastClick = { t: now, el: e.target };
   }, true);
   bsMap.set(s.id, bs);
 }
