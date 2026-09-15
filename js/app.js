@@ -631,7 +631,7 @@ async function fillSheetResults(keyword) {
           <span class="meta" style="display:block">${f.meta}</span>
         </span>
         <span class="kcal">${f.kcal}<small> kcal</small></span>
-        <button class="btn btn-soft" style="padding:8px 14px" data-add='${JSON.stringify(f)}'>${f.per100 ? '按克加' : '添加'}</button>
+        <button class="btn btn-soft" style="padding:8px 14px" data-add='${JSON.stringify(f)}'>${f.per100 ? (f.unit === 'ml' ? '按毫升加' : '按克加') : '添加'}</button>
       </div>`).join('')
     : `<div class="empty"><div class="art">🔍</div><p>没找到「${keyword}」<br>换个说法，或添加自定义食物</p>
        <button class="btn btn-soft" id="cf-open" style="margin-top:var(--sp-3)">＋ 自定义食物</button></div>`;
@@ -703,13 +703,17 @@ $('#meal-seg').addEventListener('click', e => {
   fillSheetResults(state.sheetKeyword || '');   // 按新餐次重新过滤结果
 });
 
-/* ---------- 克数份量弹层：per100 食物按克数换算营养（米饭等） ---------- */
+/* ---------- 份量弹层：per100 食物按份量换算营养（米饭等）；自定义饮品按 ml ---------- */
 let portionFood = null;
+let portionUnit = 'g';   // 当前弹层份量单位，取自食物 unit（无则克）
 /* portionMacros 已移至 logic.js，此处直接 import */
 function openPortionSheet(f) {
   portionFood = f;
+  portionUnit = cfUnitOf(f);
   $('#portion-title').textContent = `${f.name} · 自定义份量`;
   $('#portion-g-val').value = f.baseG || 100;
+  $('#portion-unit').textContent = portionUnit;
+  $('#portion-hint').textContent = `点数字可直接输入${portionUnit === 'ml' ? '毫升数' : '克数'}，营养按每 100${portionUnit} 换算`;
   updatePortionPreview();
   $('#portion-mask').classList.add('show');
   $('#portion-sheet').classList.add('show');
@@ -722,7 +726,7 @@ function updatePortionPreview() {
   const f = portionFood; if (!f) return;
   const g = Number($('#portion-g-val').value) || 0;
   const r = portionMacros(f, g);
-  $('#portion-preview').innerHTML = `${g}g ≈ <b>${r.kcal}</b> kcal · 蛋白 ${r.protein}g / 碳水 ${r.carb}g / 脂肪 ${r.fat}g`;
+  $('#portion-preview').innerHTML = `${g}${portionUnit} ≈ <b>${r.kcal}</b> kcal · 蛋白 ${r.protein}g / 碳水 ${r.carb}g / 脂肪 ${r.fat}g`;
 }
 $('#portion-g-dec').addEventListener('click', () => { bumpBodyVal('#portion-g-val', -10, 10, 2000); updatePortionPreview(); });
 $('#portion-g-inc').addEventListener('click', () => { bumpBodyVal('#portion-g-val', 10, 10, 2000); updatePortionPreview(); });
@@ -734,11 +738,11 @@ $('#portion-mask').addEventListener('click', closePortionSheet);
 $('#portion-save').addEventListener('click', () => {
   const f = portionFood; if (!f) return;
   const g = Number($('#portion-g-val').value) || 0;
-  if (g < 10) { toast('请输入克数'); return; }
+  if (g < 10) { toast(`请输入${portionUnit === 'ml' ? '毫升数' : '克数'}`); return; }
   const r = portionMacros(f, g);
   const temp = {
     id: 'tmp_' + Date.now(), meal: state.mealChosen,
-    name: f.name, portion: `${g}g`, kcal: r.kcal, emoji: f.emoji, image: f.image || '',
+    name: f.name, portion: `${g}${portionUnit}`, kcal: r.kcal, emoji: f.emoji, image: f.image || '',
     protein: r.protein, carb: r.carb, fat: r.fat,
   };
   state.records.push(temp);   // 乐观更新
@@ -749,10 +753,10 @@ $('#portion-save').addEventListener('click', () => {
   renderRing();
   renderRecordLists();
   closePortionSheet();
-  toast(`已添加 ${f.name} ${g}g · 可继续添加`);
+  toast(`已添加 ${f.name} ${g}${portionUnit} · 可继续添加`);
   HealthAPI.addFoodRecord({
     date: state.date, meal: state.mealChosen,
-    name: f.name, portion: `${g}g`, kcal: r.kcal, emoji: f.emoji,
+    name: f.name, portion: `${g}${portionUnit}`, kcal: r.kcal, emoji: f.emoji,
     protein: r.protein, carb: r.carb, fat: r.fat, image: f.image,
   }).then(async () => {
     await Promise.all([refreshToday(), loadRecordPage()]);
@@ -1023,9 +1027,31 @@ $('#pe-save').addEventListener('click', async () => {
 });
 $('#pe-logout').addEventListener('click', () => { HealthAPI.logout(); location.reload(); });
 
-/* ---------- 自定义食物：名称+热量+图片入库，可选记入本餐 ---------- */
+/* ---------- 自定义食物：名称+份量(单位)+餐次+三素+图片入库，可选记入本餐 ---------- */
 let cfImageData = '';   // 压缩后的 dataURL，空串=无图
 let cfKcalManual = false;   // 用户手改热量后，不再被三素自动计算覆盖
+let cfUnit = 'g';       // 份量单位：g（克）| ml（毫升）
+let cfMeal = 'lunch';   // 餐次类别：breakfast=早餐 / lunch=正餐(午+晚) / snack=零食
+/* 表单三档类别 → 内置 meals 语义（搜索按 meals 过滤；无 meals 的旧数据视为全餐次可见） */
+const CF_MEAL_MAP = { breakfast: ['breakfast'], lunch: ['lunch', 'dinner'], snack: ['snack'] };
+/* 反查类别（管理列表高亮用），未归类返回空串 */
+function cfMealKind(meals) {
+  if (!Array.isArray(meals) || !meals.length) return '';
+  const s = meals.join(',');
+  if (s === 'breakfast') return 'breakfast';
+  if (s === 'snack') return 'snack';
+  if (meals.indexOf('lunch') > -1 || meals.indexOf('dinner') > -1) return 'lunch';
+  return '';
+}
+function cfUnitOf(f) { return f && f.unit === 'ml' ? 'ml' : 'g'; }
+function setCfUnit(u) {
+  cfUnit = u === 'ml' ? 'ml' : 'g';
+  $$('#cf-unit button').forEach(b => b.classList.toggle('active', b.dataset.unit === cfUnit));
+}
+function setCfMeal(m) {
+  cfMeal = CF_MEAL_MAP[m] ? m : 'lunch';
+  $$('#cf-meal button').forEach(b => b.classList.toggle('active', b.dataset.meal === cfMeal));
+}
 function cfAutoKcal() {
   if (cfKcalManual) return;
   const p = Number($('#cf-protein').value) || 0;
@@ -1047,8 +1073,12 @@ function openCustomFoodSheet(fromLib) {
   $('#cf-kcal').value = '';
   cfKcalManual = false;
   cfImageData = '';
+  setCfUnit('g');   // 单位默认克
+  // 餐次默认跟随当前记一笔的餐次（午餐/晚餐都归「正餐」档）
+  setCfMeal(state.mealChosen === 'breakfast' ? 'breakfast' : state.mealChosen === 'snack' ? 'snack' : 'lunch');
   renderCfPreview();
-  $('#cf-save-add').style.display = fromLib ? 'none' : '';   // 从食物库进入只入库、不记餐
+  $('#cf-save-add').textContent = fromLib ? '存入食物库' : `保存并记入${MEAL_NAMES[state.mealChosen] || '本餐'}`;
+  $('#cf-save-only').style.display = fromLib ? 'none' : '';   // 从食物库进入只剩入库主按钮
   $('#cf-mask').classList.add('show');
   $('#cf-sheet').classList.add('show');
 }
@@ -1063,11 +1093,12 @@ async function saveCustomFood(andAdd) {
   const protein = Number($('#cf-protein').value) || 0;
   const carb = Number($('#cf-carb').value) || 0;
   const fat = Number($('#cf-fat').value) || 0;
-  const portion = grams ? `${grams}g` : '1 份';
+  const portion = grams ? `${grams}${cfUnit}` : '1 份';
+  const meals = CF_MEAL_MAP[cfMeal] || [];
   if (!name) { toast('请填写食物名称'); return; }
   if (!kcal || kcal <= 0) { toast('请填热量，或先填三大营养素自动算'); return; }
   try {
-    await HealthAPI.addCustomFood({ name, kcal, grams, protein, carb, fat, portion, image: cfImageData });
+    await HealthAPI.addCustomFood({ name, kcal, grams, unit: cfUnit, meals, protein, carb, fat, portion, image: cfImageData });
     closeCustomFoodSheet();
     if (andAdd) {
       await HealthAPI.addFoodRecord({ date: state.date, meal: state.mealChosen, name, portion, kcal, emoji: '🍽️', image: cfImageData, protein, carb, fat });
@@ -1110,6 +1141,9 @@ $('#cf-save-only').addEventListener('click', () => saveCustomFood(false));
   $(sel).addEventListener('change', cfAutoKcal);
 });
 $('#cf-kcal').addEventListener('input', () => { cfKcalManual = true; });
+/* 份量单位（克/毫升）与餐次类别（早/正餐/零食）选择 */
+$('#cf-unit').addEventListener('click', e => { const b = e.target.closest('button[data-unit]'); if (b) setCfUnit(b.dataset.unit); });
+$('#cf-meal').addEventListener('click', e => { const b = e.target.closest('button[data-meal]'); if (b) setCfMeal(b.dataset.meal); });
 
 /* ---------- 我的食物库：自定义食物管理 + 内置常菜移除/恢复 ---------- */
 let libTab = 'custom';
@@ -1132,15 +1166,15 @@ async function renderLibList() {
   try {
     if (libTab === 'custom') {
       const list = await HealthAPI.listCustomFoods();
-      const subEl = $('#foodlib-sub'); if (subEl) subEl.textContent = `自定义 ${list.length} 条 · 可删除`;
+      const subEl = $('#foodlib-sub'); if (subEl) subEl.textContent = `自定义 ${list.length} 条 · 点餐次标签可改归类`;
       box.innerHTML = list.length ? list.map(f => `
         <div class="food-item">
           <span class="thumb">${f.image ? `<img class="thumb-img" src="${f.image}" alt="">` : (f.emoji || '🍽️')}</span>
           <span class="info">
             <span class="name">${f.name}</span>
-            <span class="meta" style="display:block">${f.grams ? f.grams + 'g · ' : ''}蛋白 ${f.protein}g / 碳水 ${f.carb}g / 脂肪 ${f.fat}g</span>
+            <span class="meta" style="display:block">${f.grams ? f.grams + cfUnitOf(f) + ' · ' : ''}${f.kcal} kcal · 蛋白 ${f.protein}g / 碳水 ${f.carb}g / 脂肪 ${f.fat}g</span>
+            <span class="cf-lib-meals">${['breakfast', 'lunch', 'snack'].map(v => `<button class="cf-meal-chip ${cfMealKind(f.meals) === v ? 'active' : ''}" data-set-cf-meal="${v}" data-cf-id="${f.id}">${v === 'breakfast' ? '早餐' : v === 'lunch' ? '正餐' : '零食'}</button>`).join('')}</span>
           </span>
-          <span class="kcal">${f.kcal}<small> kcal</small></span>
           <span class="lib-item-actions"><button class="lib-act danger" data-del-cf="${f.id}">删除</button></span>
         </div>`).join('')
         : `<div class="empty"><div class="art">🍽️</div><p>还没有自定义食物<br>点下方按钮添加你的常吃菜</p></div>`;
@@ -1179,6 +1213,17 @@ $('#lib-seg').addEventListener('click', e => {
 });
 $('#lib-list').addEventListener('click', async e => {
   if (e.target.closest('#lib-retry')) { renderLibList(); return; }
+  const mealChip = e.target.closest('[data-set-cf-meal]');
+  if (mealChip) {
+    const kind = mealChip.dataset.setCfMeal;
+    mealChip.disabled = true;
+    try {
+      await HealthAPI.setCustomFoodMeals(mealChip.dataset.cfId, CF_MEAL_MAP[kind] || []);
+      toast(`已归到${kind === 'breakfast' ? '早餐' : kind === 'snack' ? '零食' : '正餐'} · 搜索时只在对应餐次出现`);
+      renderLibList();
+    } catch (err) { toast('设置失败：' + (err.message || '网络异常')); mealChip.disabled = false; }
+    return;
+  }
   const del = e.target.closest('[data-del-cf]');
   if (del) {
     const ok = await showConfirm('删除自定义食物', '删除后不可恢复；已记录的饮食不受影响。');

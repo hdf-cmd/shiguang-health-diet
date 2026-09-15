@@ -77,9 +77,10 @@ export const ROUTES = {
   deleteExercise:   '/diet/exercises/:id',        // DELETE 删除运动记录
 
   searchFoods:      '/foods/search',              // GET  食物搜索（?keyword=）
-  addCustomFood:    '/foods/custom',              // POST 添加自定义食物（名称+克数+三素+图片）
+  addCustomFood:    '/foods/custom',              // POST 添加自定义食物（名称+份量+单位+餐次+三素+图片）
   listCustomFoods:  '/foods/custom',              // GET  我的自定义食物列表
   deleteCustomFood: '/foods/custom/:id',          // DELETE 删除自定义食物
+  setCustomFoodMeals: '/foods/custom/:id',        // PUT  修改自定义食物的餐次归类（meals）
   builtinFoods:     '/foods/builtin',             // GET  内置食物库（带 hidden 标记）
   hiddenFoods:      '/foods/hidden',              // PUT  设置已从列表移除的内置食物 id
   foodDetail:       '/foods/:id',                 // GET  食物营养详情
@@ -331,6 +332,7 @@ const HealthAPI = {
   /** 我的食物库：自定义食物列表 / 删除自定义 / 内置库（含 hidden 标记）/ 设置移除列表 */
   listCustomFoods: () => request('listCustomFoods'),
   deleteCustomFood: id => request('deleteCustomFood', { method: 'DELETE', params: { id } }),
+  setCustomFoodMeals: (id, meals) => request('setCustomFoodMeals', { method: 'PUT', params: { id }, body: { meals } }),
   getBuiltinFoods: () => request('builtinFoods'),
   setHiddenFoods: ids => request('hiddenFoods', { method: 'PUT', body: { ids } }),
   getFoodDetail: id => request('foodDetail', { params: { id } }),

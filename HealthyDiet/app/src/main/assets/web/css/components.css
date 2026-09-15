@@ -36,6 +36,9 @@ ul, li { list-style: none; }
 .btn-soft { background: var(--primary-soft); color: var(--primary-deep); }
 .btn-soft:active { background: #D6E7D2; }
 .btn-ghost { border: 1px solid var(--line); color: var(--ink-2); background: var(--surface); }
+/* 安静按钮：无边框的次要操作（如「仅存入食物库，不记录」） */
+.btn-quiet { color: var(--ink-3); font-size: var(--text-sm); font-weight: 500; background: transparent; padding: 10px; }
+.btn-quiet:active { color: var(--ink); }
 .btn-danger { color: var(--danger); }
 .btn-block { width: 100%; }
 .btn-icon {
@@ -163,7 +166,7 @@ ul, li { list-style: none; }
 .sheet .sheet-head h3 { font-size: var(--text-lg); color: var(--ink); font-weight: 700; letter-spacing: .01em; }
 .sheet-head-actions { display: flex; align-items: center; gap: var(--sp-2); }
 /* 自定义食物图片行 */
-.cf-img-row { display: flex; align-items: center; justify-content: center; gap: var(--sp-4); }
+.cf-img-row { display: flex; align-items: center; gap: var(--sp-4); }
 .cf-img-preview {
   width: 64px; height: 64px; border-radius: 14px; background: var(--surface-soft);
   border: 1px solid var(--hairline); display: flex; align-items: center; justify-content: center;
@@ -204,9 +207,45 @@ ul, li { list-style: none; }
   display: flex; flex-direction: column; gap: 5px;
 }
 .cf-macro-item .login-input { padding: 10px 8px; text-align: center; font-size: var(--text-md); }
+
+/* 自定义食物表单：字段分组（左对齐标签 + 紧凑节奏） */
+.cf-field { margin-top: var(--sp-5); }
+.cf-label { display: block; font-size: var(--text-sm); font-weight: 600; color: var(--ink); margin-bottom: var(--sp-2); }
+.cf-label .cf-sub { font-weight: 400; font-size: var(--text-xs); color: var(--ink-3); margin-left: 2px; }
+.cf-field .login-input { margin-bottom: 0; }
+
+/* 份量行：数值输入 + 单位分段 */
+.cf-amount-row { display: flex; align-items: center; gap: var(--sp-3); }
+.cf-amount-row .login-input { flex: 1; min-width: 0; }
+
+/* 餐次三选一：早餐 / 正餐 / 零食 */
+.cf-choice { display: flex; gap: var(--sp-2); }
+.cf-choice button {
+  flex: 1; padding: 11px 0; border-radius: var(--radius-sm);
+  background: var(--surface-soft); border: 1px solid var(--hairline);
+  font-size: var(--text-sm); color: var(--ink-2); font-weight: 500;
+  transition: all var(--dur-fast) var(--ease-out);
+}
+.cf-choice button:active { transform: scale(.97); }
+.cf-choice button.active {
+  background: var(--primary-soft); border-color: var(--primary); color: var(--primary-deep); font-weight: 600;
+}
+
+/* 底部操作区：主按钮实心 + 次要操作为安静文字按钮 */
+.cf-actions { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-6); }
+
 /* 管理弹层列表 */
 .lib-list { min-height: 140px; }
 .lib-item-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+/* 管理列表：餐次归类 chip（点击即改，未高亮=未分类） */
+.cf-lib-meals { display: flex; gap: 6px; margin-top: 6px; }
+.cf-meal-chip {
+  padding: 4px 10px; border-radius: var(--radius-full); font-size: var(--text-xs);
+  border: 1px solid var(--hairline); background: var(--surface); color: var(--ink-3);
+  transition: all var(--dur-fast) var(--ease-out);
+}
+.cf-meal-chip.active { background: var(--primary-soft); border-color: var(--primary); color: var(--primary-deep); font-weight: 600; }
+.cf-meal-chip:active { transform: scale(.96); }
 .lib-act {
   padding: 6px 12px; border-radius: var(--radius-full); font-size: var(--text-xs);
   border: 1px solid var(--hairline); background: var(--surface-soft); color: var(--ink-2);

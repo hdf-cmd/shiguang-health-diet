@@ -581,6 +581,10 @@ body.lock-scroll .screen { overflow: hidden; }
 .checkin-title { margin: 0 0 var(--sp-2); color: var(--ink); }
 .checkin-desc { margin: 0 0 var(--sp-5); color: var(--ink-2); font-size: var(--text-sm); }
 /* 删除确认弹层：居中紧凑 + 圆形图标底 + 实心按钮 */
+/* 层叠修复：确认弹层可能从任意弹层内唤起（如「我的食物库」里删除自定义食物），
+   而它在 DOM 中排在最前，同 z-index 会被后开的弹层盖住 → 固定抬到所有弹层之上 */
+#confirm-mask { z-index: 80; }
+#confirm-sheet { z-index: 81; }
 .confirm-sheet {
   text-align: center;
   padding: var(--sp-5) var(--sp-5) calc(var(--sp-5) + env(safe-area-inset-bottom, 0px));

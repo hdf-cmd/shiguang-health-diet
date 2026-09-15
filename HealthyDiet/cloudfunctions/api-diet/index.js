@@ -67,7 +67,11 @@ async function searchFoods(keyword, uid, meal) {
     : { uid };
   const customs = await db.collection("custom_foods").where(where).limit(20).get();
   for (const doc of customs.data || []) {
-    const g = doc.grams || 0;   // 录入份量克数：派生 per100 供前端「按克加」换算
+    // 餐次过滤：已归类（有 meals）的只在对应餐次出现；未归类的旧数据保持全餐次可见
+    const fm = Array.isArray(doc.meals) ? doc.meals : [];
+    if (meal && fm.length && fm.indexOf(meal) === -1) continue;
+    const unit = doc.unit === "ml" ? "ml" : "g";
+    const g = doc.grams || 0;   // 录入份量数值：派生 per100 供前端「按份量加」换算
     const per100 = g > 0 ? {
       kcal: Math.round((doc.kcal || 0) * 100 / g),
       protein: +((doc.protein || 0) * 100 / g).toFixed(1),
@@ -77,10 +81,11 @@ async function searchFoods(keyword, uid, meal) {
     results.push({
       id: "cf_" + doc._id,
       name: doc.name,
-      meta: doc.portion ? "自定义 · " + doc.portion : "自定义 · 每 100g",
+      meta: doc.portion ? "自定义 · " + doc.portion : "自定义 · 每 100" + unit,
       kcal: doc.kcal || doc.caloriesPer100g || 0,
       emoji: doc.emoji || emojiFor(doc.name || ""),
       image: doc.image || "",
+      unit,
       baseG: g || 100,
       protein: doc.protein || 0, carb: doc.carb || 0, fat: doc.fat || 0,
       per100
@@ -260,19 +265,26 @@ async function handle(path, method, params, body, uid) {
   }
 
   /* ---- 运动记录（sg_exercises）：刻意运动单独记，消耗计入当日报销额度 ---- */
-  if (path === "/foods/custom" && method === "POST") {
+if (path === "/foods/custom" && method === "POST") {
     const name = String(body.name || "").trim().slice(0, 60);
     const kcal = Math.max(0, Math.round(Number(body.kcal) || 0));
     if (!name || !kcal) return { ok: false, message: "请填写食物名称和热量" };
     const grams = Math.max(0, Math.round(Number(body.grams) || 0));
+    const unit = body.unit === "ml" ? "ml" : "g";   // 份量单位：克 / 毫升
     const p0 = Math.max(0, Number(body.protein) || 0);
     const c0 = Math.max(0, Number(body.carb) || 0);
     const f0 = Math.max(0, Number(body.fat) || 0);
+    // 餐次归类（早餐/正餐/零食 → meals 语义）；未传则不设，搜索时不按餐次过滤
+    const meals = Array.isArray(body.meals)
+      ? body.meals.map(String).filter(m => ["breakfast", "lunch", "dinner", "snack"].indexOf(m) > -1).slice(0, 4)
+      : [];
     const doc = {
       uid, name, kcal,
-      grams,                                   // 录入份量的克数（按克加换算用）
+      grams,                                   // 录入份量的数值（按份量加换算用）
+      unit,                                    // 份量单位：g / ml
+      meals,                                   // 适用餐次（空数组 = 全餐次可见）
       protein: +p0.toFixed(1), carb: +c0.toFixed(1), fat: +f0.toFixed(1),
-      portion: String(body.portion || (grams ? grams + "g" : "1 份")).slice(0, 60),
+      portion: String(body.portion || (grams ? grams + unit : "1 份")).slice(0, 60),
       emoji: String(body.emoji || "") || emojiFor(name),
       image: String(body.image || "").slice(0, 300000),   // 自定义食物图片（压缩后 dataURL）
       createdAt: Date.now()
@@ -286,9 +298,21 @@ async function handle(path, method, params, body, uid) {
     const res = await db.collection("custom_foods").where({ uid }).orderBy("createdAt", "desc").limit(200).get();
     return (res.data || []).map(d => ({
       id: d._id, name: d.name, kcal: d.kcal, grams: d.grams || 0,
+      unit: d.unit === "ml" ? "ml" : "g",
+      meals: Array.isArray(d.meals) ? d.meals : [],
       protein: d.protein || 0, carb: d.carb || 0, fat: d.fat || 0,
       portion: d.portion || "", emoji: d.emoji || "🍽️", image: d.image || ""
     }));
+  }
+
+  /* 修改自定义食物的餐次归类（管理界面点击餐次标签） */
+  if (path.startsWith("/foods/custom/") && method === "PUT") {
+    const id = path.split("/").pop();
+    const meals = Array.isArray(body.meals)
+      ? body.meals.map(String).filter(m => ["breakfast", "lunch", "dinner", "snack"].indexOf(m) > -1).slice(0, 4)
+      : [];
+    await db.collection("custom_foods").where({ uid, _id: id }).update({ meals, updatedAt: Date.now() });
+    return { ok: true, id, meals };
   }
 
   /* 删除自定义食物 */
