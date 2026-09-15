@@ -423,6 +423,12 @@ body.lock-scroll .screen { overflow: hidden; }
 .weight-trend svg { width: 100%; height: auto; margin-top: var(--sp-3); }
 
 /* ---------- 我的 ---------- */
+/* 版本号：用户可在「我的」页底部自助确认当前版本（内容由 js/app.js 从 js/version.js 注入） */
+.app-version {
+  margin: var(--sp-5) 0 var(--sp-3);
+  text-align: center; font-size: var(--text-xs); color: var(--ink-3); letter-spacing: .04em;
+}
+
 .profile-head {
   display: flex; align-items: center; gap: var(--sp-4); padding: var(--sp-4);
   width: 100%; text-align: left; cursor: pointer;

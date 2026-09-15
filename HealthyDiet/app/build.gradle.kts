@@ -1,6 +1,30 @@
+import java.io.File
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+}
+
+/* ---------- 版本号单一来源 ----------
+ * versionName/versionCode 都从仓库根目录 package.json 的 version 推导，
+ * 避免手改多处漂移；versionCode 用 major*10000+minor*100+patch 保证单调递增。 */
+val repoRoot = rootProject.projectDir.parentFile
+val appVersion: String = Regex("\"version\"\\s*:\\s*\"([^\"]+)\"")
+    .find(File(repoRoot, "package.json").readText())
+    ?.groupValues?.get(1) ?: "0.0.0"
+val appVersionCode: Int = appVersion.split(".").let { p ->
+    p.getOrElse(0) { "0" }.toIntOrNull()!! * 10000 +
+        p.getOrElse(1) { "0" }.toIntOrNull()!! * 100 +
+        p.getOrElse(2) { "0" }.toIntOrNull()!!
+}
+
+/* ---------- release 签名 ----------
+ * 凭据放本地 keystore.properties（已入 .gitignore，严禁入库）。
+ * 文件缺失时不签名，保证他人 clone 后仍能构建未签名包。 */
+val keystorePropsFile = rootProject.file("keystore.properties")
+val keystoreProps = Properties().apply {
+    if (keystorePropsFile.exists()) keystorePropsFile.inputStream().use { load(it) }
 }
 
 android {
@@ -11,14 +35,34 @@ android {
         applicationId = "com.healthydiet.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = appVersionCode
+        versionName = appVersion
+    }
+
+    signingConfigs {
+        create("release") {
+            if (keystorePropsFile.exists()) {
+                storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (keystorePropsFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
+    }
+    lint {
+        // release 构建不跑 lintVital：该步骤会访问 dl.google.com 查询依赖元数据，
+        // 本机到 Google 不可达（SYN 重试挂起，构建表现为零进展卡死）。
+        // 需要 Android Lint 时手动执行：gradlew.bat lintDebug
+        checkReleaseBuilds = false
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -27,7 +71,7 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
-buildFeatures {
+    buildFeatures {
         buildConfig = true
     }
 }

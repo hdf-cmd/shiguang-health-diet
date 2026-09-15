@@ -1,10 +1,12 @@
 # 食光 · 健康饮食 App
 
+**当前版本：v1.0.0** ｜ 变更历史见 [CHANGELOG.md](CHANGELOG.md)
+
 把每一餐，记成时光。核心闭环：**记三餐 → 算热量 → 看趋势**。
 
 - **界面**：纯静态 HTML/CSS/ES Module JS（无构建），见本目录 `index.html` + `js/` + `css/`
 - **后端**：腾讯云 CloudBase（环境 `cloud1-d6g4x9h9m507b429c`）——用户名密码登录 + 云数据库 + 食物库，全部收口在单入口云函数 `api-diet`
-- **APK**：`食光-debug.apk`（Kotlin WebView 壳，页面内置于 assets，经内嵌本地服务 `http://127.0.0.1:8765` 加载以通过网关 CORS，数据走云端）
+- **APK**：`食光-v1.0.0.apk`（release 签名；Kotlin WebView 壳，页面内置于 assets，经内嵌本地服务 `http://127.0.0.1:8765` 加载以通过网关 CORS，数据走云端）
 
 ## 已实现功能（真实后端）
 
@@ -24,7 +26,7 @@
 
 ## 使用
 
-- **手机**：安装 `食光-debug.apk`（允许未知来源安装），注册账号即可使用
+- **手机**：安装 `食光-v1.0.0.apk`（允许未知来源安装），注册账号即可使用
 - **电脑浏览器**：`python -m http.server 8765` 后访问 `http://localhost:8765`（或双击 index.html 看界面，但 file:// 下会被 CORS 拦截，需经 localhost 访问才能连真实后端）
   - ⚠️ 浏览器预览时**食物图片不显示**：图片只在 `HealthyDiet/app/src/main/assets/web/img/`（APK 内路径），仓库根目录没有 `img/`。这是已知取舍，待整改（见待办 1）
 
@@ -42,15 +44,40 @@
 ## 常用命令
 
 ```bash
-npm test                 # 单元测试
-npm run sync:assets      # 手动同步前端 → assets（构建时也会自动跑）
-cd HealthyDiet && gradlew.bat assembleDebug   # 出 APK（app/build/outputs/apk/debug/）
+npm test                 # 单元测试（node:test，零依赖）
+npm run lint             # ESLint（CI 门禁：必须 0 error）
+npm run check:version    # 校验 package.json 与 js/version.js 版本号一致
+npm run sync:assets      # 手动同步前端 → assets（gradle preBuild 也会自动跑）
+cd HealthyDiet && gradlew.bat assembleRelease   # 出 release 签名 APK（app/build/outputs/apk/release/）
 ```
+
+## 版本管理
+
+版本号**唯一来源**是 `package.json` 的 `version`，其余各处自动同步或由 CI 校验：
+
+| 位置 | 同步方式 |
+|------|----------|
+| Android `versionName` / `versionCode` | `app/build.gradle.kts` 构建时读取 package.json 自动推导（versionCode = major×10000+minor×100+patch） |
+| 前端 `js/version.js` 的 `APP_VERSION` | 手写同步，CI 用 `npm run check:version` 拦截漂移 |
+| App 内展示 | 「我的」页底部（由 `js/app.js` 从 version.js 注入） |
+
+**发版流程**：改 `package.json` 的 version → 同步 `js/version.js` → 在 `CHANGELOG.md` 补条目 → `npm run check:version && npm test` → `assembleRelease` → 产物改名 `食光-vX.Y.Z.apk` → 提交并打 tag `vX.Y.Z`。
+
+## 签名
+
+release 包用本地密钥库签名，凭据放 `HealthyDiet/keystore.properties`（已入 `.gitignore`，**严禁入库**）：
+
+- 密钥库：`HealthyDiet/keystore/shiguang-release.jks`（alias `shiguang`，RSA 2048，有效期 10000 天）
+- ️ **密钥库与密码一旦丢失，将无法再更新已安装的 App**（只能卸载重装），请异地备份
+- 凭据文件缺失时构建仍可进行，但产出未签名包（便于他人 clone 后编译）
 
 ## 待办
 
 1. **图片单一事实来源整改**：把 `img/` 纳入仓库根目录并加入 `scripts/sync-web-assets.mjs` 的 TARGETS，解决浏览器预览图片 404 + 图片只能在 assets 里维护的问题
-2. 拍照识别食物（接口 `/foods/recognize` 已保留，记录页入口待重加）
+2. 拍照识别食物（前端接口 `recognizeFood` 已保留，云端 `/foods/recognize` 尚未实现，记录页入口待重加）
 3. 前端热更新（云存储 + 版本号拉取，免重装 APK）
-4. 发布签名（release keystore）上架准备
-5. 真机手感回访（滑动阈值、长按删除发现性）；首页滚动位置偶发停底观察项
+4. 真机手感回访（滑动阈值、长按删除发现性）；首页滚动位置偶发停底观察项
+
+## 许可证
+
+[MIT](LICENSE) © 2026 hdf-cmd

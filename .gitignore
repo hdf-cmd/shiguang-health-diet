@@ -17,3 +17,9 @@ node_modules/
 
 # 云端私钥（Custom Login 凭证）严禁入库；本地保留供部署
 **/tcb_custom_login.json
+
+# release 签名凭据与密钥库：严禁入库，本地保管
+# 丢失 keystore 或密码将无法再更新已安装的 App（只能卸载重装）
+**/keystore.properties
+**/*.jks
+**/*.keystore

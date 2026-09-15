@@ -13,6 +13,7 @@ import {
 } from './logic.js';
 import { state, updateState, isViewingToday } from './state.js';
 import { HealthAPI } from './api.js';
+import { APP_VERSION } from './version.js';
 
 const $  = sel => document.querySelector(sel);
 const $$ = sel => [...document.querySelectorAll(sel)];
@@ -1868,6 +1869,8 @@ function loadMainBundleSafe() {
   requestAnimationFrame(updateTabGlide);
   syncChrome('home');
   renderGreeting();
+  const verEl = $('#app-version');
+  if (verEl) verEl.textContent = `食光 v${APP_VERSION}`;
   renderDateRow();
   renderPlateDate();
   await bootToday();   // 并行拉取+退避重试，首屏快且不怕冷启动（反馈8）

@@ -15,8 +15,9 @@ jobs:
           node-version: 20
       - name: Install dev deps (eslint/prettier)
         run: npm install --no-audit --no-fund
-      - name: Lint (non-blocking while baseline cleans up)
-        continue-on-error: true
+      - name: Version consistency (package.json ↔ js/version.js)
+        run: npm run check:version
+      - name: Lint
         run: npm run lint
       - name: Unit tests (node:test, zero-dep)
         run: npm test

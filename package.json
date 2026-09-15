@@ -7,6 +7,7 @@
   "scripts": {
     "test": "node --test",
     "lint": "eslint js tests scripts",
+    "check:version": "node scripts/check-version.mjs",
     "format": "prettier --write \"js/**/*.js\" \"tests/**/*.js\" \"css/**/*.css\"",
     "sync:assets": "node scripts/sync-web-assets.mjs"
   },
