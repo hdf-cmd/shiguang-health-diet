@@ -35,7 +35,7 @@
 
 ### 工程
 - 前端模块化：`app.js`（渲染/事件）、`logic.js`（纯领域逻辑）、`state.js`（集中状态）、`api.js`（接口层）
-- 18 个领域单元测试（`node:test`，零依赖）
+- 40 个领域单元测试（`node:test`，零依赖）：代谢与营养素换算、日期时区安全、每日建议规则、接口层行为
 - ESLint + Prettier + GitHub Actions CI（版本一致性 → lint → 单元测试 → assets 同步）
 - web 资源单一事实来源：仓库根 → `assets/web` 自动镜像（Gradle preBuild 触发）
 - 版本号单一来源：`package.json` → Android versionName/versionCode 自动推导，CI 校验前端常量一致

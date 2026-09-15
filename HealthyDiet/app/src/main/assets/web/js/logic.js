@@ -54,7 +54,8 @@ export function localIso(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 export const todayIso = () => localIso(new Date());
-/* 日期口语标签：今天/昨天/M月D日 */
+/* 日期口语标签：昨天 → 「昨天」，其余 → 「M月D日」
+ * 注意：本函数不识别「今天」，调用方需自行判断（见 app.js 喝水卡片标题的 `state.date === todayIso() ? ...`） */
 export function dateLabelOf(iso) {
   const yd = new Date(); yd.setDate(yd.getDate() - 1);
   if (iso === localIso(yd)) return '昨天';
