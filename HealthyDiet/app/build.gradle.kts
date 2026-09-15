@@ -37,3 +37,13 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("org.nanohttpd:nanohttpd:2.3.1")
 }
+
+/* ---------- 反馈3：web 资源单一事实来源 ----------
+ * 构建前把仓库根目录的 index.html/css/js 同步进 assets/web，
+ * 避免“根目录改了、assets 忘改”的双份漂移。无 node 环境时忽略失败（assets 提交副本兜底）。 */
+tasks.register<Exec>("syncWebAssets") {
+    workingDir = rootProject.projectDir.parentFile   // 仓库根（HealthyDiet 的上一级）
+    commandLine("node", "scripts/sync-web-assets.mjs")
+    isIgnoreExitValue = true
+}
+tasks.named("preBuild") { dependsOn("syncWebAssets") }

@@ -1,7 +1,18 @@
 /* ============================================================
- * 食光 · 界面交互逻辑
- * 所有数据均通过 HealthAPI（js/api.js）获取，页面不做直接存储。
+ * 食光 · 界面交互逻辑（ES Module 入口）
+ * 纯领域逻辑 → js/logic.js；全局状态 → js/state.js；数据接口 → js/api.js。
+ * 本文件集中：渲染 / 事件 / 启动编排（DOM 副作用仅此一处）。
  * ============================================================ */
+import {
+  MEAL_NAMES, MEAL_IMG,
+  WATER_CUP_ML, WATER_GOAL_MIN, WATER_GOAL_MAX,
+  ACTIVITY, BODY_DEFAULT, EXERCISE_LIB,
+  localIso, todayIso, dateLabelOf,
+  macroGoals, computeMetabolism, exerciseKcalOf, portionMacros, avgDeficitFromRows,
+  buildAdvice, makeAdviceCtx,
+} from './logic.js';
+import { state, updateState, isViewingToday } from './state.js';
+import { HealthAPI } from './api.js';
 
 const $  = sel => document.querySelector(sel);
 const $$ = sel => [...document.querySelectorAll(sel)];
@@ -11,18 +22,6 @@ if (/\bwv\b/.test(navigator.userAgent)) {
   const sb = $('.statusbar');
   if (sb) sb.style.display = 'none';
 }
-
-const MEAL_NAMES = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '零食' };
-const MEAL_EMOJI = { breakfast: '🌅', lunch: '🍚', dinner: '🌙', snack: '🍎' };
-const state = {
-  date: localIso(new Date()),
-  summary: null, records: [], mealChosen: 'lunch',
-  waterGoalMl: 1600,
-  profileData: null,
-  exercises: [], exerciseKcal: 0,
-  exerciseChosen: 'run', exerciseAmount: 5,
-  sheetKeyword: '',
-};
 
 /* ---------- 轻提示 ---------- */
 let toastTimer;
@@ -80,8 +79,38 @@ function syncChrome(name) {
   $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.screen === name));
   updateTabGlide();
   $('.add-row').classList.toggle('show', name === 'record');   // 记录页才显示底部操作栏
+  setTabbarHidden(false);   // 切屏时复位：导航栏重新出现
   buzz(8);
   if (name === 'report') loadReportPage();   // 每次进入报告页都拉最新周报
+}
+/* ---------- 底部导航栏滚动显隐（反馈2）：上滑隐藏、下滑/到底出现，平滑过渡 ---------- */
+let _tabbarHidden = false;
+function setTabbarHidden(hidden) {
+  if (_tabbarHidden === hidden) return;
+  _tabbarHidden = hidden;
+  const bar = $('.tabbar');
+  const row = $('.add-row');
+  if (bar) bar.classList.toggle('tabbar-hidden', hidden);
+  if (row) row.classList.toggle('add-row-hidden', hidden);   // 记录页操作栏联动
+}
+/* 绑定 BScroll 滚动方向监听：dy<0（内容上移=手指上滑）隐藏，dy>0 或触底出现 */
+function bindTabbarScroll(bs) {
+  let lastY = 0, acc = 0;
+  const THRESHOLD = 8;   // 累计位移阈值，防轻微抖动误触发
+  bs.on('scroll', pos => {
+    const y = pos.y;                 // BScroll 中 y 为负值，越往下滚 y 越小
+    const dy = y - lastY;            // dy<0 = 继续往下滚（手指上滑）
+    lastY = y;
+    // 触底/触顶判断：maxScrollY 为可滚最小 y（负值）
+    const maxScrollY = bs.maxScrollY || 0;
+    const atBottom = y <= maxScrollY + 4;
+    const atTop = y >= -4;
+    if (atBottom || atTop) { acc = 0; setTabbarHidden(false); return; }   // 顶/底始终显示
+    acc += dy;
+    if (acc < -THRESHOLD) { setTabbarHidden(true); acc = 0; }       // 上滑累计 → 隐藏
+    else if (acc > THRESHOLD) { setTabbarHidden(false); acc = 0; }  // 下滑累计 → 出现
+  });
+  bs.on('scrollEnd', () => { acc = 0; });
 }
 function switchScreen(name) {
   if (!HealthAPI.isLoggedIn() && name !== 'login') return;   // 未登录门控：只能停留登录页
@@ -129,6 +158,7 @@ function initScreenScroll(s) {
       } finally { bs.finishPullDown(); }
     });
   }
+  bindTabbarScroll(bs);   // 滚动方向联动底部导航栏显隐（反馈2）
   // 内容高度变化（渲染/展开）→ 防抖 refresh
   let t = 0;
   new MutationObserver(() => { clearTimeout(t); t = setTimeout(() => bs.refresh(), 90); })
@@ -165,18 +195,7 @@ function initMainSwiper() {
 }
 
 /* ---------- 餐盘卡日期导航：右滑/‹ 看历史，左滑/› 回今天（反馈6） ---------- */
-/* 按本地日期组件切片：toISOString 在 UTC+X 时区凌晨会回退一天，导致日期跳双天 */
-function localIso(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-const todayIso = () => localIso(new Date());
-/* 日期口语标签：今天/昨天/M月D日（喝水/运动卡标题共用） */
-function dateLabelOf(iso) {
-  const yd = new Date(); yd.setDate(yd.getDate() - 1);
-  if (iso === localIso(yd)) return '昨天';
-  const d = new Date(iso + 'T00:00:00');
-  return `${d.getMonth() + 1}月${d.getDate()}日`;
-}
+/* 日期工具（localIso/todayIso/dateLabelOf）已移至 logic.js，此处直接 import */
 function renderPlateDate() {
   const el = $('#plate-date');
   if (!el) return;
@@ -276,11 +295,16 @@ function renderGreeting(nickname) {
 function renderRing() {
   const s = state.summary;
   const ex = state.exerciseKcal || 0;
-  const budget = s.target + ex;   // 今日额度 = 目标 + 运动消耗
+  const budget = s.target + ex;   // 今日额度 = 基准目标 + 运动消耗
   const remain = Math.max(0, budget - s.kcal);
-  $('#ring-target').textContent = s.target;
+  // 反馈4：首页“今日额度”与“我的·今日建议摄入”同源，均含运动消耗，两页不再对不上
+  $('#ring-target').textContent = budget;
   $('#ring-eaten').textContent = s.kcal;
   $('#ring-exercise').textContent = ex;
+  const note = $('#ring-note');
+  if (note) note.textContent = ex > 0
+    ? `额度 ${budget} = 基准 ${s.target} + 运动 ${ex} kcal`
+    : `基准目标 ${s.target} kcal · 记运动后额度自动上调`;
 
   const C_OUT = 2 * Math.PI * 78, C_IN = 2 * Math.PI * 62;
   const pct = Math.min(1, s.kcal / budget);
@@ -311,51 +335,34 @@ function renderRing() {
 
   renderNutrientBars('#home-nutrients', s);
   renderDailyAdvice();
+  // 反馈3：今日摄入/运动变化 → 实时重算实际日均缺口并同步代谢卡达标时间（仅看今天时）
+  if (state.date === todayIso()) { recomputeActualDeficitLive(); renderMetab(); }
 }
 
-/* 每日建议：按今日记录实时生成的规则引擎（热量/宏量/喝水/时段），最多 3 条 */
+/* 每日建议：规则表引擎（logic.js ADVICE_RULES/buildAdvice），最多 3 条；新增建议只需加一条规则 */
 function renderDailyAdvice() {
   const s = state.summary;
   const el = $('#home-advice');
   if (!s || !el) return;
-  const ex = state.exerciseKcal || 0;
-  const budget = s.target + ex;
-  const remain = budget - s.kcal;
-  const goals = {
-    carb: Math.round(s.target * .5 / 4),
-    protein: Math.round(s.target * .25 / 4),
-    fat: Math.round(s.target * .25 / 9),
-  };
-  const isToday = state.date === todayIso();
-  const w = (state.body && state.body.weightKg) || 55;
-  const tips = [];
-  if (s.kcal === 0) {
-    tips.push(['📝', isToday ? '今天还没记录，去「记录」页点「记一笔」开始第一餐吧' : '这一天还没有记录，可在记录页切换日期查看']);
-  } else {
-    if (remain > 0) {
-      tips.push(['🍽️', `还能吃 ${remain} kcal${goals.protein - s.protein > 10 ? '，优先补蛋白：蛋、豆制品、鱼虾' : '，主食、蔬菜、蛋白均衡搭配'}`]);
-    } else {
-      const walk = exerciseKcalOf(EXERCISE_LIB[1], 2.5, w);
-      tips.push(['⚠️', `已超今日额度 ${-remain} kcal，快走 30 分钟约消耗 ${walk} kcal，或明天稍减主食`]);
-    }
-    const pGap = goals.protein - s.protein;
-    if (pGap >= 15) tips.push(['🥚', `蛋白质还差 ${pGap}g，下一餐加一份蛋、豆制品或鱼虾`]);
-    if (s.fat > goals.fat) tips.push(['🍳', `脂肪已达目标 ${Math.round(s.fat / goals.fat * 100)}%，剩余餐次选蒸煮、白切等少油做法`]);
-    const cGap = goals.carb - s.carb;
-    if (cGap >= 40) tips.push(['🍚', `主食还差 ${cGap}g 碳水，不吃主食易乏力，保留适量谷物`]);
-  }
-  const wml = (s.water || 0) * WATER_CUP_ML;
-  if (isToday && wml < state.waterGoalMl) tips.push(['💧', `喝水 ${wml}/${state.waterGoalMl}ml，记得少量多次补水`]);
-  if (tips.length === 1 && s.kcal > 0) tips.push(['✅', '三大营养素都在合理区间，保持这个节奏']);
-  el.innerHTML = tips.slice(0, 3).map(([e, t]) => `<li><span class="ai">${e}</span><span>${t}</span></li>`).join('');
+  const ctx = makeAdviceCtx({
+    summary: s,
+    exerciseKcal: state.exerciseKcal || 0,
+    records: state.records,
+    isToday: state.date === todayIso(),
+    weightKg: (state.body && state.body.weightKg) || 55,
+    waterGoalMl: state.waterGoalMl,
+  });
+  const tips = buildAdvice(ctx);
+  el.innerHTML = tips.map(([e, t]) => `<li><span class="ai">${e}</span><span>${t}</span></li>`).join('');
 }
 
-/* 营养素进度条（首页/报告共用）：目标量按 50/25/3 常规供能比估算 */
+/* 营养素进度条（首页/报告共用）：目标量由 logic.macroGoals 统一估算 */
 function renderNutrientBars(sel, s) {
+  const g = macroGoals(s.target);
   const items = [
-    ['carb',    '碳水',   s.carb,    Math.round(s.target * .5 / 4)],
-    ['protein', '蛋白质', s.protein, Math.round(s.target * .25 / 4)],
-    ['fat',     '脂肪',   s.fat,     Math.round(s.target * .25 / 9)],
+    ['carb',    '碳水',   s.carb,    g.carb],
+    ['protein', '蛋白质', s.protein, g.protein],
+    ['fat',     '脂肪',   s.fat,     g.fat],
   ];
   $(sel).innerHTML = items.map(([key, name, val, goal]) => `
     <div class="row">
@@ -393,10 +400,7 @@ new MutationObserver(() => {
   document.body.classList.toggle('lock-scroll', anyOpen);
 }).observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ['class'] });
 
-/* 喝水打卡：每杯 200ml；点水杯累加，目标可在 800–3000ml 自定义 */
-const WATER_CUP_ML = 200;
-const WATER_GOAL_MIN = 800, WATER_GOAL_MAX = 3000;
-
+/* 喝水打卡：杯容量/目标范围常量已移至 logic.js，此处直接 import */
 function renderWater() {
   const n = state.summary.water;
   const goal = state.waterGoalMl;
@@ -412,7 +416,7 @@ function renderWater() {
   const seg = 100 / (goal / WATER_CUP_ML);
   $('#water-ticks').style.background =
     `repeating-linear-gradient(90deg, transparent 0, transparent calc(${seg}% - 2px), var(--surface) calc(${seg}% - 2px), var(--surface) ${seg}%)`;
-  $('#water-hint').innerHTML = reached ? '目标已达成 🎉' : `已喝 ${n} 杯<br><span class="wh-sub">每杯 200ml</span>`;
+  $('#water-hint').innerHTML = reached ? '目标已达成 🎉' : `已喝 ${n} 杯 · 每杯 ${WATER_CUP_ML}ml`;
   $('#water-undo').style.visibility = n > 0 ? 'visible' : 'hidden';
 }
 
@@ -505,12 +509,30 @@ $('#date-row').addEventListener('click', async e => {
 function renderRecordLists() {
   const byMeal = { breakfast: [], lunch: [], dinner: [], snack: [] };
   state.records.forEach(r => byMeal[r.meal]?.push(r));
+  /* 全天无记录：统一空态（替代四个重复的空卡片，减少视觉噪音） */
+  if (!state.records.length) {
+    $('#record-lists').innerHTML = `
+      <div class="day-empty">
+        <div class="art">🍽️</div>
+        <p class="t">这一天还没有记录</p>
+        <p class="s">点下方「记一笔」记下第一餐，开始追踪热量</p>
+      </div>`;
+    return;
+  }
   $('#record-lists').innerHTML = Object.entries(byMeal).map(([meal, list]) => {
     const sum = list.reduce((a, r) => a + r.kcal, 0);
+    if (!list.length) {
+      /* 空餐组：一行细提示，点一下即为该餐次记一笔 */
+      return `
+      <section class="meal-section meal-section-empty">
+        <div class="sec-head"><span class="sec-emoji"><img src="${MEAL_IMG[meal]}" alt=""></span>${MEAL_NAMES[meal]}<span class="sum">未记录</span></div>
+        <button class="meal-empty" data-meal-add="${meal}">＋ 加一份</button>
+      </section>`;
+    }
     return `
     <section class="meal-section">
-      <div class="sec-head"><span class="sec-emoji">${MEAL_EMOJI[meal]}</span>${MEAL_NAMES[meal]}<span class="sum">${sum} kcal</span></div>
-      ${list.length ? list.map(r => `
+      <div class="sec-head"><span class="sec-emoji"><img src="${MEAL_IMG[meal]}" alt=""></span>${MEAL_NAMES[meal]}<span class="sum">${sum} kcal</span></div>
+      ${list.map(r => `
         <div class="food-item">
           <span class="thumb">${r.image ? `<img class="thumb-img" src="${r.image}" alt="">` : r.emoji}</span>
           <span class="info">
@@ -519,8 +541,7 @@ function renderRecordLists() {
           </span>
           <span class="kcal">${r.kcal}<small> kcal</small></span>
           <button class="del" data-del="${r.id}" aria-label="删除${r.name}">✕</button>
-        </div>`).join('')
-      : '<p class="empty" style="padding:16px 0">这一餐还没记录，点下方「记一笔」</p>'}
+        </div>`).join('')}
     </section>`;
   }).join('');
 }
@@ -556,6 +577,8 @@ async function deleteRecordById(id) {
   });
 }
 $('#record-lists').addEventListener('click', e => {
+  const mealAdd = e.target.closest('[data-meal-add]');
+  if (mealAdd) { openSheet(mealAdd.dataset.mealAdd); return; }   // 空餐组：直接为该餐次记一笔
   const btn = e.target.closest('[data-del]');
   if (btn) deleteRecordById(btn.dataset.del);
 });
@@ -682,15 +705,7 @@ $('#meal-seg').addEventListener('click', e => {
 
 /* ---------- 克数份量弹层：per100 食物按克数换算营养（米饭等） ---------- */
 let portionFood = null;
-function portionMacros(f, g) {
-  const p = f.per100, k = g / 100;
-  return {
-    kcal: Math.round(p.kcal * k),
-    protein: +(p.protein * k).toFixed(1),
-    carb: +(p.carb * k).toFixed(1),
-    fat: +(p.fat * k).toFixed(1),
-  };
-}
+/* portionMacros 已移至 logic.js，此处直接 import */
 function openPortionSheet(f) {
   portionFood = f;
   $('#portion-title').textContent = `${f.name} · 自定义份量`;
@@ -787,12 +802,13 @@ function renderWeekReport(r) {
       </span>
     </div>`).join('');
 
-  $('#report-advice').textContent = buildAdvice(r, avg);
+  $('#report-advice').textContent = buildPeriodAdvice(r, avg);
   $('#advice-title').textContent = r.isWeek === false ? '本月建议' : '本周建议';
 }
 
-/* 多维规则建议引擎：按达标率+热量组合生成，最多 3 条拼接 */
-function buildAdvice(r, avgKcal) {
+/* 多维规则建议引擎（周/月报）：按达标率+热量组合生成，最多 3 条拼接。
+ * 与每日建议（logic.buildAdvice）区分，改名避免与 import 同名冲突。 */
+function buildPeriodAdvice(r, avgKcal) {
   const tips = [];
   if (r.rates.protein < 80) tips.push(`蛋白质达标率 ${r.rates.protein}%，偏低，每餐加一份鱼、虾、蛋或豆制品`);
   if (r.rates.carb > 110) tips.push(`碳水达目标 ${r.rates.carb}%，偏高，主食可换粗粮或减两成`);
@@ -1116,7 +1132,7 @@ async function renderLibList() {
   try {
     if (libTab === 'custom') {
       const list = await HealthAPI.listCustomFoods();
-      $('#foodlib-sub').textContent = `自定义 ${list.length} 条 · 可删除`;
+      const subEl = $('#foodlib-sub'); if (subEl) subEl.textContent = `自定义 ${list.length} 条 · 可删除`;
       box.innerHTML = list.length ? list.map(f => `
         <div class="food-item">
           <span class="thumb">${f.image ? `<img class="thumb-img" src="${f.image}" alt="">` : (f.emoji || '🍽️')}</span>
@@ -1131,7 +1147,7 @@ async function renderLibList() {
     } else {
       const list = libBuiltinCache || (libBuiltinCache = await HealthAPI.getBuiltinFoods());
       const hiddenCount = list.filter(f => f.hidden).length;
-      $('#foodlib-sub').textContent = `内置 ${list.length} 条 · 已移除 ${hiddenCount}`;
+      const subEl2 = $('#foodlib-sub'); if (subEl2) subEl2.textContent = `内置 ${list.length} 条 · 已移除 ${hiddenCount}`;
       box.innerHTML = list.map(f => `
         <div class="food-item ${f.hidden ? 'lib-item-removed' : ''}">
           <span class="thumb">${f.image ? `<img class="thumb-img" src="${f.image}" alt="">` : f.emoji}</span>
@@ -1149,7 +1165,9 @@ async function renderLibList() {
       <button class="btn btn-soft" id="lib-retry" style="margin-top:var(--sp-3)">重试</button></div>`;
   }
 }
-$('#foodlib-open').addEventListener('click', openFoodLib);
+const foodlibOpenBtn = $('#foodlib-open');   // 我的页入口（已移至记录页，保留兼容）
+if (foodlibOpenBtn) foodlibOpenBtn.addEventListener('click', openFoodLib);
+$('#btn-foodlib').addEventListener('click', openFoodLib);   // 记录页：与「记一笔」并排
 $('#lib-close').addEventListener('click', closeFoodLib);
 $('#lib-mask').addEventListener('click', closeFoodLib);
 $('#lib-add').addEventListener('click', () => { closeFoodLib(); openCustomFoodSheet(true); });
@@ -1264,20 +1282,9 @@ $('#goal-edit-save').addEventListener('click', async () => {
 /* ============================================================
  * 身体档案 + 代谢计算（BMR/TDEE/建议摄入/达标时间）
  * ------------------------------------------------------------
- * 公式：Mifflin-St Jeor
- *   BMR 男 = 10W + 6.25H − 5A + 5；女 = 10W + 6.25H − 5A − 161
- *   TDEE = BMR × 活动系数；建议摄入 = max(TDEE − 缺口, 安全下限, BMR)
- *   达标时间 = (当前−目标)kg × 7700 kcal ÷ 实际每日缺口
+ * 公式与常量（ACTIVITY/KCAL_PER_KG/BODY_DEFAULT/computeMetabolism）已移至 logic.js，
+ * 本文件只保留 localStorage 缓存与渲染/保存副作用。
  * ============================================================ */
-const ACTIVITY = {
-  sedentary: { f: 1.2,   label: '久坐' },
-  light:     { f: 1.375, label: '轻度' },
-  moderate:  { f: 1.55,  label: '中度' },
-  active:    { f: 1.725, label: '重度' },
-  extreme:   { f: 1.9,   label: '极大' },
-};
-const KCAL_PER_KG = 7700;   // 减 1kg 体脂约需缺口
-const BODY_DEFAULT = { heightCm: 165, weightKg: 55, bmi: 20.2, age: 28, gender: 'female', activity: 'light', deficit: 500 };
 
 /* 身体档案本地缓存：按 uid 隔离（同设备换账号不串），带时间戳与云端比"谁新用谁" */
 const BODY_LOCAL_PREFIX = 'sg_body_';        // 值键：sg_body_<uid>；时间戳键：sg_body_ts_<uid>
@@ -1308,30 +1315,72 @@ function effectiveBody(cloudBody, uid, cloudTs) {
   return Object.assign({}, BODY_DEFAULT, cloudBody || {}, useLocal ? local : {});
 }
 
-function computeMetabolism(b, targetWeight) {
-  const W = b.weightKg, H = b.heightCm, A = b.age;
-  const bmr = Math.round(10 * W + 6.25 * H - 5 * A + (b.gender === 'male' ? 5 : -161));
-  const f = (ACTIVITY[b.activity] || ACTIVITY.light).f;
-  const tdee = Math.round(bmr * f);
-  const floor = b.gender === 'male' ? 1500 : 1200;
-  const suggest = Math.max(tdee - b.deficit, floor, bmr);
-  const realDeficit = tdee - suggest;
-  const bmi = +(W / Math.pow(H / 100, 2)).toFixed(1);
-  const need = +(W - (targetWeight || W)).toFixed(1);
-  let etaText;
-  if (need <= 0) etaText = '已达标或目标不低于当前体重，维持当前摄入即可';
-  else if (realDeficit <= 0) etaText = '当前摄入无缺口，无法减重，请提高缺口档位';
-  else {
-    const days = Math.ceil(need * KCAL_PER_KG / realDeficit);
-    const weeks = Math.ceil(days / 7);
-    const d = new Date(Date.now() + days * 86400000);
-    const months = Math.round(days / 30.44);
-    const span = months >= 12 ? `约 ${Math.floor(months / 12)} 年 ${months % 12} 个月` : `约 ${months} 个月`;
-    etaText = `预计 ${weeks} 周（${span} · ${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日）减到 ${targetWeight}kg`;
-    if (realDeficit * 7 / KCAL_PER_KG > 1) etaText += ' · 减重偏快，建议降为温和缺口';
+/* computeMetabolism 已移至 logic.js（纯函数，可单测），此处直接 import */
+
+/* ============================================================
+ * 反馈3：达标时间按“实际缺口”每日更新
+ * ------------------------------------------------------------
+ * 预设缺口只是建议；真实减重速度取决于每天实际摄入/运动。
+ * 缓存“过去 6 天”的摄入/运动（每天早上重拉一次），今天的数据用内存 state 实时算，
+ * 实际日均缺口 = mean(TDEE + 运动 − 摄入)，仅统计有记录的日子（≥2 天才生效）。 */
+const ACTUAL_DEFICIT_PREFIX = 'sg_actual_deficit_';
+function actualDeficitKey(uid) { return ACTUAL_DEFICIT_PREFIX + (uid || 'anon'); }
+function loadActualDeficitCache(uid) {
+  try { return JSON.parse(localStorage.getItem(actualDeficitKey(uid))) || null; } catch (e) { return null; }
+}
+function saveActualDeficitCache(uid, v) {
+  try { localStorage.setItem(actualDeficitKey(uid), JSON.stringify(v)); } catch (e) { /* 忽略 */ }
+}
+/* 拉取过去 6 天（昨天..6 天前）的摄入/运动，缓存为历史基准 */
+async function fetchDeficitHistory() {
+  const b = state.body; if (!b) return null;
+  const tw = state.profileData ? state.profileData.goal.targetWeight : 55;
+  const tdee = computeMetabolism(b, tw).tdee;
+  const dates = [];
+  for (let i = 1; i <= 6; i++) {   // 不含今天（今天用 state 实时算）
+    const d = new Date(); d.setDate(d.getDate() - i);
+    dates.push(localIso(d));
   }
-  const lo = (18.5 * Math.pow(H / 100, 2)).toFixed(1), hi = (23.9 * Math.pow(H / 100, 2)).toFixed(1);
-  return { bmr, tdee, suggest, realDeficit, bmi, etaText, rangeText: `合理体重区间 ${lo}–${hi} kg（BMI 18.5–23.9）` };
+  const [sums, exs] = await Promise.all([
+    Promise.all(dates.map(dt => HealthAPI.getDailySummary(dt).catch(() => null))),
+    Promise.all(dates.map(dt => HealthAPI.getExercises(dt).catch(() => []))),
+  ]);
+  const history = [];
+  for (let i = 0; i < dates.length; i++) {
+    const s = sums[i];
+    if (!s || !(s.kcal > 0)) continue;   // 未记录的日子不计入
+    const exKcal = (exs[i] || []).reduce((a, r) => a + (r.kcal || 0), 0);
+    history.push({ date: dates[i], intake: s.kcal, exKcal });
+  }
+  return { date: todayIso(), tdee, history };
+}
+/* 合并历史 + 今天实时数据，算实际日均缺口；纯均值计算委托 logic.avgDeficitFromRows */
+function computeAvgDeficit(cache) {
+  if (!cache || !cache.history) return null;
+  const rows = cache.history.slice();
+  // 今天：用内存 state 实时值（记录/运动一变就跟着变）
+  const todayIntake = (state.summary && state.summary.kcal) || 0;
+  if (todayIntake > 0) rows.push({ date: todayIso(), intake: todayIntake, exKcal: state.exerciseKcal || 0 });
+  return avgDeficitFromRows(cache.tdee, rows);
+}
+/* 每天早上首次加载重拉历史并缓存；force=true 跳过日期检查 */
+async function refreshActualDeficit(force) {
+  const uid = currentUid();
+  const today = todayIso();
+  let cache = loadActualDeficitCache(uid);
+  if (force || !cache || cache.date !== today) {
+    try {
+      const fresh = await fetchDeficitHistory();
+      if (fresh) { cache = fresh; saveActualDeficitCache(uid, cache); }
+    } catch (e) { /* 网络异常时沿用旧缓存 */ }
+  }
+  state.actualDeficit = computeAvgDeficit(cache);
+  return state.actualDeficit;
+}
+/* 今天记录/运动变化后：不重拉历史，仅用缓存 + 实时 state 重算均值（轻量、即时） */
+function recomputeActualDeficitLive() {
+  const cache = loadActualDeficitCache(currentUid());
+  state.actualDeficit = computeAvgDeficit(cache);
 }
 
 function renderBodyCard() {
@@ -1347,7 +1396,7 @@ function renderBodyCard() {
 function renderMetab() {
   const b = state.body; if (!b) return;
   const tw = state.profileData ? state.profileData.goal.targetWeight : 55;
-  const m = computeMetabolism(b, tw);
+  const m = computeMetabolism(b, tw, state.actualDeficit);   // 反馈3：传入近 7 天实际缺口
   state.metab = m;
   const ex = state.exerciseKcal || 0;
   $('#metab-bmr').innerHTML = `${m.bmr}<small> kcal</small>`;
@@ -1355,10 +1404,11 @@ function renderMetab() {
   $('#metab-exercise').innerHTML = `${ex}<small> kcal</small>`;
   // 今日建议摄入 = 基准目标 + 今日运动（与首页环额度同源）；基准目标同步云端不随运动波动
   $('#metab-suggest').innerHTML = `${m.suggest + ex}<small> kcal</small>`;
-  $('#metab-deficit').innerHTML = `${m.realDeficit}<small> kcal</small>`;
-  $('#metab-note').textContent = ex > 0
-    ? `含今日运动 ${ex} kcal · 基准 ${m.suggest}`
-    : `基准目标 ${m.suggest} kcal`;
+  // 每日缺口：有足够历史时显示“实际日均缺口”，否则显示预设缺口
+  $('#metab-deficit').innerHTML = `${m.effDeficit}<small> kcal</small>`;
+  $('#metab-note').textContent = m.useActual
+    ? `缺口为近 ${state.actualDeficit.days} 天实际日均 · 预设 ${m.realDeficit}`
+    : (ex > 0 ? `含今日运动 ${ex} kcal · 基准 ${m.suggest}` : `基准目标 ${m.suggest} kcal`);
   $('#metab-eta').innerHTML =
     `<span style="display:block">${m.etaText}</span>` +
     `<span style="display:block;margin-top:4px;opacity:.85">${m.rangeText}</span>`;
@@ -1476,27 +1526,8 @@ async function syncTarget() {
 /* ============================================================
  * 今日运动：刻意运动单独记录，消耗计入当日报销额度
  * ------------------------------------------------------------
- * 距离型 kcal = 系数 × 体重kg × 距离km；
- * 时长型 kcal = MET × 3.5 × 体重kg / 200 × 分钟
+ * 运动库与消耗公式（EXERCISE_LIB/exerciseKcalOf）已移至 logic.js，此处直接 import。
  * ============================================================ */
-const EXERCISE_LIB = [
-  { key: 'run',      name: '跑步',     emoji: '🏃', unit: 'km',  perKgKm: 1.036 },
-  { key: 'walk',     name: '快走',     emoji: '🚶', unit: 'km',  perKgKm: 0.5 },
-  { key: 'cycle',    name: '骑行',     emoji: '🚴', unit: 'km',  perKgKm: 0.35 },
-  { key: 'swim',     name: '游泳',     emoji: '🏊', unit: 'min', met: 8 },
-  { key: 'pushup',   name: '俯卧撑',   emoji: '💪', unit: 'min', met: 8 },
-  { key: 'strength', name: '力量训练', emoji: '🏋️', unit: 'min', met: 5 },
-  { key: 'yoga',     name: '瑜伽',     emoji: '🧘', unit: 'min', met: 2.5 },
-  { key: 'rope',     name: '跳绳',     emoji: '🤸', unit: 'min', met: 11 },
-  { key: 'hiit',     name: 'HIIT',     emoji: '🔥', unit: 'min', met: 8 },
-  { key: 'ball',     name: '球类',     emoji: '🏀', unit: 'min', met: 7 },
-];
-function exerciseKcalOf(lib, amount, weightKg) {
-  const w = weightKg || 55;
-  return lib.unit === 'km'
-    ? Math.round(lib.perKgKm * w * amount)
-    : Math.round(lib.met * 3.5 * w / 200 * amount);
-}
 const currentLib = () => EXERCISE_LIB.find(l => l.key === state.exerciseChosen) || EXERCISE_LIB[0];
 
 async function loadExercises() {
@@ -1585,8 +1616,7 @@ $('#exercise-save').addEventListener('click', async () => {
   const kcal = exerciseKcalOf(lib, state.exerciseAmount, w);
   if (!kcal) { toast('请先设置运动量'); return; }
   const temp = { id: 'tmpx_' + Date.now(), key: lib.key, name: lib.name, emoji: lib.emoji, amount: state.exerciseAmount, unit: lib.unit, kcal };
-  state.exercises.push(temp);   // 乐观更新（反馈8）
-  state.exerciseKcal += kcal;
+  updateState(s => { s.exercises.push(temp); s.exerciseKcal += kcal; }, 'exercise.add');   // 乐观更新（反馈8）
   renderExerciseList();
   renderRing();
   renderMetab();
@@ -1596,8 +1626,7 @@ $('#exercise-save').addEventListener('click', async () => {
     date: state.date, key: lib.key, name: lib.name, emoji: lib.emoji,
     amount: state.exerciseAmount, unit: lib.unit, kcal,
   }).then(() => loadExercises()).catch(err => {
-    state.exercises = state.exercises.filter(r => r.id !== temp.id);
-    state.exerciseKcal -= kcal;
+    updateState(s => { s.exercises = s.exercises.filter(r => r.id !== temp.id); s.exerciseKcal -= kcal; }, 'exercise.add.rollback');
     renderExerciseList();
     renderRing();
     renderMetab();
@@ -1610,8 +1639,7 @@ async function deleteExerciseById(id) {
   if (!ok) return;
   const rec = state.exercises.find(r => r.id === id);
   if (rec) {   // 乐观删除
-    state.exercises = state.exercises.filter(r => r.id !== id);
-    state.exerciseKcal -= rec.kcal || 0;
+    updateState(s => { s.exercises = s.exercises.filter(r => r.id !== id); s.exerciseKcal -= rec.kcal || 0; }, 'exercise.del');
     renderExerciseList();
     renderRing();
     renderMetab();
@@ -1619,8 +1647,7 @@ async function deleteExerciseById(id) {
   toast('已删除运动记录');
   HealthAPI.deleteExercise(id).then(() => loadExercises()).catch(err => {
     if (rec) {
-      state.exercises.push(rec);
-      state.exerciseKcal += rec.kcal || 0;
+      updateState(s => { s.exercises.push(rec); s.exerciseKcal += rec.kcal || 0; }, 'exercise.del.rollback');
       renderExerciseList();
       renderRing();
       renderMetab();
@@ -1632,13 +1659,27 @@ $('#exercise-list').addEventListener('click', e => {
   const btn = e.target.closest('[data-xdel]');
   if (btn) deleteExerciseById(btn.dataset.xdel);
 });
-/* 长按删除记录/运动（AlloyFinger longTap，开源集成） */
+/* 长按记录/运动项：震动反馈 + 上下文菜单（原为直接删除） */
 if (window.AlloyFinger) {
   new AlloyFinger($('#record-lists'), {
-    longTap: evt => { const b = evt.target.closest('[data-del]'); if (b) deleteRecordById(b.dataset.del); },
+    longTap: evt => {
+      const item = evt.target.closest('.food-item');          // 长按整项任意位置即可（不要求按在删除按钮上）
+      const b = item && item.querySelector('[data-del]');
+      if (!b) return;
+      buzz(22);
+      const p = (evt.touches && evt.touches[0]) || evt;
+      showCtxMenu(p.clientX || 180, p.clientY || 420, () => deleteRecordById(b.dataset.del));
+    },
   });
   new AlloyFinger($('#exercise-list'), {
-    longTap: evt => { const b = evt.target.closest('[data-xdel]'); if (b) deleteExerciseById(b.dataset.xdel); },
+    longTap: evt => {
+      const item = evt.target.closest('.food-item');
+      const b = item && item.querySelector('[data-xdel]');
+      if (!b) return;
+      buzz(22);
+      const p = (evt.touches && evt.touches[0]) || evt;
+      showCtxMenu(p.clientX || 180, p.clientY || 420, () => deleteExerciseById(b.dataset.xdel));
+    },
   });
 }
 
@@ -1712,6 +1753,9 @@ async function loadMainBundle() {
   state.waterGoalMl = profile.goal.waterMl || 1600;
   renderWater();
   await syncTarget();
+  // 反馈3：每天早上首次加载重拉近 6 天历史，算实际日均缺口后重渲染代谢卡（达标时间随之更新）
+  await refreshActualDeficit();
+  renderMetab();
 }
 /* 通用重试：云函数冷启动/弱网偶发失败时退避重试（反馈8：交互不能因偶发失败卡死） */
 async function withRetry(fn, times = 3, delay = 2000) {
@@ -1743,3 +1787,163 @@ function loadMainBundleSafe() {
   await bootToday();   // 并行拉取+退避重试，首屏快且不怕冷启动（反馈8）
   await loadMainBundleSafe();
 })();
+
+/* ============================================================
+ * 手势增强（纯交互层：不改静态布局与设计令牌）
+ *   A 底部抽屉 跟手拖拽 + 距离/速度判定关闭
+ *   B 记录/运动项 左滑触发删除（位移跟手，松手判定）
+ *   C 滚动动效 标题随滚动收缩淡出
+ *   D 长按 震动反馈 + 上下文菜单（showCtxMenu 见长按绑定处）
+ * ============================================================ */
+let ctxMenuAction = null;
+function showCtxMenu(x, y, action) {
+  const m = $('#ctx-menu');
+  if (!m) return;
+  ctxMenuAction = action;
+  m.classList.add('show');
+  const phone = $('.phone');
+  const pr = phone ? phone.getBoundingClientRect() : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+  const w = m.offsetWidth || 170, h = m.offsetHeight || 58;
+  m.style.left = Math.max(8, Math.min(x - pr.left, pr.width - w - 10)) + 'px';
+  m.style.top = Math.max(8, Math.min(y - pr.top, pr.height - h - 10)) + 'px';
+}
+function hideCtxMenu() {
+  const m = $('#ctx-menu');
+  if (m) m.classList.remove('show');
+  ctxMenuAction = null;
+}
+$('#ctx-menu').addEventListener('click', e => {
+  const isDelete = !!e.target.closest('[data-ctx="delete"]');
+  const act = ctxMenuAction;
+  hideCtxMenu();
+  if (isDelete && act) act();
+});
+document.addEventListener('touchstart', e => { if (!e.target.closest('#ctx-menu')) hideCtxMenu(); }, { passive: true });
+document.addEventListener('mousedown', e => { if (!e.target.closest('#ctx-menu')) hideCtxMenu(); });
+
+(function initGestures() {
+  const ptY = e => (e.touches && e.touches[0] ? e.touches[0].clientY : e.clientY);
+  const ptX = e => (e.touches && e.touches[0] ? e.touches[0].clientX : e.clientX);
+
+  /* ---------- A. 底部抽屉：跟手拖拽 + 距离/速度判定关闭 ---------- */
+  const CLOSE_DIST = 110, CLOSE_VEL = 0.5;   // 关闭阈值：位移 px / 速度 px·ms⁻¹
+  let dSheet = null, dY0 = 0, dDy = 0, dT0 = 0, dOn = false;
+
+  function drawerDown(e) {
+    const s = e.target.closest('.sheet.show');
+    if (!s) return;
+    if (e.target.closest('input, textarea, button, .segmented, .goal-stepper, .swiper, .bs-wrapper, #ctx-menu')) return;
+    let sc = null;                            // 找到真正的滚动容器：已滚动则让位
+    for (let el = e.target; el && el !== document.body; el = el.parentElement) {
+      if (el.scrollHeight > el.clientHeight + 2) { sc = el; break; }
+    }
+    if (sc && sc.scrollTop > 2) return;
+    dSheet = s; dY0 = ptY(e); dDy = 0; dT0 = Date.now(); dOn = true;
+    s.style.transition = 'none';
+  }
+  function drawerMove(e) {
+    if (!dOn) return;
+    dDy = Math.max(0, ptY(e) - dY0);
+    if (!dDy) return;
+    dSheet.style.transform = `translateY(${dDy}px)`;
+    if (e.cancelable) e.preventDefault();
+  }
+  function drawerUp() {
+    if (!dOn) return;
+    dOn = false;
+    const s = dSheet, dy = dDy, v = dy / Math.max(1, Date.now() - dT0);
+    dSheet = null; dDy = 0;
+    if (!s) return;
+    s.style.transition = ''; s.style.transform = '';
+    if (dy > CLOSE_DIST || v > CLOSE_VEL) {
+      const mask = s.previousElementSibling;   // 复用各弹层既有的关闭逻辑（含副作用）
+      if (mask && mask.classList.contains('sheet-mask')) mask.click();
+      else s.classList.remove('show');
+      buzz(8);
+    }
+  }
+
+  /* ---------- B. 左滑：记录/运动项位移跟手，松手判定删除 ---------- */
+  const SWIPE_DIST = 64;
+  let swEl = null, swX0 = 0, swY0 = 0, swDx = 0, swOn = false;
+
+  function swipeDown(e) {
+    const item = e.target.closest('#record-lists .food-item, #exercise-list .food-item');
+    if (!item) return;
+    swEl = item; swX0 = ptX(e); swY0 = ptY(e); swDx = 0; swOn = true;
+    item.style.transition = 'none';
+  }
+  function swipeMove(e) {
+    if (!swOn || !swEl) return;
+    const dx = ptX(e) - swX0, dy = ptY(e) - swY0;
+    if (dx > 0) { swDx = 0; swEl.style.transform = ''; return; }
+    if (Math.abs(dx) < Math.abs(dy) * 1.2) return;            // 纵向为主：让位给页面滚动
+    swDx = Math.max(-120, dx);
+    swEl.style.transform = `translateX(${swDx}px)`;
+    if (Math.abs(swDx) > 16) {
+      e.stopPropagation();                                    // 阻断切屏手势（列表项上左滑=删除）
+      if (e.cancelable) e.preventDefault();
+    }
+  }
+  function swipeUp() {
+    if (!swOn) return;
+    swOn = false;
+    const el = swEl, dx = swDx;
+    swEl = null; swDx = 0;
+    if (!el) return;
+    el.style.transition = ''; el.style.transform = '';
+    if (dx <= -SWIPE_DIST) {
+      buzz(18);
+      const b = el.querySelector('[data-del], [data-xdel]');
+      if (b) {
+        if (b.dataset.del) deleteRecordById(b.dataset.del);
+        else if (b.dataset.xdel) deleteExerciseById(b.dataset.xdel);
+      }
+    }
+  }
+
+  /* ---------- C. 滚动动效：标题随滚动收缩淡出（不改变静态布局） ---------- */
+  if (typeof bsMap !== 'undefined') {
+    bsMap.forEach((bs, id) => {
+      const screen = document.getElementById(id);
+      const head = screen && screen.querySelector('.page-head, .home-head');
+      if (!head) return;
+      head.style.transformOrigin = 'left top';
+      head.style.willChange = 'transform, opacity';
+      bs.on('scroll', () => {
+        const t = Math.min(1, Math.abs(bs.y) / 56);
+        head.style.transform = `translateY(${(-t * 8).toFixed(2)}px) scale(${(1 - t * 0.22).toFixed(3)})`;
+        head.style.opacity = (1 - t * 0.72).toFixed(3);
+      });
+    });
+  }
+
+  /* ---------- 绑定：抽屉走 window；左滑走元素（才能阻断切屏手势） ---------- */
+  window.addEventListener('touchstart', drawerDown, { passive: true });
+  window.addEventListener('touchmove', drawerMove, { passive: false });
+  window.addEventListener('touchend', drawerUp);
+  window.addEventListener('touchcancel', drawerUp);
+  window.addEventListener('mousedown', drawerDown);
+  window.addEventListener('mousemove', drawerMove);
+  window.addEventListener('mouseup', drawerUp);
+
+  ['#record-lists', '#exercise-list'].forEach(sel => {
+    const el = $(sel);
+    if (!el) return;
+    el.addEventListener('touchstart', swipeDown, { passive: true });
+    el.addEventListener('touchmove', swipeMove, { passive: false });
+    el.addEventListener('touchend', swipeUp);
+    el.addEventListener('touchcancel', swipeUp);
+    window.addEventListener('mousemove', swipeMove);
+    window.addEventListener('mouseup', swipeUp);
+    el.addEventListener('mousedown', swipeDown);
+  });
+})();
+
+/* ---------- 调试/测试句柄：ES module 无全局变量，显式暴露少量入口供控制台与自动化验证 ---------- */
+window.__sg = {
+  state, updateState, HealthAPI,
+  logic: { computeMetabolism, exerciseKcalOf, portionMacros, macroGoals, avgDeficitFromRows, buildAdvice, makeAdviceCtx, EXERCISE_LIB, ACTIVITY },
+  render: { renderRing, renderMetab, renderDailyAdvice, renderWater, renderExerciseList, renderRecordLists },
+  switchScreen, setTabbarHidden,
+};

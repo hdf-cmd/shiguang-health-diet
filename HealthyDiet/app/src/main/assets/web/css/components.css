@@ -215,3 +215,25 @@ ul, li { list-style: none; }
 .lib-act.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 30%, transparent); }
 .lib-act.restore { color: var(--primary-ink, var(--ink)); }
 .lib-item-removed { opacity: .45; }
+
+/* ---------- 14 手势增强：按压反馈 + 长按上下文菜单 ---------- */
+.food-item:active { transform: scale(.985); }   /* 按压反馈（无过渡，避免与 AutoAnimate 抢 transform） */
+.sheet { will-change: transform; }              /* 抽屉拖拽跟手更顺 */
+
+.ctx-menu {
+  position: absolute; z-index: 70; min-width: 158px; padding: 6px;
+  background: var(--surface); border: 1px solid var(--hairline); border-radius: var(--radius-md);
+  box-shadow: var(--shadow-float);
+  opacity: 0; transform: scale(.9);
+  pointer-events: none;
+  transition: opacity .16s var(--ease-out), transform .16s var(--ease-out);
+}
+.ctx-menu.show { opacity: 1; transform: scale(1); pointer-events: auto; }
+.ctx-menu .ctx-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 10px 14px; border: 0; border-radius: var(--radius-sm);
+  background: none; font-family: inherit; font-size: var(--text-sm); color: var(--ink-2);
+  text-align: left; cursor: pointer;
+}
+.ctx-menu .ctx-item:active { background: var(--surface-soft); }
+.ctx-menu .ctx-item.danger { color: var(--danger); }

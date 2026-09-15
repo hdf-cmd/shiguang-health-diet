@@ -13,7 +13,7 @@
  *      后端就绪后打开即可，UI 已留好挂载点。
  * ============================================================ */
 
-const USE_MOCK = false;             // 已接入真实后端（腾讯云 CloudBase）
+let USE_MOCK = false;             // 已接入真实后端（腾讯云 CloudBase）；测试可经 setUseMock 切换
 const API_BASE  = 'https://cloud1-d6g4x9h9m507b429c.api.tcloudbasegateway.com/v1/functions/api-diet';
 
 /* 客户端公开凭证（Publishable Key，可匿名调用注册/登录云函数） */
@@ -56,7 +56,7 @@ async function _doRefreshToken() {
 }
 
 /* 接口路由表：与后端约定的路径，前端调用时统一从这里取 */
-const ROUTES = {
+export const ROUTES = {
   login:            '/auth/login',               // POST 手机号+验证码
   smsCode:          '/auth/sms-code',             // POST 发送验证码
   profile:          '/user/profile',              // GET  用户资料
@@ -354,3 +354,8 @@ const HealthAPI = {
   /** 【预留】轻食商城，「我的」页入口置灰 */
   getMarketGoods: () => request('marketGoods'),
 };
+export { HealthAPI };
+
+/* 测试/调试开关：切换 mock 与真实后端（单测契约用） */
+export function setUseMock(v) { USE_MOCK = !!v; return USE_MOCK; }
+export const getUseMock = () => USE_MOCK;

@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>食光 · 主题方案预览（点按钮切换）</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    background: #101216; color: #E8EBE6; min-height: 100vh;
+    font-family: "PingFang SC", "Microsoft YaHei", -apple-system, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased; padding-bottom: 60px;
+  }
+
+  /* ================= 顶部工具栏 ================= */
+  .toolbar {
+    position: sticky; top: 0; z-index: 50; display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+    padding: 14px 20px; background: rgba(16,18,22,.82);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid rgba(255,255,255,.07);
+  }
+  .title { font-size: 15px; font-weight: 650; letter-spacing: .02em; margin-right: 8px; }
+  .title b { color: #6EE7B7; }
+  .seg { display: inline-flex; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.09); border-radius: 99px; padding: 4px; gap: 2px; }
+  .seg button {
+    padding: 8px 18px; border: 0; border-radius: 99px; background: transparent; cursor: pointer;
+    color: #A7B0A9; font-size: 13.5px; font-weight: 550; font-family: inherit;
+    transition: all .28s cubic-bezier(.32,.72,0,1);
+  }
+  .seg button.on { background: rgba(255,255,255,.94); color: #101216; font-weight: 650; box-shadow: 0 3px 12px -4px rgba(0,0,0,.6); }
+  .hint { font-size: 12.5px; color: #7B857D; margin-left: auto; }
+
+  /* ================= 舞台 ================= */
+  .stage { display: flex; justify-content: center; align-items: flex-start; gap: 44px; padding: 34px 20px 10px; flex-wrap: wrap; }
+  .col { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .col-label { font-size: 13.5px; color: #C6CDC7; letter-spacing: .02em; }
+  .col-label span { display: block; margin-top: 3px; font-size: 12px; color: #767F78; text-align: center; }
+
+  /* ================= 手机框 ================= */
+  .phone {
+    width: 390px; height: 844px; border-radius: 46px; position: relative; overflow: hidden;
+    box-shadow: 0 34px 90px -26px rgba(0,0,0,.78), 0 0 0 10px #22252A, 0 0 0 11px #33373D;
+    /* ---- 浓郁版浅色令牌（暖纸底 + 深松绿 + 强对比） ---- */
+    --bg: #EDEAE3; --ink: #0F1210; --ink2: #5A635C; --ink3: #8A9188;
+    --card: #FFFFFF; --card-shadow: 0 1px 2px rgba(20,24,20,.07), 0 18px 38px -24px rgba(20,24,20,.5);
+    --sep: rgba(20,24,20,.10); --track: rgba(20,24,20,.10);
+    --accent: #1E5236; --accent-ink: #1E5236; --ring-track: rgba(20,24,20,.10);
+    --advice-bg: #1E5236; --advice-t: #A9E8C2; --advice-p: #EAF6EE;
+    --tab-bg: rgba(255,255,255,.86); --tab-line: rgba(255,255,255,.95); --tab-ink: rgba(20,24,20,.45); --tab-on: #1E5236;
+    --sb: #0F1210;
+    background: var(--bg); color: var(--ink);
+    transition: background-color .5s cubic-bezier(.32,.72,0,1);
+  }
+  /* ---- 浓烈版深色令牌（近纯黑 + 实色卡 + 亮翡翠） ---- */
+  .phone.dark {
+    --bg: #07090A; --ink: #FFFFFF; --ink2: #A6B0A9; --ink3: #6E7873;
+    --card: #151918; --card-shadow: none;
+    --sep: rgba(255,255,255,.09); --track: rgba(255,255,255,.10);
+    --accent: #3EE9A8; --accent-ink: #3EE9A8; --ring-track: rgba(255,255,255,.10);
+    --advice-bg: rgba(62,233,168,.13); --advice-t: #3EE9A8; --advice-p: #D6E8DE;
+    --tab-bg: rgba(18,22,21,.94); --tab-line: rgba(255,255,255,.10); --tab-ink: #6E7873; --tab-on: #3EE9A8;
+    --sb: #FFFFFF;
+  }
+  .phone::before {
+    content: ''; position: absolute; inset: -30% -30% auto -30%; height: 62%; pointer-events: none;
+    opacity: 0; transition: opacity .6s ease;
+    background: radial-gradient(58% 62% at 50% 0%, rgba(62,233,168,.30), transparent 72%);
+  }
+  .phone.dark::before { opacity: 1; }
+  .phone .inner { position: absolute; inset: 0; padding: 0 20px; display: flex; flex-direction: column; transition: color .5s ease; }
+  /* 主题切换时所有元素平滑过渡 */
+  .phone .card, .phone .tabbar, .phone .bar, .phone .cups i, .phone .advice,
+  .phone .ring circle, .phone .eyebrow, .phone .head h1, .phone .rd .k, .phone .rd .v,
+  .phone .rd .v i, .phone .m-name, .phone .m-val, .phone .mini-h, .phone .mini-num,
+  .phone .mini-num i, .phone .mini-sub, .phone .tab, .phone .ring-center .n, .phone .ring-center .u {
+    transition: background-color .5s ease, color .5s ease, stroke .5s ease, border-color .5s ease, box-shadow .5s ease;
+  }
+
+  /* ---- 状态栏 ---- */
+  .statusbar { height: 54px; display: flex; align-items: center; justify-content: space-between; padding: 14px 12px 0; font-size: 15px; font-weight: 650; flex: none; color: var(--sb); }
+  .sb-right { display: flex; align-items: center; gap: 5px; }
+  .sb-bar { display: flex; align-items: flex-end; gap: 2px; }
+  .sb-bar i { width: 3px; background: currentColor; border-radius: 1px; display: block; }
+  .sb-bar i:nth-child(1){height:5px} .sb-bar i:nth-child(2){height:7px} .sb-bar i:nth-child(3){height:9px} .sb-bar i:nth-child(4){height:11px}
+  .sb-batt { width: 24px; height: 12px; border: 1.4px solid currentColor; border-radius: 3.5px; position: relative; }
+  .sb-batt::after { content:''; position: absolute; right: -3.5px; top: 3.4px; width: 2px; height: 4px; background: currentColor; border-radius: 0 1px 1px 0; }
+  .sb-batt i { position: absolute; inset: 1.6px; width: 70%; background: currentColor; border-radius: 1.6px; display: block; }
+
+  /* ---- 标题 ---- */
+  .head { padding: 14px 4px 18px; flex: none; }
+  .eyebrow { font-size: 13px; font-weight: 500; color: var(--ink2); margin-bottom: 5px; }
+  .head h1 { font-size: 34px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1; color: var(--ink); }
+  .stack { display: flex; flex-direction: column; gap: 12px; }
+  .card { border-radius: 22px; padding: 18px; background: var(--card); box-shadow: var(--card-shadow); border: 1px solid transparent; }
+  .phone.dark .card { border-color: rgba(255,255,255,.09); }
+
+  /* ---- 环卡 ---- */
+  .ring-card { display: flex; align-items: center; gap: 20px; padding: 20px 18px; }
+  .phone.dark .ring-card { box-shadow: 0 28px 70px -34px rgba(62,233,168,.55); }
+  .ring-box { position: relative; width: 132px; height: 132px; flex: none; }
+  .ring { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .ring circle { fill: none; stroke-linecap: round; }
+  .ring .track { stroke-width: 12; stroke: var(--ring-track); }
+  .ring .fill { stroke-width: 12; stroke: var(--accent); stroke-dasharray: 364; stroke-dashoffset: 96; }
+  .phone.dark .ring .fill { filter: drop-shadow(0 0 11px rgba(62,233,168,.7)); }
+  .ring-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .ring-center .n { font-size: 34px; font-weight: 700; letter-spacing: -.03em; font-variant-numeric: tabular-nums; line-height: 1; color: var(--ink); }
+  .ring-center .u { font-size: 11px; font-weight: 500; margin-top: 3px; letter-spacing: .05em; color: var(--ink3); }
+  .ring-data { flex: 1; display: flex; flex-direction: column; gap: 11px; }
+  .rd { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .rd .k { font-size: 13px; color: var(--ink2); }
+  .rd .v { font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; color: var(--ink); }
+  .rd .v i { font-style: normal; font-size: 11px; font-weight: 500; margin-left: 2px; color: var(--ink3); }
+
+  /* ---- 三素 ---- */
+  .macros { display: flex; flex-direction: column; gap: 13px; }
+  .m-row { display: flex; align-items: center; gap: 12px; }
+  .m-name { font-size: 13px; width: 42px; flex: none; color: var(--ink2); }
+  .bar { flex: 1; height: 7px; border-radius: 99px; overflow: hidden; background: var(--track); }
+  .bar i { display: block; height: 100%; border-radius: 99px; }
+  .m-val { font-size: 12.5px; font-variant-numeric: tabular-nums; width: 66px; text-align: right; flex: none; color: var(--ink2); }
+
+  /* ---- 建议 ---- */
+  .advice { background: var(--advice-bg); box-shadow: none; }
+  .advice .t { font-size: 13px; font-weight: 650; margin-bottom: 6px; color: var(--advice-t); }
+  .advice p { font-size: 13.5px; line-height: 1.55; color: var(--advice-p); }
+
+  /* ---- 双列 ---- */
+  .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .mini { padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+  .mini-h { font-size: 12.5px; font-weight: 600; color: var(--ink2); }
+  .mini-num { font-size: 26px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1; color: var(--ink); }
+  .mini-num i { font-style: normal; font-size: 12px; font-weight: 500; margin-left: 3px; color: var(--ink3); }
+  .mini-sub { font-size: 11.5px; color: var(--ink3); }
+  .cups { display: flex; gap: 4px; margin-top: 2px; }
+  .cups i { width: 100%; height: 16px; border-radius: 5px; display: block; background: var(--track); }
+  .cups i.on { background: var(--accent); }
+  .phone.dark .cups i.on { background: linear-gradient(180deg,#6EE7B7,#34D399); box-shadow: 0 0 8px rgba(52,211,153,.4); }
+
+  /* ---- TabBar ---- */
+  .tabbar {
+    position: absolute; left: 18px; right: 18px; bottom: 22px; height: 62px; border-radius: 99px;
+    display: flex; align-items: center; justify-content: space-around;
+    background: var(--tab-bg); border: 1px solid var(--tab-line);
+    backdrop-filter: blur(22px) saturate(1.6); -webkit-backdrop-filter: blur(22px) saturate(1.6);
+    box-shadow: 0 10px 32px -12px rgba(0,0,0,.45);
+  }
+  .tab { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 10.5px; font-weight: 500; color: var(--tab-ink); }
+  .tab.on { color: var(--tab-on); }
+  .tab .ic { font-size: 18px; line-height: 1; }
+
+  /* ================= 交互演示区 ================= */
+  .demo { max-width: 900px; margin: 40px auto 0; padding: 0 20px; }
+  .demo h2 { font-size: 15px; font-weight: 650; margin-bottom: 6px; }
+  .demo .sub { font-size: 12.5px; color: #7B857D; margin-bottom: 16px; }
+  .demo-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+  .demo-box {
+    background: rgba(255,255,255,.045); border: 1px solid rgba(255,255,255,.08); border-radius: 18px;
+    padding: 18px; font-size: 13.5px; color: #C6CDC7; line-height: 1.6;
+  }
+  .demo-box b { color: #6EE7B7; font-weight: 600; }
+  .demo-cta {
+    margin-top: 12px; padding: 10px 18px; border-radius: 99px; border: 1px solid rgba(110,231,183,.34);
+    background: rgba(52,211,153,.12); color: #6EE7B7; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer;
+    transition: all .25s ease;
+  }
+  .demo-cta:hover { background: rgba(52,211,153,.2); }
+  /* 左滑演示行 */
+  .swipe-row {
+    position: relative; margin-top: 12px; border-radius: 14px; overflow: hidden;
+    background: rgba(255,255,255,.06); height: 62px;
+  }
+  .swipe-del {
+    position: absolute; inset: 0 0 0 auto; width: 92px; display: flex; align-items: center; justify-content: center;
+    background: #E5484D; color: #fff; font-size: 13px; font-weight: 600;
+  }
+  .swipe-face {
+    position: absolute; inset: 0; display: flex; align-items: center; gap: 10px; padding: 0 14px;
+    background: #22262B; color: #E8EBE6; font-size: 13.5px; cursor: grab;
+    transition: transform .3s cubic-bezier(.32,.72,0,1); touch-action: pan-y;
+  }
+  .swipe-face .dot { width: 34px; height: 34px; border-radius: 10px; background: rgba(255,255,255,.1); display: flex; align-items: center; justify-content: center; font-size: 17px; }
+
+  /* 抽屉演示 */
+  .drawer-mask {
+    position: fixed; inset: 0; background: rgba(0,0,0,.5); opacity: 0; pointer-events: none;
+    transition: opacity .3s ease; z-index: 90;
+  }
+  .drawer-mask.on { opacity: 1; pointer-events: auto; }
+  .drawer {
+    position: fixed; left: 50%; transform: translate(-50%, 105%); bottom: 0; width: min(430px, 100%); z-index: 100;
+    background: #171A1F; border: 1px solid rgba(255,255,255,.09); border-bottom: 0;
+    border-radius: 30px 30px 0 0; padding: 10px 22px 34px;
+    transition: transform .42s cubic-bezier(.32,.72,0,1); will-change: transform;
+  }
+  .drawer.on { transform: translate(-50%, 0); }
+  .drawer .grab { width: 46px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.22); margin: 0 auto 16px; cursor: grab; }
+  .drawer h3 { font-size: 17px; font-weight: 650; margin-bottom: 4px; }
+  .drawer .d-sub { font-size: 12.5px; color: #7B857D; margin-bottom: 16px; }
+  .drawer .d-item { padding: 13px 0; border-top: 1px solid rgba(255,255,255,.07); font-size: 14px; color: #C6CDC7; }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <span class="title">食光 · 主题方案 <b>预览</b></span>
+  <div class="seg" id="seg">
+    <button data-mode="ios" class="on">iOS 浅色</button>
+    <button data-mode="dark">深色数据感</button>
+    <button data-mode="both">并排对比</button>
+  </div>
+  <span class="hint">点按钮切换 · 并排可同时看两套</span>
+</div>
+
+<div class="stage" id="stage"></div>
+
+<div class="demo">
+  <h2>顺手做了两个新交互的demo</h2>
+  <div class="sub">主题定了之后，这类手势会全部接进 App 里</div>
+  <div class="demo-grid">
+    <div class="demo-box">
+      <b>底部抽屉</b>：手指按住往下拖就能关，跟手移动、松手按速度判定回弹或关闭。
+      <div><button class="demo-cta" id="openDrawer">点我打开抽屉</button></div>
+      <div style="margin-top:10px;font-size:12px;color:#767F78">打开后可按住灰色把手往拖下试</div>
+    </div>
+    <div class="demo-box">
+      <b>卡片左滑</b>：往左滑露出删除按钮，松手吸附。
+      <div class="swipe-row" id="swipeRow">
+        <div class="swipe-del">删除</div>
+        <div class="swipe-face" id="swipeFace"><span class="dot">🍚</span>米饭 · 150g · 174 kcal</div>
+      </div>
+      <div style="margin-top:10px;font-size:12px;color:#767F78">用鼠标往左拖试试</div>
+    </div>
+  </div>
+</div>
+
+<div class="drawer-mask" id="drawerMask"></div>
+<div class="drawer" id="drawer">
+  <div class="grab" id="drawerGrab"></div>
+  <h3>记一笔 · 午餐</h3>
+  <div class="d-sub">这是新交互的样例：拖拽跟手 + 速度判定关闭</div>
+  <div class="d-item">🍚 米饭 · 1 碗 150g</div>
+  <div class="d-item">🍗 鸡腿 · 1 个 105g</div>
+  <div class="d-item">🥬 清炒青菜 · 1 份 120g</div>
+</div>
+
+<script>
+/* ---------------- 手机内容模板 ---------------- */
+function phoneHTML() {
+  return `
+  <div class="inner">
+    <div class="statusbar"><span>9:41</span>
+      <span class="sb-right"><span class="sb-bar"><i></i><i></i><i></i><i></i></span><span class="sb-batt"><i></i></span></span>
+    </div>
+    <div class="head">
+      <p class="eyebrow">9月14日 · 星期一</p>
+      <h1>今日</h1>
+    </div>
+    <div class="stack">
+      <div class="card ring-card">
+        <div class="ring-box">
+          <svg class="ring" viewBox="0 0 140 140">
+            <circle class="track" cx="70" cy="70" r="58"/>
+            <circle class="fill" cx="70" cy="70" r="58"/>
+          </svg>
+          <div class="ring-center"><span class="n">1,880</span><span class="u">还可摄入 kcal</span></div>
+        </div>
+        <div class="ring-data">
+          <div class="rd"><span class="k">目标</span><span class="v">1,975 <i>kcal</i></span></div>
+          <div class="rd"><span class="k">已摄入</span><span class="v">95 <i>kcal</i></span></div>
+          <div class="rd"><span class="k">运动消耗</span><span class="v">0 <i>kcal</i></span></div>
+        </div>
+      </div>
+      <div class="card macros">
+        <div class="m-row"><span class="m-name">碳水</span><div class="bar"><i style="width:32%;background:linear-gradient(90deg,#F5B03F,#E08A12)"></i></div><span class="m-val">79/247g</span></div>
+        <div class="m-row"><span class="m-name">蛋白质</span><div class="bar"><i style="width:14%;background:linear-gradient(90deg,#F0735E,#D6402A)"></i></div><span class="m-val">17/123g</span></div>
+        <div class="m-row"><span class="m-name">脂肪</span><div class="bar"><i style="width:11%;background:linear-gradient(90deg,#67B6E0,#2E7FB8)"></i></div><span class="m-val">6/55g</span></div>
+      </div>
+      <div class="card advice">
+        <div class="t">每日建议</div>
+        <p>蛋白质还差 106g，晚餐加一份鱼虾或豆制品吧</p>
+      </div>
+      <div class="duo">
+        <div class="card mini">
+          <span class="mini-h">喝水</span>
+          <span class="mini-num">3<i>/8 杯</i></span>
+          <div class="cups"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div>
+        </div>
+        <div class="card mini">
+          <span class="mini-h">运动</span>
+          <span class="mini-num">285<i>kcal</i></span>
+          <span class="mini-sub">跑步 5 km</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="tabbar">
+    <div class="tab on"><span class="ic">◉</span>首页</div>
+    <div class="tab"><span class="ic">＋</span>记录</div>
+    <div class="tab"><span class="ic"></span>报告</div>
+    <div class="tab"><span class="ic">☺</span>我的</div>
+  </div>`;
+}
+
+/* ---------------- 渲染舞台 ---------------- */
+const stage = document.getElementById('stage');
+
+function makeCol(label, sub, dark, tag) {
+  const col = document.createElement('div');
+  col.className = 'col';
+  col.dataset.tag = tag;
+  col.innerHTML = `<div class="col-label">${label}<span>${sub}</span></div>
+    <div class="phone ${dark ? 'dark' : ''}">${phoneHTML()}</div>`;
+  return col;
+}
+
+let mode = 'ios';
+function render() {
+  stage.innerHTML = '';
+  if (mode === 'ios') {
+    stage.appendChild(makeCol('方案 2 · iOS 原生感（浅色）', '纯白卡 / 系统绿 / 大标题 · 白天记录最清晰', false, 'a'));
+  } else if (mode === 'dark') {
+    stage.appendChild(makeCol('方案 3 的深色态 · 深色数据感', '深墨底 / 玻璃卡 / 翡翠辉光 · 夜里看数据高级', true, 'b'));
+  } else {
+    stage.appendChild(makeCol('浅色态', 'iOS 原生感', false, 'a'));
+    stage.appendChild(makeCol('深色态', '双主题的另一半', true, 'b'));
+  }
+}
+
+document.getElementById('seg').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  mode = b.dataset.mode;
+  [...e.currentTarget.querySelectorAll('button')].forEach(x => x.classList.toggle('on', x === b));
+  render();
+});
+render();
+
+/* ---------------- 抽屉手势 demo ---------------- */
+const drawer = document.getElementById('drawer');
+const mask = document.getElementById('drawerMask');
+const grab = document.getElementById('drawerGrab');
+let dragging = false, startY = 0, deltaY = 0, startT = 0;
+
+function openDrawer() { drawer.classList.add('on'); mask.classList.add('on'); drawer.style.transform = ''; }
+function closeDrawer(instant) {
+  drawer.classList.remove('on'); mask.classList.remove('on');
+  if (instant) drawer.style.transform = '';
+}
+document.getElementById('openDrawer').addEventListener('click', openDrawer);
+mask.addEventListener('click', () => closeDrawer());
+
+function ptY(e) { return e.touches ? e.touches[0].clientY : e.clientY; }
+function dragStart(e) {
+  dragging = true; startY = ptY(e); deltaY = 0; startT = Date.now();
+  drawer.style.transition = 'none';
+}
+function dragMove(e) {
+  if (!dragging) return;
+  deltaY = Math.max(0, ptY(e) - startY);
+  drawer.style.transform = `translate(-50%, ${deltaY}px)`;
+  if (e.cancelable) e.preventDefault();
+}
+function dragEnd() {
+  if (!dragging) return;
+  dragging = false;
+  drawer.style.transition = '';
+  const v = deltaY / Math.max(1, Date.now() - startT);   // px/ms
+  if (deltaY > 110 || v > 0.55) closeDrawer(); else drawer.style.transform = '';
+}
+[grab, drawer].forEach(el => {
+  el.addEventListener('touchstart', dragStart, { passive: true });
+  el.addEventListener('mousedown', dragStart);
+});
+window.addEventListener('touchmove', dragMove, { passive: false });
+window.addEventListener('mousemove', dragMove);
+window.addEventListener('touchend', dragEnd);
+window.addEventListener('mouseup', dragEnd);
+
+/* ---------------- 左滑 demo ---------------- */
+const face = document.getElementById('swipeFace');
+let swDragging = false, swStartX = 0, swDx = 0, swOpen = false;
+const OPEN_X = -92;
+function swPaint(x, anim) {
+  face.style.transition = anim ? '' : 'none';
+  face.style.transform = `translateX(${x}px)`;
+}
+function swStart(e) { swDragging = true; swStartX = (e.touches ? e.touches[0].clientX : e.clientX) - swDx; }
+function swMove(e) {
+  if (!swDragging) return;
+  const x = (e.touches ? e.touches[0].clientX : e.clientX);
+  swDx = Math.min(0, Math.max(OPEN_X, x - swStartX));
+  swPaint(swDx, false);
+  if (e.cancelable) e.preventDefault();
+}
+function swEnd() {
+  if (!swDragging) return;
+  swDragging = false;
+  swOpen = swDx < OPEN_X / 2;
+  swDx = swOpen ? OPEN_X : 0;
+  swPaint(swDx, true);
+}
+face.addEventListener('touchstart', swStart, { passive: true });
+face.addEventListener('mousedown', swStart);
+window.addEventListener('touchmove', swMove, { passive: false });
+window.addEventListener('mousemove', swMove);
+window.addEventListener('touchend', swEnd);
+window.addEventListener('mouseup', swEnd);
+</script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "name": "shiguang-health-diet",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "食光 · 健康饮食 App（WebView 壳 + 本地 web 资源 + CloudBase 云函数）",
+  "scripts": {
+    "test": "node --test",
+    "lint": "eslint js tests scripts",
+    "format": "prettier --write \"js/**/*.js\" \"tests/**/*.js\" \"css/**/*.css\"",
+    "sync:assets": "node scripts/sync-web-assets.mjs"
+  },
+  "devDependencies": {
+    "eslint": "^9.0.0",
+    "prettier": "^3.3.0"
+  }
+}

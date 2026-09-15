@@ -63,15 +63,24 @@ body {
   .phone { width: 100vw; height: 100vh; border: 0; border-radius: 0; }
 }
 
-/* ---------- 底部导航 TabBar · 悬浮玻璃胶囊 + 滑动指示 ---------- */
+/* ---------- 底部导航 TabBar · 不透明纯色 + 顶部发丝分隔 + 滚动平滑显隐 ---------- */
 .tabbar {
   position: absolute; left: 14px; right: 14px; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); z-index: 30;
   height: 64px; padding: 6px;
-  background: var(--glass); backdrop-filter: var(--blur);
-  border: 1px solid var(--glass-line);
+  background: var(--surface);                       /* 完全不透明，彻底遮挡后方滚动内容 */
+  border: 1px solid var(--hairline);
+  border-top: 1px solid var(--line);                /* 顶部边框与内容区做视觉分隔 */
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-float);
+  box-shadow: 0 -6px 24px -8px rgba(28,36,24,.10), var(--shadow-float);   /* 淡阴影 + 悬浮投影 */
   display: flex; align-items: stretch;
+  transition: transform .36s var(--ease), opacity .36s var(--ease);       /* 平滑显隐过渡 */
+  will-change: transform, opacity;
+}
+/* 滚动向上滑动时：导航栏平滑向下隐藏（淡出 + 下移） */
+.tabbar.tabbar-hidden {
+  transform: translateY(calc(100% + 24px));
+  opacity: 0;
+  pointer-events: none;
 }
 .tab-glide {
   position: absolute; top: 6px; bottom: 6px; left: 0; width: 25%;
@@ -87,13 +96,15 @@ body {
 .tabbar .tab.active { color: var(--primary-deep); font-weight: 600; }
 .tabbar .tab .icon svg { width: 22px; height: 22px; }
 
-/* ---------- 首页 · Bento Grid（Aceternity BentoGrid 移植：大卡优先+双列小组件） ---------- */
+/* ---------- 首页 · 单列全宽卡片 ----------
+ * 原双列 bento 在 390px 真机上每列仅 ~167px，水卡/运动卡内容放不下导致
+ * 文字换行、字号观感“变形”；改为单列全宽，恢复组件默认可读尺寸。 */
 #screen-home .screen-content {
-  display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4);
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-4);
 }
-#screen-home .screen-content > * { grid-column: 1 / -1; margin-top: 0; }
-#screen-home .water-card { grid-column: 1 / 2; display: flex; flex-direction: column; justify-content: space-between; }
-#screen-home .exercise-card { grid-column: 2 / 3; display: flex; flex-direction: column; }
+#screen-home .screen-content > * { grid-column: 1 / -1; margin-top: 0; min-width: 0; }
+#screen-home .water-card { display: flex; flex-direction: column; min-width: 0; }
+#screen-home .exercise-card { display: flex; flex-direction: column; min-width: 0; }
 /* 餐盘卡：Spotlight 光晕 + 渐变发丝边框（Aceternity spotlight/border） */
 .plate-card { position: relative; overflow: hidden; border: 1px solid transparent;
   background: linear-gradient(var(--surface), var(--surface)) padding-box,
@@ -105,16 +116,6 @@ body {
   pointer-events: none;
 }
 .plate-card > * { position: relative; }
-/* 半列小组件内的紧凑尺寸 */
-#screen-home .water-cup { width: 46px; height: 58px; border-radius: 10px 10px 16px 16px; }
-#screen-home .water-cup .ml { font-size: 9px; }
-#screen-home .water-num b { font-size: 30px; }
-#screen-home .water-head { gap: var(--sp-2); }
-#screen-home .exercise-card .food-item { padding: var(--sp-2) 0; gap: var(--sp-2); }
-#screen-home .exercise-card .food-item .thumb { width: 32px; height: 32px; font-size: 16px; border-radius: 10px; }
-#screen-home .exercise-card .food-item .name { font-size: var(--text-sm); }
-#screen-home .exercise-card .food-item .kcal { font-size: var(--text-sm); }
-#screen-home .exercise-card .card-title { font-size: var(--text-sm); }
 /* 餐次卡 Glare（Aceternity Glare Card：按压时光泽扫过） */
 .meal-card { position: relative; overflow: hidden; }
 .meal-card::after {
@@ -224,7 +225,11 @@ body.lock-scroll .screen { overflow: hidden; }
   width: 30px; height: 30px; background: var(--surface-soft); border-radius: 10px;
   display: inline-flex; align-items: center; justify-content: center; font-size: 15px;
   margin-right: var(--sp-2); vertical-align: -8px;
+  color: var(--primary);   /* 餐次图标跟随主题色（SVG 版用） */
+  overflow: hidden;
 }
+.meal-section .sec-head .sec-emoji svg { width: 18px; height: 18px; display: block; }
+.meal-section .sec-head .sec-emoji img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .meal-section .sec-head .sum {
   font-size: var(--text-xs); color: var(--ink-3); font-weight: 400;
   background: var(--surface-soft); padding: 2px 10px; border-radius: var(--radius-full);
@@ -237,10 +242,34 @@ body.lock-scroll .screen { overflow: hidden; }
   z-index: 6; display: none; gap: var(--sp-3);
   padding: var(--sp-3) 20px calc(var(--sp-3) + 6px);
   background: linear-gradient(to top, var(--bg) 72%, transparent);
+  transition: transform .36s var(--ease), opacity .36s var(--ease);   /* 与 tabbar 同步显隐 */
+  will-change: transform, opacity;
 }
 .add-row.show { display: flex; }
+/* 记录页底部操作栏随 tabbar 一起平滑下隐（保持视觉联动） */
+.add-row.add-row-hidden { transform: translateY(calc(100% + 24px)); opacity: 0; pointer-events: none; }
 #screen-record .screen-content { padding-bottom: 150px; }   /* 给固定操作栏让位，避免遮住最后一张卡 */
 .add-row .btn-primary { flex: 1; box-shadow: var(--shadow-float); }
+.add-row .btn-soft { flex: 0 0 auto; padding: 0 18px; }
+
+/* 记录页空态：全天无记录时的统一卡片（替代四个重复空卡片，减少视觉噪音） */
+.day-empty {
+  background: var(--surface); border: 1px solid var(--hairline); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card); padding: 46px 24px; text-align: center; margin-top: var(--sp-3);
+}
+.day-empty .art { font-size: 46px; opacity: .45; margin-bottom: 16px; line-height: 1; }
+.day-empty .t { font-size: var(--text-md); font-weight: 600; color: var(--ink); }
+.day-empty .s { font-size: var(--text-sm); color: var(--ink-3); margin-top: 7px; line-height: 1.6; }
+
+/* 空餐组：细虚线按钮，点一下即为该餐次记一笔 */
+.meal-section-empty { padding-bottom: var(--sp-3); }
+.meal-empty {
+  display: block; width: 100%; margin-top: var(--sp-2); padding: 11px;
+  border: 1px dashed var(--line); border-radius: var(--radius-md);
+  background: none; color: var(--ink-3); font-family: inherit; font-size: var(--text-sm);
+  transition: background .2s var(--ease), color .2s var(--ease);
+}
+.meal-empty:active { background: var(--surface-soft); color: var(--ink-2); }
 /* 运动弹层：类型网格卡 + 消耗预览大数字 */
 .ex-chips {
   display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--sp-2);
@@ -290,17 +319,11 @@ body.lock-scroll .screen { overflow: hidden; }
 }
 .water-goal-edit { margin-top: 2px; font-size: var(--text-xs); color: var(--primary); }
 .water-goal-edit:hover { color: var(--primary-deep); }
-/* 半列饮水组件：目标行拆两行，避免悬挂标点 */
-#screen-home .water-goal-edit { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; font-size: 10px; line-height: 1.4; }
-#screen-home .water-goal-edit .wge-hint { opacity: .65; font-size: 9px; }
-#screen-home .water-foot { flex-direction: column; align-items: flex-start; gap: 0; margin-top: var(--sp-2); }
-#screen-home .water-foot .wh-sub { font-size: 9px; opacity: .7; }
-#screen-home .water-foot .water-undo { margin-top: 4px; }
-/* 半列运动组件：单行紧凑行 */
+/* 全宽运动卡：行内名称弹性截断防溢出，其余用组件默认舒适尺寸 */
+#screen-home .exercise-card .food-item { min-width: 0; }
+#screen-home .exercise-card .food-item .info { min-width: 0; flex: 1 1 auto; }
 #screen-home .exercise-card .food-item .info .name { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#screen-home .exercise-card .food-item .meta { display: inline !important; white-space: nowrap; font-size: 9px; }
-#screen-home .exercise-card .food-item .kcal { white-space: nowrap; font-size: var(--text-xs); }
-#screen-home .exercise-card .food-item .del { padding: 2px; font-size: 12px; }
+#screen-home .exercise-card .food-item .meta { display: inline !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 #screen-home .exercise-card .card-title .more {
   background: var(--primary-soft); color: var(--primary-deep);
   padding: 3px 8px; border-radius: 999px; font-size: 9px; font-weight: 600; white-space: nowrap;
@@ -351,7 +374,9 @@ body.lock-scroll .screen { overflow: hidden; }
 .stepper-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .stepper-input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 
-.water-foot { display: flex; align-items: center; justify-content: space-between; margin-top: var(--sp-2); }
+.water-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); margin-top: var(--sp-2); }
+/* 底部提示为脚注级文字：用 text-sm 避免在卡内换行观感“变形” */
+.water-foot .hint { font-size: var(--text-sm); color: var(--ink-3); }
 .water-undo {
   font-size: var(--text-xs); color: var(--ink-3);
   text-decoration: underline dotted; text-underline-offset: 3px;

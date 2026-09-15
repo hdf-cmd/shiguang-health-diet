@@ -44,10 +44,11 @@
   --blur:          saturate(1.5) blur(20px);
 
   /* ---------- 字体 ----------
-   * 数字与大标题：Fraunces 有机衬线（回退 Georgia）；正文：苹方/雅黑。
-   * 字阶拉开： eyebrow 级小字 + 46px 展示数字，形成编辑感对比 */
-  --font-display: "Fraunces", "Georgia", serif;
-  --font-body: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+   * 数字全局统一：展示数字与正文数字用同一无衬线栈（Android 无 Fraunces/Georgia，
+   * 旧衬线回退观感差），依平台取 Segoe UI / Roboto / Helvetica Neue，配合 tabular-nums；
+   * CJK 字符自动落到萍方/雅黑/Noto Sans SC，不受影响。 */
+  --font-display: "Segoe UI", "Roboto", "Helvetica Neue", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  --font-body: "Segoe UI", "Roboto", "Helvetica Neue", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
 
   --text-xs:  11px;
   --text-sm:  13px;

@@ -11,3 +11,9 @@ HealthyDiet/local.properties
 
 # 日志
 *.log
+
+# 依赖
+node_modules/
+
+# 云端私钥（Custom Login 凭证）严禁入库；本地保留供部署
+**/tcb_custom_login.json
