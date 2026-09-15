@@ -831,17 +831,58 @@ function renderWeightTrend(w) {
     $('#weight-delta').textContent = '';
     return;
   }
-  const points = w.points.length === 1 ? [w.points[0], w.points[0]] : w.points;   // 单点复制成两点画线，防除零
-  const min = Math.min(...points) - .4, max = Math.max(...points) + .4;
-  const pts = points.map((v, i) =>
-    [20 + i * (280 / (points.length - 1)), 80 - (v - min) / (max - min) * 64]);
+  const raw = w.points;
+  const labels = w.labels || [];
+  const single = raw.length === 1;   // 只有一天数据时画居中单点：复制成两端两点会看成"两天持平"
+  const pts0 = single ? [raw[0]] : raw;
+  const n = pts0.length;
+
+  /* 值域：数据范围外扩，且保证最小可视跨度 1kg（避免微波动被放大成"过山车"），刻度对齐 0.5 */
+  let hi = Math.max(...pts0), lo = Math.min(...pts0);
+  if (hi - lo < 1) { const c = (hi + lo) / 2; hi = c + 0.5; lo = c - 0.5; }
+  hi = Math.ceil(hi * 2) / 2; lo = Math.floor(lo * 2) / 2;
+
+  /* 坐标系：左侧 36px 放刻度文字，底部 24px 放日期 */
+  const X0 = 44, X1 = 306, Y0 = 16, Y1 = 104;   // X1 右端留 14px 给末点日期（居中半宽约 12px）；X0 与刻度文字偏移共同决定首点数值的左侧间距
+  const xOf = i => (n === 1 ? (X0 + X1) / 2 : X0 + i * (X1 - X0) / (n - 1));
+  const yOf = v => Y1 - (v - lo) / (hi - lo) * (Y1 - Y0);
+
+  /* Y 轴：4 条网格线 + 刻度值 */
+  const step = (hi - lo) / 3;
+  let grid = '';
+  for (let i = 0; i < 4; i++) {
+    const v = hi - step * i, y = yOf(v);
+    grid += `<line x1="${X0}" y1="${y.toFixed(1)}" x2="${X1}" y2="${y.toFixed(1)}" stroke="var(--line)" stroke-width="0.7"${i === 3 ? '' : ' stroke-dasharray="3 4"'}/>` +
+            `<text x="${X0 - 10}" y="${(y + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--ink-3)">${v.toFixed(1)}</text>`;
+  }
+
+  const pts = pts0.map((v, i) => [xOf(i), yOf(v)]);
   const path = pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)}`).join(' ');
+  const area = `${path} L${pts[n - 1][0].toFixed(1)} ${Y1} L${pts[0][0].toFixed(1)} ${Y1} Z`;
+
+  /* 数据点：圆点 + 上方数值；末点高亮。首尾点数值改锚点，避免与 Y 轴刻度/右边界重叠 */
+  const dots = pts.map(([x, y], i) => {
+    const last = i === n - 1;
+    const v = raw[Math.min(i, raw.length - 1)];
+    const anchor = i === 0 && !single ? 'start' : last && !single ? 'end' : 'middle';
+    const tx = i === 0 && !single ? x - 1 : last && !single ? x + 1 : x;
+    return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${last ? 4.2 : 3}" fill="${last ? 'var(--primary)' : '#fff'}" stroke="var(--primary)" stroke-width="1.8"/>` +
+           `<text x="${tx.toFixed(1)}" y="${(y - 8).toFixed(1)}" text-anchor="${anchor}" font-size="9.5" font-weight="600" fill="${last ? 'var(--primary-deep)' : 'var(--ink-2)'}">${v.toFixed(1)}</text>`;
+  }).join('');
+
+  /* X 轴：日期（与数据点一一对应；单点态只有 1 个日期） */
+  const xLabels = pts.map(([x], i) => labels[i]
+    ? `<text x="${x.toFixed(1)}" y="${Y1 + 16}" text-anchor="middle" font-size="9.5" font-weight="500" fill="var(--ink-2)">${labels[i]}</text>` : '').join('');
+
   $('#weight-svg').innerHTML = `
-    <path d="${path}" fill="none" stroke="var(--primary)" stroke-width="2.5" stroke-linecap="round"/>
-    ${pts.map(([x, y], i) => `<circle cx="${x}" cy="${y}" r="${i === pts.length - 1 ? 5 : 3.5}"
-      fill="${i === pts.length - 1 ? 'var(--primary)' : '#fff'}" stroke="var(--primary)" stroke-width="2"/>`).join('')}`;
-  const delta = (points.at(-1) - points[0]).toFixed(1);
-  $('#weight-delta').textContent = `当前 ${points.at(-1)} kg · 本周 ${delta > 0 ? '+' : ''}${delta} kg`;
+    <path d="${area}" fill="var(--primary)" opacity="0.08"/>
+    ${grid}
+    <path d="${path}" fill="none" stroke="var(--primary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    ${dots}
+    ${xLabels}`;
+
+  const delta = (raw.at(-1) - raw[0]).toFixed(1);
+  $('#weight-delta').textContent = `当前 ${raw.at(-1)} kg · 本周 ${delta > 0 ? '+' : ''}${delta} kg`;
   $('#weight-delta').style.color = delta <= 0 ? 'var(--primary)' : 'var(--warn)';
 }
 
