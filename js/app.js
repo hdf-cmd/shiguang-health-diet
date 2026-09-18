@@ -422,6 +422,10 @@ function renderWater() {
     `repeating-linear-gradient(90deg, transparent 0, transparent calc(${seg}% - 2px), var(--surface) calc(${seg}% - 2px), var(--surface) ${seg}%)`;
   $('#water-hint').innerHTML = reached ? '目标已达成 🎉' : `已喝 ${n} 杯 · 每杯 ${WATER_CUP_ML}ml`;
   $('#water-undo').style.visibility = n > 0 ? 'visible' : 'hidden';
+  // 同步「喝水进度」常驻通知（Android 16 上以灵动岛样式呈现；旧机型/桌面端无此接口则跳过）
+  if (state.date === todayIso() && remindAvail()) {
+    try { window.SGNative.updateWaterProgress(n, Math.round(goal / WATER_CUP_ML)); } catch (e) { /* 接口不存在时忽略 */ }
+  }
 }
 
 async function drinkOneCup() {
@@ -982,7 +986,33 @@ $('#remind-test').addEventListener('click', () => {
   if (remindAvail()) { window.SGNative.testNotify(); toast('测试通知已发，看通知栏'); }
   else toast('系统通知仅 App 安装包内支持');
 });
+$('#remind-water-test').addEventListener('click', () => {
+  if (!remindAvail()) { toast('灵动岛提醒仅 App 安装包内支持'); return; }
+  // 走的是和真实到点同一条链路（同一张常驻卡、同文案、同样响铃），只是立刻发
+  const ok = window.SGNative.testWaterReminder();
+  toast(ok ? '已发出：看状态栏胶囊 / 通知栏' : '先把上面的提醒开关打开');
+});
 renderRemindSwitch();
+
+/* 点击常驻卡/胶囊 → 回首页并定位到喝水卡（原生在页面加载完成或 onNewIntent 时调用） */
+window.SG_GOTO_WATER = function () {
+  let tries = 0;
+  const jump = () => {
+    const card = document.querySelector('#screen-home .water-card');
+    const bs = bsMap.get('screen-home');
+    // 冷启动时登录态与滚动实例可能还没就绪，短暂重试
+    if (!HealthAPI.isLoggedIn() || !card || !bs) {
+      if (++tries < 20) setTimeout(jump, 250);
+      return;
+    }
+    switchScreen('home');
+    bs.refresh();
+    bs.scrollToElement(card, 320, 0, -16);   // 留一点上边距，别顶到卡片
+    card.classList.add('flash');
+    setTimeout(() => card.classList.remove('flash'), 1700);
+  };
+  jump();
+};
 
 /* ============================================================
  * 头像上传：选图 → canvas 压缩 → 上传 → 刷新

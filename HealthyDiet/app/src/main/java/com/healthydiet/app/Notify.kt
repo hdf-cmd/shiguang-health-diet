@@ -1,6 +1,7 @@
 package com.healthydiet.app
 
 import android.app.AlarmManager
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -91,6 +92,9 @@ object Reminders {
     fun enabled(ctx: Context): Boolean =
         ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE).getBoolean(KEY_ON, false)
 
+    /** 测试用：取一条真实提醒文案，让测试发出来的通知与到点通知完全一致 */
+    fun sampleWaterText(): String = WATER_TEXTS.first()
+
     fun setEnabled(ctx: Context, on: Boolean) {
         ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE).edit().putBoolean(KEY_ON, on).apply()
         if (on) {
@@ -99,6 +103,7 @@ object Reminders {
         } else {
             cancel(ctx)
             cancelWater(ctx)
+            WaterProgress.cancel(ctx)
         }
     }
 
@@ -195,6 +200,7 @@ object Reminders {
             putExtra("title", "喝水提醒")
             putExtra("text", text)
             putExtra("nid", WATER_BASE_ID + i)
+            putExtra("isWater", true)
             putExtra("isLastWater", isLast)
         }
         return PendingIntent.getBroadcast(
@@ -215,13 +221,162 @@ object Reminders {
         String.format("%04d-%02d-%02d", c.get(Calendar.YEAR), c.get(Calendar.MONTH) + 1, c.get(Calendar.DAY_OF_MONTH))
 }
 
-/** 闹钟触发 → 发系统通知；喝水当日最后一响后链式排次日批次 */
+/* ---------- Android 16「灵动岛」喝水进度通知 ----------
+ * 用反射调用平台的 Notification.ProgressStyle（API 36 / Android 16 引入的进度型通知，
+ * 系统会把它提升到状态栏胶囊、锁屏与息屏显示）。反射写法让工程继续以 compileSdk 35 构建，
+ * 无需升级 AGP/SDK；低版本或任一步反射失败时自动退回普通常驻通知，不影响打卡功能。 */
+object WaterProgress {
+    private const val NOTIF_ID = 300
+    /* 旧 id sg_water_progress 建成了 IMPORTANCE_LOW，而渠道重要性创建后不可再改，故换新 id */
+    private const val CHANNEL_ID = "sg_water_live"
+    private const val PREF = "sg_prefs"
+    private const val KEY_CUPS = "water_cups"
+    private const val KEY_GOAL = "water_goal"
+    private const val KEY_DAY = "water_cups_day"
+    /* 前端还没同步过目标时的兜底（默认目标 1600ml ÷ 每杯 200ml） */
+    private const val DEFAULT_GOAL_CUPS = 8
+
+    fun ensureChannel(ctx: Context) {
+        val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
+        nm.deleteNotificationChannel("sg_water_progress")   // 清理上一版的静默渠道
+        if (nm.getNotificationChannel(CHANNEL_ID) == null) {
+            // HIGH 才能在到点时弹横幅并响铃；平时打卡刷新靠 onlyAlertOnce 保持安静
+            val ch = NotificationChannel(CHANNEL_ID, "喝水提醒（灵动岛）", NotificationManager.IMPORTANCE_HIGH)
+            ch.description = "到点提醒喝水；Android 16 上以灵动岛样式呈现并显示今日进度"
+            ch.setShowBadge(false)
+            nm.createNotificationChannel(ch)
+        }
+    }
+
+    /** 反射构造 ProgressStyle：仅 Android 16+ 且各步调用均成功时返回，否则 null（调用方退回普通通知） */
+    private fun progressStyle(progress: Int, total: Int): Notification.Style? {
+        if (android.os.Build.VERSION.SDK_INT < 36) return null
+        return try {
+            val segCls = Class.forName("android.app.Notification\$ProgressStyle\$Segment")
+            val segment = segCls.getConstructor(Int::class.javaPrimitiveType).newInstance(total)
+            val styleCls = Class.forName("android.app.Notification\$ProgressStyle")
+            styleCls.getConstructor().newInstance().let { style ->
+                styleCls.getMethod("setProgress", Int::class.javaPrimitiveType).invoke(style, progress)
+                styleCls.getMethod("setProgressSegments", java.util.List::class.java).invoke(style, listOf(segment))
+                // 让系统按“已完成/未完成”自动着色，避免依赖厂商配色差异
+                styleCls.getMethod("setStyledByProgress", Boolean::class.javaPrimitiveType).invoke(style, true)
+                style as Notification.Style
+            }
+        } catch (t: Throwable) {
+            null
+        }
+    }
+
+    /** 打卡进度变化时刷新；提醒开关关闭则撤下这张常驻卡 */
+    fun update(ctx: Context, cups: Int, goalCups: Int) {
+        save(ctx, cups, goalCups)
+        if (goalCups <= 0 || !Reminders.enabled(ctx)) { cancel(ctx); return }
+        // 卡片不存在（当天还没到过点）就不创建：打卡不该触发横幅响铃，弹出交给到点
+        if (!isShowing(ctx)) return
+        val done = cups >= goalCups
+        post(
+            ctx,
+            "今日喝水 $cups/$goalCups 杯",
+            if (done) "目标已达成 🎉" else "点一下记录下一杯",
+            cups, goalCups,
+            alert = false,
+            critical = if (done) "已达成" else "$cups/$goalCups 杯"
+        )
+    }
+
+    /** 到点提醒：把卡片刷成「要喝水啦」并出声 —— 横幅 + 响铃，Android 16 上同时点亮灵动岛胶囊 */
+    fun remind(ctx: Context, tip: String) {
+        if (!Reminders.enabled(ctx)) return
+        val p = ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE)
+        val day = today()
+        // 跨天后旧杯数作废（打卡才会写新值，到点这条只读）
+        val cups = if (p.getString(KEY_DAY, null) == day) p.getInt(KEY_CUPS, 0) else 0
+        val goal = p.getInt(KEY_GOAL, 0).takeIf { it > 0 } ?: DEFAULT_GOAL_CUPS
+        if (p.getString(KEY_DAY, null) != day) save(ctx, 0, goal)
+        post(ctx, "要喝水啦", "$tip（今日已喝 $cups/$goal 杯）", cups, goal, alert = true, critical = "要喝水啦")
+    }
+
+    fun cancel(ctx: Context) {
+        ctx.getSystemService(NotificationManager::class.java)?.cancel(NOTIF_ID)
+    }
+
+    /** 落盘当天进度：到点时刻 App 可能没在运行，卡片只能靠这份数据渲染 */
+    private fun save(ctx: Context, cups: Int, goalCups: Int) {
+        ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE).edit()
+            .putInt(KEY_CUPS, cups)
+            .putInt(KEY_GOAL, goalCups)
+            .putString(KEY_DAY, today())
+            .apply()
+    }
+
+    /** 反射调 setShortCriticalText（API 36）：状态栏胶囊上那行 ≤7 字摘要；机型不支持时忽略 */
+    private fun shortCritical(builder: Notification.Builder, text: String) {
+        if (android.os.Build.VERSION.SDK_INT < 36) return
+        try {
+            builder.javaClass.getMethod("setShortCriticalText", String::class.java).invoke(builder, text)
+        } catch (_: Throwable) {
+            // 老机型或该 API 缺失：胶囊退回显示标题，不影响卡片本身
+        }
+    }
+
+    private fun isShowing(ctx: Context): Boolean {
+        val nm = ctx.getSystemService(NotificationManager::class.java) ?: return false
+        return nm.activeNotifications.any { it.id == NOTIF_ID }
+    }
+
+    private fun today(): String {
+        val c = java.util.Calendar.getInstance()
+        return String.format("%04d-%02d-%02d", c.get(java.util.Calendar.YEAR), c.get(java.util.Calendar.MONTH) + 1, c.get(java.util.Calendar.DAY_OF_MONTH))
+    }
+
+    private fun post(ctx: Context, title: String, text: String, cups: Int, goalCups: Int, alert: Boolean, critical: String) {
+        ensureChannel(ctx)
+        val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
+        val pi = PendingIntent.getActivity(
+            ctx, 1,
+            Intent(ctx, MainActivity::class.java).apply {
+                action = MainActivity.ACTION_OPEN_WATER
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra(MainActivity.EXTRA_GOTO, MainActivity.GOTO_WATER)   // 点卡片直达喝水区块
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val builder = Notification.Builder(ctx, CHANNEL_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setContentIntent(pi)
+            .setOngoing(true)            // 常驻：进度型通知被系统提升为胶囊的前提
+            .setOnlyAlertOnce(!alert)    // 到点这条要出声，打卡刷新保持安静
+            .setColorized(true)          // 系统提升的硬条件：hasPromotableCharacteristics() 要求 colorized
+            .setShowWhen(false)
+        progressStyle(cups.coerceIn(0, goalCups), goalCups)?.let { builder.setStyle(it) }
+        shortCritical(builder, critical)
+        try {
+            nm.notify(NOTIF_ID, builder.build())
+        } catch (_: SecurityException) {
+            // 通知权限未授予：静默跳过
+        }
+    }
+}
+
+/* 关于「灵动岛/胶囊」：本卡按 Android 16 的官方标准写满了提升资格（常驻 + 进度样式 + colorized +
+ * 短文本），但系统侧目前对第三方应用一律不授权——AOSP 源码里 PreferencesHelper 的
+ * canHavePromotedNotifs 默认值就是 uiRichOngoing() 且注明"UI 做好前一律返回 false"，
+ * 设置应用里也没有任何授权入口（真机 realme 上验证确认）。所以这里不再放"去授权"的引导按钮：
+ * 没有可去的地方。将来系统开放该能力时，这套通知无需改动即会被提升为胶囊。 */
+
+/** 闹钟触发 → 发系统通知；喝水走常驻进度卡，三餐走独立通知；喝水当日最后一响后链式排次日批次 */
 class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         val title = intent.getStringExtra("title") ?: "食光提醒"
         val text = intent.getStringExtra("text") ?: "该记录饮食了"
         val id = intent.getIntExtra("nid", 101)
-        Notify.post(ctx, id, title, text)
+        if (intent.getBooleanExtra("isWater", false)) {
+            WaterProgress.remind(ctx, text)     // 到点刷新常驻卡：一声提醒只响一条，同时点亮胶囊
+        } else {
+            Notify.post(ctx, id, title, text)
+        }
         if (intent.getBooleanExtra("isLastWater", false) && Reminders.enabled(ctx)) {
             val tomorrow = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 1) }
             Reminders.scheduleWater(ctx, tomorrow)
@@ -254,6 +409,21 @@ class NativeBridge(private val ctx: Context) {
     @JavascriptInterface
     fun testNotify(): Boolean {
         Notify.post(ctx, 998, "食光测试通知", "看到这条说明系统通知工作正常 ✅ 点击可打开食光")
+        return true
+    }
+
+    /** 测试用：立刻发一条与真实到点完全一致的喝水提醒（同卡片/同文案/同样响铃），便于随时验机 */
+    @JavascriptInterface
+    fun testWaterReminder(): Boolean {
+        if (!Reminders.enabled(ctx)) return false
+        WaterProgress.remind(ctx, Reminders.sampleWaterText())
+        return true
+    }
+
+    /** 打卡后刷新「喝水进度」常驻通知（Android 16 上以灵动岛样式呈现；其他机型为普通常驻通知） */
+    @JavascriptInterface
+    fun updateWaterProgress(cups: Int, goalCups: Int): Boolean {
+        WaterProgress.update(ctx, cups, goalCups)
         return true
     }
 

@@ -26,6 +26,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var webView: WebView
     private var server: AssetServer? = null
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
+    /* 通知卡片点进来的落点；页面加载完成后再交给前端执行 */
+    private var pendingGoto: String? = null
 
     private val pickImage = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val callback = filePathCallback ?: return@registerForActivityResult
@@ -50,6 +52,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // Android 15+ 强制 edge-to-edge 会让 WebView 内容顶进状态栏；显式 fit 系统窗口避免重叠
         WindowCompat.setDecorFitsSystemWindows(window, true)
+        pendingGoto = intent.getStringExtra(EXTRA_GOTO)
         Notify.ensureChannel(this)
         // 已开启提醒时补排喝水随机闹钟（跨天/漏排自愈）
         if (Reminders.enabled(this)) Reminders.ensureWaterSchedule(this)
@@ -71,7 +74,15 @@ class MainActivity : ComponentActivity() {
             useWideViewPort = true
             loadWithOverviewMode = true
         }
-        webView.webViewClient = WebViewClient()
+        webView.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView?, url: String?) {
+                // 页面（含 ES module）执行完才能调前端函数，故在此转交点击落点
+                pendingGoto?.let { goto ->
+                    pendingGoto = null
+                    gotoSection(goto)
+                }
+            }
+        }
         // JS 桥接：window.SGNative（系统通知提醒开关/测试）
         webView.addJavascriptInterface(NativeBridge(this), "SGNative")
         // 支持 <input type=file> 选图（自定义头像上传）
@@ -99,6 +110,18 @@ class MainActivity : ComponentActivity() {
         webView.loadUrl("http://127.0.0.1:$PORT/index.html?v=${System.currentTimeMillis()}")
     }
 
+    /** App 已打开时再点通知卡片：singleTask 走这里，不重新加载页面、不丢当前状态 */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        intent.getStringExtra(EXTRA_GOTO)?.let { gotoSection(it) }
+    }
+
+    private fun gotoSection(target: String) {
+        if (target != GOTO_WATER) return
+        webView.evaluateJavascript("window.SG_GOTO_WATER && window.SG_GOTO_WATER()", null)
+    }
+
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         // 返回键回退网页历史，而不是直接退出
         if (keyCode == KeyEvent.KEYCODE_BACK && webView.canGoBack()) {
@@ -118,5 +141,10 @@ class MainActivity : ComponentActivity() {
         /** 与网关安全域名白名单对应的本地端口 */
         const val PORT = 8765
         private const val SO_TIMEOUT = 5000
+        /** 通知 → 页内落点，如 water（喝水区块） */
+        const val EXTRA_GOTO = "goto"
+        /** 喝水卡的独立 action：否则与三餐通知的 PendingIntent 撞签名（extras 不参与匹配），goto 会被覆盖 */
+        const val ACTION_OPEN_WATER = "com.healthydiet.app.action.OPEN_WATER"
+        const val GOTO_WATER = "water"
     }
 }

@@ -29,12 +29,13 @@ val keystoreProps = Properties().apply {
 
 android {
     namespace = "com.healthydiet.app"
-    compileSdk = 35
+    /* 36：部分厂商只在应用声明适配 Android 16 时才放开「胶囊/焦点通知」这类新形态通知 */
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.healthydiet.app"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = appVersionCode
         versionName = appVersion
     }

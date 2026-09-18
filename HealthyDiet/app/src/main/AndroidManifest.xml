@@ -12,9 +12,11 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.HealthyDiet"
         android:usesCleartextTraffic="true">
+        <!-- singleTask：点通知卡片时复用已开实例（走 onNewIntent），不重载页面 -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>

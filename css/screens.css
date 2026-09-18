@@ -294,6 +294,12 @@ body.lock-scroll .screen { overflow: hidden; }
 
 /* 喝水打卡：大按钮累加 + 通栏水柱进度（8 格刻度） */
 .water-card { margin-top: var(--sp-4); }
+/* 从通知卡片跳转过来时的定位高亮：闪一下即散，不常驻 */
+.water-card.flash { animation: waterFlash 1.7s ease-in-out 1; }
+@keyframes waterFlash {
+  0%, 100% { box-shadow: var(--shadow-card); }
+  25%, 70% { box-shadow: 0 0 0 3px var(--primary-soft), 0 0 0 1px var(--primary); }
+}
 .water-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); }
 .water-title { font-size: var(--text-md); font-weight: 600; }
 .water-num { margin-top: 2px; font-size: var(--text-sm); color: var(--ink-3); }
