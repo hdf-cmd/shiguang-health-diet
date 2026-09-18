@@ -100,6 +100,7 @@
           </div>
         </div>
         <div class="nutrient-bar" id="home-nutrients" style="margin-top:var(--sp-4)"></div>
+        <p class="nutrient-note" id="nutrient-note"></p>
       </div>
 
       <div class="card advice-home">
@@ -189,6 +190,7 @@
         <div>
           <p class="label">每日基准目标 · 系统</p>
           <p class="num" id="goal-kcal">1800 <small>kcal</small></p>
+          <p class="sub">固定值 · 不含运动</p>
         </div>
         <div>
           <p class="label">目标体重</p>
@@ -212,11 +214,11 @@
       <div class="card metab-card">
         <div class="card-title">代谢与减脂计划<span class="more" id="metab-note"></span></div>
         <div class="metab-grid">
-          <div><p class="label">基础代谢 BMR</p><p class="num" id="metab-bmr">—<small> kcal</small></p></div>
-          <div><p class="label">每日消耗 TDEE</p><p class="num" id="metab-tdee">—<small> kcal</small></p></div>
-          <div><p class="label">今日建议摄入</p><p class="num" id="metab-suggest">—<small> kcal</small></p></div>
-          <div><p class="label">每日缺口</p><p class="num" id="metab-deficit">—<small> kcal</small></p></div>
-          <div><p class="label">今日运动</p><p class="num" id="metab-exercise">—<small> kcal</small></p></div>
+          <div><p class="label">基础代谢 BMR</p><p class="num" id="metab-bmr">—<small> kcal</small></p><p class="formula" id="metab-bmr-f"></p></div>
+          <div><p class="label">每日消耗 TDEE</p><p class="num" id="metab-tdee">—<small> kcal</small></p><p class="formula" id="metab-tdee-f"></p></div>
+          <div><p class="label">今日建议摄入</p><p class="num" id="metab-suggest">—<small> kcal</small></p><p class="formula" id="metab-suggest-f"></p></div>
+          <div><p class="label">每日缺口</p><p class="num" id="metab-deficit">—<small> kcal</small></p><p class="formula" id="metab-deficit-f"></p></div>
+          <div><p class="label">今日运动</p><p class="num" id="metab-exercise">—<small> kcal</small></p><p class="formula" id="metab-exercise-f"></p></div>
         </div>
         <p class="metab-eta" id="metab-eta">完善身体档案后估算达标时间</p>
       </div>

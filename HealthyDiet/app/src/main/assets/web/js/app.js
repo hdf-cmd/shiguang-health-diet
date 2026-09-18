@@ -306,6 +306,9 @@ function renderRing() {
   if (note) note.textContent = ex > 0
     ? `额度 ${budget} = 基准 ${s.target} + 运动 ${ex} kcal`
     : `基准目标 ${s.target} kcal · 记运动后额度自动上调`;
+  // 营养素口径标注：目标只按“基准”算（运动额度不加成），否则“还能吃 X kcal”与脂肪超标会看着自相矛盾
+  const nnote = $('#nutrient-note');
+  if (nnote) nnote.textContent = `营养素目标 = 基准 ${s.target} × 供能比 50%/25%/25% ÷ (4/4/9) kcal，不含运动额度；热量额度含运动，两者基数不同`;
 
   const C_OUT = 2 * Math.PI * 78, C_IN = 2 * Math.PI * 62;
   const pct = Math.min(1, s.kcal / budget);
@@ -1493,6 +1496,15 @@ function renderMetab() {
   $('#metab-suggest').innerHTML = `${m.suggest + ex}<small> kcal</small>`;
   // 每日缺口：有足够历史时显示“实际日均缺口”，否则显示预设缺口
   $('#metab-deficit').innerHTML = `${m.effDeficit}<small> kcal</small>`;
+  // 公式标注：每个数字下方写出它的算法——本卡同屏存在“含运动/不含运动/历史均值”三套口径，
+  // 标注后可直接对照，不必反推（营养与展示口径说明见下方 nutrient-note）
+  const af = (ACTIVITY[b.activity] || ACTIVITY.light).f;
+  const setF = (id, t) => { const el = $(id); if (el) el.textContent = t; };
+  setF('#metab-bmr-f', `10×${b.weightKg}+6.25×${b.heightCm}−5×${b.age}${b.gender === 'male' ? '+5' : '−161'}`);
+  setF('#metab-tdee-f', `BMR×系数${af}${ex > 0 ? `＋今日运动${ex}` : ''}`);
+  setF('#metab-suggest-f', `消耗${m.tdee}−缺口${m.realDeficit}${ex > 0 ? `＋运动${ex}` : ''}`);
+  setF('#metab-deficit-f', m.useActual ? `近${state.actualDeficit.days}天均值(消耗−摄入)` : `预设缺口 ${m.realDeficit}`);
+  setF('#metab-exercise-f', '今日运动记录累计');
   $('#metab-note').textContent = m.useActual
     ? `缺口为近 ${state.actualDeficit.days} 天实际日均 · 预设 ${m.realDeficit}`
     : (ex > 0 ? `含今日运动 ${ex} kcal · 基准 ${m.suggest}` : `基准目标 ${m.suggest} kcal`);
