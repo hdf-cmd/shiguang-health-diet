@@ -3,6 +3,24 @@
 「食光」健康饮食 App 的所有重要变更记录于此。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.1.0] - 2026-09-18
+
+### 新增
+- 喝水到点提醒改为**常驻进度卡**：到点标题变「要喝水啦」并响铃弹横幅，打卡后静默刷新为「今日喝水 X/8 杯」，关闭提醒开关即撤下。一次到点只响一条（不再另发第二条「喝水提醒」）
+- 点击通知卡片**直达 App 喝水区块**：自动切回首页、滚到喝水卡并高亮
+- 「我的」页新增「发一条喝水到点提醒（测试）」，与真实到点同链路，便于真机随时验提醒
+
+### 变更
+- 代谢卡每个数字下方补出**算法来源**（BMR 代入值 / TDEE 系数 / 建议摄入=消耗−缺口 / 缺口取历史均值或预设值）
+- 首页营养素条与顶部基准目标补**口径标注**（「营养素目标按基准算、不含运动额度」「固定值 · 不含运动」），消除同屏多口径的歧义
+- compileSdk/targetSdk 升至 36（Android 16）
+
+### 修复
+- 点通知卡片无法跳到喝水区：`PendingIntent` 的 extras 不参与匹配，三餐通知会覆盖跳转参数 —— 改用独立 action 后恢复正常
+
+### 说明
+- Android 16「灵动岛/胶囊」的提升能力（`ProgressStyle` + `setColorized` + 短文本）已按官方标准实现，但**系统当前不对第三方应用开放**该能力（AOSP 中默认关闭且无授权界面，已在真机验证确认）；将来系统开放时，同一份代码无需改动即会自动生效
+
 ## [1.0.0] - 2026-09-15
 
 首个正式版本。Android 端为 WebView 壳 + 内置 web 资源，数据存储于腾讯云 CloudBase（云函数 `api-diet`）。
@@ -47,3 +65,4 @@
 - 「消息提醒」依赖 Android 原生桥接，仅在 APK 内生效
 
 [1.0.0]: https://github.com/hdf-cmd/shiguang-health-diet/releases/tag/v1.0.0
+[1.1.0]: https://github.com/hdf-cmd/shiguang-health-diet/releases/tag/v1.1.0
