@@ -427,6 +427,14 @@ class NativeBridge(private val ctx: Context) {
         return true
     }
 
+    /** 体脂秤同步：发起 BLE 扫描读取；结果/进度经 window.SG_onScaleWeight / SG_onScaleStatus 回调前端 */
+    @JavascriptInterface
+    fun startScale(): Boolean {
+        val act = ctx as? MainActivity ?: return false
+        act.runOnUiThread { act.requestScale() }
+        return true
+    }
+
     /** 调试/展示用：返回今天剩余的喝水提醒时刻（HH:mm 列表） */
     @JavascriptInterface
     fun waterPlanToday(): String {

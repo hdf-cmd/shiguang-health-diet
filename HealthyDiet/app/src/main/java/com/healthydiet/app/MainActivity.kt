@@ -47,6 +47,33 @@ class MainActivity : ComponentActivity() {
 
     private val reqNotifyPerm = registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* 结果不阻断：未授权时通知静默跳过 */ }
 
+    private val reqScalePerms = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        if (grants.values.all { it }) startScaleSync()
+        else jsScaleStatus("需要蓝牙权限才能读取体脂秤，请在设置中允许后重试")
+    }
+
+    /** JS 桥 SGNative.startScale 的实际执行体（须在主线程调用） */
+    fun requestScale() {
+        val need = if (Build.VERSION.SDK_INT >= 31)
+            arrayOf(android.Manifest.permission.BLUETOOTH_SCAN, android.Manifest.permission.BLUETOOTH_CONNECT)
+        else
+            arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION)
+        val missing = need.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+        if (missing.isNotEmpty()) reqScalePerms.launch(missing.toTypedArray())
+        else startScaleSync()
+    }
+
+    private fun startScaleSync() {
+        ScaleSync.start(this,
+            { kg, stable -> webView.evaluateJavascript("window.SG_onScaleWeight&&SG_onScaleWeight($kg,${if (stable) "true" else "false"})", null) },
+            { msg -> jsScaleStatus(msg) })
+    }
+
+    private fun jsScaleStatus(msg: String) {
+        val quoted = org.json.JSONObject.quote(msg)
+        webView.evaluateJavascript("window.SG_onScaleStatus&&SG_onScaleStatus($quoted)", null)
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -132,6 +159,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        ScaleSync.stop()
         server?.stop()
         webView.destroy()
         super.onDestroy()
