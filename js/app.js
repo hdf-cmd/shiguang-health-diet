@@ -9,7 +9,7 @@ import {
   ACTIVITY, BODY_DEFAULT, EXERCISE_LIB,
   localIso, todayIso, dateLabelOf,
   macroGoals, computeMetabolism, exerciseKcalOf, portionMacros, avgDeficitFromRows,
-  buildAdvice, makeAdviceCtx,
+  buildAdvice, makeAdviceCtx, biaEstimate,
 } from './logic.js';
 import { state, updateState, isViewingToday } from './state.js';
 import { HealthAPI } from './api.js';
@@ -355,6 +355,7 @@ function renderDailyAdvice() {
     isToday: state.date === todayIso(),
     weightKg: (state.body && state.body.weightKg) || 55,
     waterGoalMl: state.waterGoalMl,
+    comp: state.comp,
   });
   const tips = buildAdvice(ctx);
   el.innerHTML = tips.map(([e, t]) => `<li><span class="ai">${e}</span><span>${t}</span></li>`).join('');
@@ -833,6 +834,7 @@ function buildPeriodAdvice(r, avgKcal) {
 }
 
 function renderWeightTrend(w) {
+  renderBodyTrend(w);   // 二期：同一份趋势数据顺带渲染体成分卡
   // 空数据保护
   if (!w.points || w.points.length === 0) {
     $('#weight-svg').innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="var(--ink-3)" font-size="13">暂无体重数据</text>';
@@ -894,12 +896,54 @@ function renderWeightTrend(w) {
   $('#weight-delta').style.color = delta <= 0 ? 'var(--primary)' : 'var(--warn)';
 }
 
+/* ---------- 二期：体成分趋势卡（体脂率/肌肉率双线，0–100% 共用刻度；无秤数据给引导） ---------- */
+function renderBodyTrend(w) {
+  const svg = $('#comp-svg'); if (!svg) return;
+  const bf = w.bodyFat || [], ms = w.muscle || [];
+  const bfN = bf.filter(v => v != null), msN = ms.filter(v => v != null);
+  updateState({ comp: bfN.length >= 2
+    ? { bfLatest: bfN[bfN.length - 1], bfDelta: +(bfN[bfN.length - 1] - bfN[0]).toFixed(1),
+        msDelta: msN.length >= 2 ? +(msN[msN.length - 1] - msN[0]).toFixed(1) : null }
+    : (bfN.length ? { bfLatest: bfN[bfN.length - 1], bfDelta: null, msDelta: null } : null) }, 'comp.trend');
+  const has = bfN.length > 0;
+  $('#comp-hint').style.display = has ? 'none' : 'block';
+  svg.style.display = has ? '' : 'none';
+  $('#comp-legend').style.display = has ? 'flex' : 'none';
+  let deltaTxt = '';
+  if (bfN.length >= 2) {
+    const d = +(bfN[bfN.length - 1] - bfN[0]).toFixed(1);
+    deltaTxt = ` · 近期 ${d > 0 ? '+' : ''}${d}`;
+  }
+  $('#comp-delta').textContent = has ? `体脂 ${bfN[bfN.length - 1]}%${deltaTxt}` : '';
+  if (!has) { svg.innerHTML = ''; return; }
+  const Y0 = 12, Y1 = 116, X0 = 22, X1 = 312;
+  const ptsOf = vals => {
+    const n = Math.max(vals.length, 2);
+    return vals.map((v, i) => v == null ? null
+      : `${(X0 + (vals.length === 1 ? (X1 - X0) / 2 : i / (n - 1) * (X1 - X0))).toFixed(1)},${(Y1 - v / 100 * (Y1 - Y0)).toFixed(1)}`)
+      .filter(Boolean);
+  };
+  const series = (vals, color) => {
+    const p = ptsOf(vals);
+    if (!p.length) return '';
+    return `<polyline points="${p.join(' ')}" fill="none" stroke="${color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`
+      + p.map(pt => `<circle cx="${pt.split(',')[0]}" cy="${pt.split(',')[1]}" r="2.6" fill="${color}"/>`).join('');
+  };
+  const grid = [25, 50, 75].map(v => {
+    const y = (Y1 - v / 100 * (Y1 - Y0)).toFixed(1);
+    return `<line x1="${X0}" y1="${y}" x2="${X1}" y2="${y}" stroke="var(--line)" stroke-width="0.7" stroke-dasharray="3 4"/>`
+      + `<text x="${X0 - 5}" y="${+y + 3}" text-anchor="end" font-size="8" fill="var(--ink-3)">${v}</text>`;
+  }).join('');
+  svg.innerHTML = grid + series(bf, 'var(--warn)') + series(ms, 'var(--primary)');
+}
+
 /* ---------- 每日体重日志：趋势卡入口 + 弹层（反馈5） ---------- */
 function openWeightLogSheet() {
   $('#weight-log-val').value = (state.body && state.body.weightKg) || 55;
   const inApk = scaleAvail();
   $('#btn-scale-sync').style.display = inApk ? '' : 'none';
-  const dbg = inApk && typeof window.SGNative.debugScale === 'function';
+  // 诊断三件套收敛：仅 sg_debug=1 时露出（浏览器控制台 localStorage.setItem('sg_debug','1') 开启）
+  const dbg = inApk && typeof window.SGNative.debugScale === 'function' && localStorage.getItem('sg_debug') === '1';
   $('#btn-scale-debug').style.display = dbg ? '' : 'none';
   $('#btn-scale-probe').style.display = dbg && typeof window.SGNative.probeScale === 'function' ? '' : 'none';
   $('#weight-log-mask').classList.add('show');
@@ -915,10 +959,17 @@ $('#weight-log-mask').addEventListener('click', closeWeightLogSheet);
 $('#weight-log-dec').addEventListener('click', () => bumpBodyVal('#weight-log-val', -0.5, 20, 300, 2));
 $('#weight-log-inc').addEventListener('click', () => bumpBodyVal('#weight-log-val', 0.5, 20, 300, 2));
 bindStepperNorm('#weight-log-val', 20, 300, 2);
-async function saveWeightKg(w) {
+async function saveWeightKg(w, impedance) {
   if (!w || w < 20 || w > 300) { toast('请输入有效体重'); return; }
+  // 二期：拿到阻抗就地算体成分，随体重一并记入
+  let extra = {};
+  if (impedance && impedance > 0 && state.body) {
+    const bia = biaEstimate({ weightKg: w, heightCm: state.body.heightCm, age: state.body.age,
+      sexMale: state.body.gender === 'male', impedanceOhm: impedance });
+    if (bia) extra = { impedanceOhm: impedance, bodyFatPct: bia.bodyFatPct, musclePct: bia.musclePct };
+  }
   try {
-    const r = await HealthAPI.logWeight(w, todayIso());
+    const r = await HealthAPI.logWeight(w, todayIso(), extra);
     if (state.body) {
       state.body.weightKg = r.weightKg;
       state.body.bmi = +(r.weightKg / Math.pow(state.body.heightCm / 100, 2)).toFixed(1);
@@ -929,7 +980,7 @@ async function saveWeightKg(w) {
     closeWeightLogSheet();
     renderWeightTrend(await HealthAPI.getWeightTrend());
     await syncTarget();   // 体重变 → BMR/建议摄入重算并同步云端
-    toast(`已记录 ${r.weightKg} kg · 趋势已更新`);
+    toast(`已记录 ${r.weightKg} kg${extra.bodyFatPct ? ` · 体脂 ${extra.bodyFatPct}%` : ''} · 趋势已更新`);
   } catch (e) {
     toast('保存失败：' + (e.message || '网络异常'));
   }
@@ -938,9 +989,9 @@ $('#weight-log-save').addEventListener('click', () => saveWeightKg(Number($('#we
 
 /* ---------- 体脂秤同步：SGNative.startScale → SG_onScaleWeight/Status（v1.2.0，仅 APK 内生效） ---------- */
 const scaleAvail = () => remindAvail() && typeof window.SGNative.startScale === 'function';
-window.SG_onScaleWeight = (kg, stable) => {
+window.SG_onScaleWeight = (kg, stable, imp) => {
   $('#weight-log-val').value = kg;
-  if (stable) saveWeightKg(kg);
+  if (stable) saveWeightKg(kg, imp);
 };
 window.SG_onScaleStatus = msg => toast(msg);
 window.SG_onScaleDebug = text => {
@@ -949,7 +1000,9 @@ window.SG_onScaleDebug = text => {
   el.textContent = text;
 };
 $('#btn-scale-sync').addEventListener('click', () => {
-  if (!window.SGNative.startScale()) toast('无法启动蓝牙同步');
+  const b = state.body || {};
+  const target = (state.profileData && state.profileData.goal && state.profileData.goal.targetWeight) || b.weightKg || 60;
+  if (!window.SGNative.startScale(b.age || 30, b.gender === 'male', target)) toast('无法启动蓝牙同步');
 });
 $('#btn-scale-debug').addEventListener('click', () => {
   $('#scale-debug-out').textContent = '扫描中…请光脚站上秤保持 12 秒';

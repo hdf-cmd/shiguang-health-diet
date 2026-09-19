@@ -427,11 +427,11 @@ class NativeBridge(private val ctx: Context) {
         return true
     }
 
-    /** 体脂秤同步：发起 BLE 扫描读取；结果/进度经 window.SG_onScaleWeight / SG_onScaleStatus 回调前端 */
+    /** 体脂秤同步：发起 BLE 会话（档案参数供体脂测量帧使用）；结果经 window.SG_onScaleWeight(kg, stable, impedance) */
     @JavascriptInterface
-    fun startScale(): Boolean {
+    fun startScale(age: Double, sexMale: Boolean, targetKg: Double): Boolean {
         val act = ctx as? MainActivity ?: return false
-        act.runOnUiThread { act.requestScale() }
+        act.runOnUiThread { act.requestScale(age, sexMale, targetKg) }
         return true
     }
 

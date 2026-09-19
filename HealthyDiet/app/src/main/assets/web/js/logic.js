@@ -134,6 +134,30 @@ export function portionMacros(food, grams) {
 }
 
 /* ============================================================
+ * BIA 体成分估算（二期）：由体重+身高+年龄+性别+阻抗推体脂率/肌肉率。
+ * 系数为秤类厂商通用回归式（口径参照 openScale 对沃莱方案的逆向文档，
+ * 数学公式与系数属事实数据，实现为自写精简版）。
+ * 注意：BIA 是估算不是测量，单次误差可达 ±3%；本函数只在阻抗有效时返回。
+ * ============================================================ */
+export function biaEstimate({ weightKg, heightCm, age, sexMale, impedanceOhm }) {
+  const w = Number(weightKg), h = Number(heightCm) / 100, z = Number(impedanceOhm);
+  const a = Number(age);
+  if (!(w > 2 && w < 300) || !(h >= 0.9 && h <= 2.4) || !(a >= 10 && a <= 99) || !(z > 0)) return null;
+  const h2 = h * h;
+  let bf;
+  if (sexMale) {
+    bf = 1625303 / z / z + 9.146 * w / h2 / z - 486583 * h2 / w / z + 61.8
+       - 251.193 * h2 / w / a - 0.0139 * z + 0.05975 * a;
+  } else {
+    bf = -186.422 * h2 / w + 58.82 - 382280 * h2 / w / z + 128.005 * w / h / z
+       - 0.0728 * w / h + 7816.359 / h / z - 3.333 * w / h2 / a;
+  }
+  bf = Math.min(80, Math.max(5, bf));
+  const musclePct = (sexMale ? 0.948 : 0.939) * (100 - bf);   // 总肌肉率（骨骼肌率的上游口径）
+  return { bodyFatPct: +bf.toFixed(1), musclePct: +musclePct.toFixed(1) };
+}
+
+/* ============================================================
  * 实际日均缺口：rows = [{ intake, exKcal }]（仅有记录的日子）
  *   日均缺口 = mean(TDEE + 运动 − 摄入)；不足 minDays 天返回 null（沿用预设）
  * ============================================================ */
@@ -177,6 +201,12 @@ export const ADVICE_RULES = [
   { id: 'carb', when: c => c.s.kcal > 0 && !c.allMealsDone && c.cGap >= 40,
     tip: c => ['🍚', `主食还差 ${c.cGap}g 碳水，不吃主食易乏力，保留适量谷物`] },
 
+  /* 二期：体成分趋势（comp = { bfLatest, bfDelta, msDelta }，由秤同步数据聚合，缺则不出规则） */
+  { id: 'bf-stall', when: c => c.isToday && c.comp && c.comp.bfLatest != null && c.comp.bfDelta >= 0.3,
+    tip: c => ['⚖️', `近期体脂率没降反升（当前 ${c.comp.bfLatest}%，±0.3 内属波动）——先核对是否记录了含水称重的日子，或把每日缺口再放大 100 kcal`] },
+  { id: 'muscle-drop', when: c => c.isToday && c.comp && c.comp.msDelta != null && c.comp.msDelta <= -0.6,
+    tip: c => ['💪', `肌肉率在下滑（${c.comp.msDelta} 个百分点）——每餐保底一份蛋白（蛋/豆制品/鱼虾），配合抗阻训练；减重过快也会掉肌肉`] },
+
   /* 通用 */
   { id: 'water', when: c => c.isToday && c.wml < c.waterGoalMl,
     tip: c => ['💧', `喝水 ${c.wml}/${c.waterGoalMl}ml，记得少量多次补水`] },
@@ -190,7 +220,7 @@ export function buildAdvice(ctx) {
   return tips.slice(0, 3);
 }
 /* 由 state 片段构造建议上下文（app.js 复用，保证 ctx 字段齐全） */
-export function makeAdviceCtx({ summary, exerciseKcal = 0, records = [], isToday, weightKg = 55, waterGoalMl = 1600 }) {
+export function makeAdviceCtx({ summary, exerciseKcal = 0, records = [], isToday, weightKg = 55, waterGoalMl = 1600, comp = null }) {
   const s = summary;
   const budget = s.target + exerciseKcal;
   const goals = macroGoals(s.target);
@@ -204,6 +234,7 @@ export function makeAdviceCtx({ summary, exerciseKcal = 0, records = [], isToday
     isToday,
     weightKg,
     waterGoalMl,
+    comp,
     wml: (s.water || 0) * WATER_CUP_ML,
     allMealsDone: ['breakfast', 'lunch', 'dinner'].every(m => logged.has(m)),
   };

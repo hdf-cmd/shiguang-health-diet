@@ -550,13 +550,21 @@ if (path === "/foods/custom" && method === "POST") {
     const w = Number(body.weightKg);
     if (!w || w < 20 || w > 300) return { ok: false, message: "请输入有效体重（20–300 kg）" };
     const weightKg = +w.toFixed(2);   // 两位小数：体脂秤原始读数精度（2026-09-19 二期）
+    // 二期：可选体成分字段（前端由阻抗+BIA 公式算好上传；非法值静默丢弃）
+    const extra = {};
+    const z = Number(body.impedanceOhm);
+    if (z > 0 && z < 5000) extra.impedanceOhm = Math.round(z);
+    const bf = Number(body.bodyFatPct);
+    if (bf >= 2 && bf <= 80) extra.bodyFatPct = +bf.toFixed(1);
+    const mp = Number(body.musclePct);
+    if (mp >= 30 && mp <= 95) extra.musclePct = +mp.toFixed(1);
     const date = String(body.date || today());
     const col = db.collection("sg_weights");
     const found = await col.where({ uid, date }).limit(1).get();
     if (found.data && found.data[0]) {
-      await col.doc(found.data[0]._id).update({ weightKg, updatedAt: Date.now() });
+      await col.doc(found.data[0]._id).update(Object.assign({ weightKg, updatedAt: Date.now() }, extra));
     } else {
-      await col.add({ uid, date, weightKg, createdAt: Date.now() });
+      await col.add(Object.assign({ uid, date, weightKg, createdAt: Date.now() }, extra));
     }
     let patch = null;
     if (date === today()) {
@@ -586,7 +594,9 @@ if (path === "/foods/custom" && method === "POST") {
     const recent = data.slice(-7);
     return {
       points: recent.map(d => d.weightKg),
-      labels: recent.map(d => d.date.slice(5).replace("-", "."))
+      labels: recent.map(d => d.date.slice(5).replace("-", ".")),
+      bodyFat: recent.map(d => (d.bodyFatPct == null ? null : d.bodyFatPct)),
+      muscle: recent.map(d => (d.musclePct == null ? null : d.musclePct))
     };
   }
 
