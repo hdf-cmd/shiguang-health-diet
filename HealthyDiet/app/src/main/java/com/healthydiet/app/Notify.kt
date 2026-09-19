@@ -443,6 +443,14 @@ class NativeBridge(private val ctx: Context) {
         return true
     }
 
+    /** 诊断用：连接 AFU- 秤并逐行回显原始报文，经 window.SG_onScaleProbe */
+    @JavascriptInterface
+    fun probeScale(): Boolean {
+        val act = ctx as? MainActivity ?: return false
+        act.runOnUiThread { act.probeScale() }
+        return true
+    }
+
     /** 调试/展示用：返回今天剩余的喝水提醒时刻（HH:mm 列表） */
     @JavascriptInterface
     fun waterPlanToday(): String {

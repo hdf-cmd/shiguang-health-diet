@@ -24,7 +24,7 @@ import java.util.UUID
  */
 object ScaleSync {
 
-    private const val DEV_NAME = "AFU-WL-TZ-A1"
+    private const val DEV_NAME_PREFIX = "AFU-"   // 实测：B1 广播 AFU-BH-TZ-B1，A1 广播 AFU-WL-TZ-A1，按前缀匹配
     private val SERVICE_UUID = UUID.fromString("0000ffb0-0000-1000-8000-00805f9b34fb")
     private val CHAR_UUID = UUID.fromString("0000ffb2-0000-1000-8000-00805f9b34fb")
     private val CCCD_UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
@@ -42,6 +42,7 @@ object ScaleSync {
     private var onWeight: OnWeight? = null
     private var onStatus: OnStatus? = null
     private var active = false
+    private var probeOnLine: ((String) -> Unit)? = null
     private var scanDeadline: Runnable? = null
     private var readDeadline: Runnable? = null
     private var lastKg = -1.0
@@ -114,7 +115,7 @@ object ScaleSync {
             override fun onScanResult(type: Int, result: ScanResult) {
                 val name = runCatching { result.scanRecord?.deviceName ?: result.device.name }.getOrNull()
                 android.util.Log.d("SGScale", "scan seen: name=$name addr=${result.device.address} rssi=${result.rssi}")
-                if (name == DEV_NAME) connect(result.device)
+                if (name != null && name.startsWith(DEV_NAME_PREFIX)) connect(result.device)
             }
             override fun onScanFailed(errorCode: Int) {
                 finish("蓝牙扫描失败（$errorCode），重启蓝牙后再试")
@@ -128,6 +129,7 @@ object ScaleSync {
     @SuppressLint("MissingPermission")
     fun stop() {
         active = false
+        probeOnLine = null
         scanDeadline?.let { main.removeCallbacks(it) }
         readDeadline?.let { main.removeCallbacks(it) }
         scanDeadline = null
@@ -183,6 +185,96 @@ object ScaleSync {
 
     private fun status0Connected() {
         onStatus?.on("已连接体脂秤，请光脚站稳等待稳定")
+    }
+
+    /** 连接探测：连上 AFU- 设备后订阅全部可通知特征，逐行回显原始报文（排查 B1 协议差异） */
+    @SuppressLint("MissingPermission")
+    fun debugConnect(ctx: Context, seconds: Int, status: OnStatus, onLine: (String) -> Unit): Boolean {
+        stop()
+        val mgr = ctx.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+        val adapter = mgr?.adapter ?: run { main.post { status.on("此设备不支持蓝牙") }; return false }
+        if (!adapter.isEnabled) { main.post { status.on("请先打开手机蓝牙") }; return false }
+        val scanner = adapter.bluetoothLeScanner ?: run { main.post { status.on("此设备不支持蓝牙低功耗") }; return false }
+        adapterRef = adapter
+        appCtx = ctx.applicationContext
+        onStatus = status
+        probeOnLine = onLine
+        active = true
+        scanRef = object : ScanCallback() {
+            override fun onScanResult(type: Int, result: ScanResult) {
+                val name = runCatching { result.scanRecord?.deviceName ?: result.device.name }.getOrNull()
+                if (name != null && name.startsWith(DEV_NAME_PREFIX)) probeConnectDevice(result.device, name)
+            }
+        }
+        scanner.startScan(scanRef)
+        main.post { status.on("探测中：请光脚站上秤保持 ${seconds}s") }
+        scanDeadline = runnable { if (gatt == null) { probeLine("15 秒内没扫到 AFU- 设备"); stop() } }
+        main.postDelayed(scanDeadline!!, 15_000L)
+        readDeadline = runnable { probeLine("探测结束"); stop() }
+        main.postDelayed(readDeadline!!, seconds * 1000L)
+        return true
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun probeConnectDevice(device: BluetoothDevice, name: String) {
+        if (gatt != null || !active) return
+        scanRef?.let { adapterRef?.bluetoothLeScanner?.stopScan(it) }
+        scanRef = null
+        scanDeadline?.let { main.removeCallbacks(it) }
+        probeLine("扫到 $name，连接中…")
+        gatt = device.connectGatt(appCtx ?: return, false, object : BluetoothGattCallback() {
+            override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
+                when (newState) {
+                    BluetoothProfile.STATE_CONNECTED -> { probeLine("已连接，发现服务…"); g.discoverServices() }
+                    BluetoothProfile.STATE_DISCONNECTED -> probeLine("连接断开 status=$status")
+                }
+            }
+
+            override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
+                val subs = g.services.flatMap { s ->
+                    s.characteristics.filter { ch ->
+                        ch.properties.let { p ->
+                            (p and BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0 ||
+                            (p and BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0
+                        }
+                    }.map { s to it }
+                }
+                probeLine("可通知特征 ${subs.size} 个，逐个订阅")
+                subs.forEachIndexed { i, (svc, ch) ->
+                    main.postDelayed({ subscribe(g, svc.uuid.toString(), ch) }, 250L * (i + 1))
+                }
+            }
+
+            override fun onCharacteristicChanged(g: BluetoothGatt, ch: BluetoothGattCharacteristic) {
+                val b = ch.value ?: return
+                val hex = b.joinToString(" ") { String.format("%02X", it) }
+                probeLine("数据 ${ch.uuid}: $hex")
+                if (b.size >= 7 && (b[0].toInt() and 0xFF) == 0xAC) {
+                    val raw = (((b[3].toInt() and 0xFF) - 0x68) shl 16) or
+                        ((b[4].toInt() and 0xFF) shl 8) or (b[5].toInt() and 0xFF)
+                    probeLine("→ 0xAC 协议命中：体重 ${Math.round(raw / 10.0) / 100.0}kg 稳定=${(b[6].toInt() and 0xFF) == 0x02}")
+                }
+            }
+        })
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun subscribe(g: BluetoothGatt, svcUuid: String, ch: BluetoothGattCharacteristic) {
+        if (!active) return
+        g.setCharacteristicNotification(ch, true)
+        ch.getDescriptor(CCCD_UUID)?.let { d ->
+            @Suppress("DEPRECATION")
+            d.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+            @Suppress("DEPRECATION")
+            g.writeDescriptor(d)
+        }
+        probeLine("已订阅 $svcUuid/${ch.uuid}")
+    }
+
+    private fun probeLine(text: String) {
+        android.util.Log.d("SGScale", "probe: $text")
+        val cb = probeOnLine
+        main.post { cb?.invoke(text) }
     }
 
     private fun parse(b: ByteArray?) {

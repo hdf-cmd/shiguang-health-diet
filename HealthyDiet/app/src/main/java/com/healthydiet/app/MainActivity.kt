@@ -79,6 +79,16 @@ class MainActivity : ComponentActivity() {
             })
     }
 
+    /** 连接探测：连上 AFU- 秤并回显全部原始通知报文（排查 B1 协议差异） */
+    fun probeScale() {
+        ScaleSync.debugConnect(this, 40,
+            { msg -> jsScaleStatus(msg) },
+            { line ->
+                val quoted = org.json.JSONObject.quote(line)
+                webView.evaluateJavascript("window.SG_onScaleProbe&&SG_onScaleProbe($quoted)", null)
+            })
+    }
+
     private fun jsScaleStatus(msg: String) {
         val quoted = org.json.JSONObject.quote(msg)
         webView.evaluateJavascript("window.SG_onScaleStatus&&SG_onScaleStatus($quoted)", null)

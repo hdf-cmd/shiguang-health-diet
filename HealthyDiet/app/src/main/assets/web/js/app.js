@@ -899,7 +899,9 @@ function openWeightLogSheet() {
   $('#weight-log-val').value = (state.body && state.body.weightKg) || 55;
   const inApk = scaleAvail();
   $('#btn-scale-sync').style.display = inApk ? '' : 'none';
-  $('#btn-scale-debug').style.display = inApk && typeof window.SGNative.debugScale === 'function' ? '' : 'none';
+  const dbg = inApk && typeof window.SGNative.debugScale === 'function';
+  $('#btn-scale-debug').style.display = dbg ? '' : 'none';
+  $('#btn-scale-probe').style.display = dbg && typeof window.SGNative.probeScale === 'function' ? '' : 'none';
   $('#weight-log-mask').classList.add('show');
   $('#weight-log-sheet').classList.add('show');
 }
@@ -953,6 +955,17 @@ $('#btn-scale-debug').addEventListener('click', () => {
   $('#scale-debug-out').textContent = '扫描中…请光脚站上秤保持 12 秒';
   $('#scale-debug-out').style.display = 'block';
   if (!window.SGNative.debugScale()) toast('无法启动诊断扫描');
+});
+window.SG_onScaleProbe = line => {
+  const el = $('#scale-debug-out');
+  el.style.display = 'block';
+  el.textContent = (el.textContent === '探测日志：' ? '' : el.textContent + '\n') + line;
+  el.scrollTop = el.scrollHeight;
+};
+$('#btn-scale-probe').addEventListener('click', () => {
+  $('#scale-debug-out').textContent = '探测日志：';
+  $('#scale-debug-out').style.display = 'block';
+  if (!window.SGNative.probeScale()) toast('无法启动连接探测');
 });
 
 /* 报告页"月"档位：接口 getMonthReport 已预留，UI 置灰占位 */
