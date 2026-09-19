@@ -43,6 +43,8 @@ object ScaleSync {
     private var onStatus: OnStatus? = null
     private var active = false
     private var probeOnLine: ((String) -> Unit)? = null
+    private val probeSeen = LinkedHashMap<String, Int>()
+    private var probeTotal = 0
     private var scanDeadline: Runnable? = null
     private var readDeadline: Runnable? = null
     private var lastKg = -1.0
@@ -198,6 +200,8 @@ object ScaleSync {
         adapterRef = adapter
         appCtx = ctx.applicationContext
         onStatus = status
+        probeSeen.clear()
+        probeTotal = 0
         probeOnLine = onLine
         active = true
         scanRef = object : ScanCallback() {
@@ -210,7 +214,10 @@ object ScaleSync {
         main.post { status.on("探测中：请光脚站上秤保持 ${seconds}s") }
         scanDeadline = runnable { if (gatt == null) { probeLine("15 秒内没扫到 AFU- 设备"); stop() } }
         main.postDelayed(scanDeadline!!, 15_000L)
-        readDeadline = runnable { probeLine("探测结束"); stop() }
+        readDeadline = runnable {
+            probeLine("探测结束：共 ${probeTotal} 条通知 / ${probeSeen.size} 种内容")
+            stop()
+        }
         main.postDelayed(readDeadline!!, seconds * 1000L)
         return true
     }
@@ -248,11 +255,11 @@ object ScaleSync {
             override fun onCharacteristicChanged(g: BluetoothGatt, ch: BluetoothGattCharacteristic) {
                 val b = ch.value ?: return
                 val hex = b.joinToString(" ") { String.format("%02X", it) }
-                probeLine("数据 ${ch.uuid}: $hex")
+                probeLineOnce("数据 ${ch.uuid}: $hex")
                 if (b.size >= 7 && (b[0].toInt() and 0xFF) == 0xAC) {
                     val raw = (((b[3].toInt() and 0xFF) - 0x68) shl 16) or
                         ((b[4].toInt() and 0xFF) shl 8) or (b[5].toInt() and 0xFF)
-                    probeLine("→ 0xAC 协议命中：体重 ${Math.round(raw / 10.0) / 100.0}kg 稳定=${(b[6].toInt() and 0xFF) == 0x02}")
+                    probeLineOnce("→ 0xAC 协议命中：体重 ${Math.round(raw / 10.0) / 100.0}kg 稳定=${(b[6].toInt() and 0xFF) == 0x02}")
                 }
             }
         })
@@ -268,13 +275,21 @@ object ScaleSync {
             @Suppress("DEPRECATION")
             g.writeDescriptor(d)
         }
-        probeLine("已订阅 $svcUuid/${ch.uuid}")
+        probeLineOnce("已订阅 $svcUuid/${ch.uuid}")
     }
 
     private fun probeLine(text: String) {
         android.util.Log.d("SGScale", "probe: $text")
         val cb = probeOnLine
         main.post { cb?.invoke(text) }
+    }
+
+    /** 去重回显：内容完全相同的行只发第一次（附计数在结尾汇总），避免秤高频推送刷屏 */
+    private fun probeLineOnce(text: String) {
+        val n = (probeSeen[text] ?: 0) + 1
+        probeSeen[text] = n
+        probeTotal++
+        if (n == 1) probeLine(text)
     }
 
     private fun parse(b: ByteArray?) {

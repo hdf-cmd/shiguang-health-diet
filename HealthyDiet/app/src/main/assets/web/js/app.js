@@ -965,7 +965,23 @@ window.SG_onScaleProbe = line => {
 $('#btn-scale-probe').addEventListener('click', () => {
   $('#scale-debug-out').textContent = '探测日志：';
   $('#scale-debug-out').style.display = 'block';
+  $('#btn-scale-copy').style.display = '';
   if (!window.SGNative.probeScale()) toast('无法启动连接探测');
+});
+$('#btn-scale-copy').addEventListener('click', async () => {
+  const text = $('#scale-debug-out').textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('日志已复制，粘贴发我即可');
+  } catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+    toast('日志已复制（兼容模式）');
+  }
 });
 
 /* 报告页"月"档位：接口 getMonthReport 已预留，UI 置灰占位 */
