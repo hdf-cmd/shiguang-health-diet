@@ -435,6 +435,14 @@ class NativeBridge(private val ctx: Context) {
         return true
     }
 
+    /** 诊断用：不限名称扫描附近 BLE 设备，结果经 window.SG_onScaleDebug 回显 */
+    @JavascriptInterface
+    fun debugScale(): Boolean {
+        val act = ctx as? MainActivity ?: return false
+        act.runOnUiThread { act.debugScaleScan() }
+        return true
+    }
+
     /** 调试/展示用：返回今天剩余的喝水提醒时刻（HH:mm 列表） */
     @JavascriptInterface
     fun waterPlanToday(): String {

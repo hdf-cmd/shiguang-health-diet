@@ -897,7 +897,9 @@ function renderWeightTrend(w) {
 /* ---------- 每日体重日志：趋势卡入口 + 弹层（反馈5） ---------- */
 function openWeightLogSheet() {
   $('#weight-log-val').value = (state.body && state.body.weightKg) || 55;
-  $('#btn-scale-sync').style.display = scaleAvail() ? '' : 'none';
+  const inApk = scaleAvail();
+  $('#btn-scale-sync').style.display = inApk ? '' : 'none';
+  $('#btn-scale-debug').style.display = inApk && typeof window.SGNative.debugScale === 'function' ? '' : 'none';
   $('#weight-log-mask').classList.add('show');
   $('#weight-log-sheet').classList.add('show');
 }
@@ -939,8 +941,18 @@ window.SG_onScaleWeight = (kg, stable) => {
   if (stable) saveWeightKg(kg);
 };
 window.SG_onScaleStatus = msg => toast(msg);
+window.SG_onScaleDebug = text => {
+  const el = $('#scale-debug-out');
+  el.style.display = 'block';
+  el.textContent = text;
+};
 $('#btn-scale-sync').addEventListener('click', () => {
   if (!window.SGNative.startScale()) toast('无法启动蓝牙同步');
+});
+$('#btn-scale-debug').addEventListener('click', () => {
+  $('#scale-debug-out').textContent = '扫描中…请光脚站上秤保持 12 秒';
+  $('#scale-debug-out').style.display = 'block';
+  if (!window.SGNative.debugScale()) toast('无法启动诊断扫描');
 });
 
 /* 报告页"月"档位：接口 getMonthReport 已预留，UI 置灰占位 */

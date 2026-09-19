@@ -69,6 +69,16 @@ class MainActivity : ComponentActivity() {
             { msg -> jsScaleStatus(msg) })
     }
 
+    /** 诊断扫描：列出 12 秒内所有 BLE 设备到前端（排查"找不到秤"） */
+    fun debugScaleScan() {
+        ScaleSync.debugScan(this, 12,
+            { msg -> jsScaleStatus(msg) },
+            { text ->
+                val quoted = org.json.JSONObject.quote(text)
+                webView.evaluateJavascript("window.SG_onScaleDebug&&SG_onScaleDebug($quoted)", null)
+            })
+    }
+
     private fun jsScaleStatus(msg: String) {
         val quoted = org.json.JSONObject.quote(msg)
         webView.evaluateJavascript("window.SG_onScaleStatus&&SG_onScaleStatus($quoted)", null)

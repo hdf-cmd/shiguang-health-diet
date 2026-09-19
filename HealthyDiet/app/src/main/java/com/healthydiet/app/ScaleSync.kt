@@ -48,6 +48,44 @@ object ScaleSync {
 
     val isBusy: Boolean get() = active
 
+    /** 诊断模式：不限名称扫 N 秒，把发现的所有 BLE 设备（名称·MAC·信号）回传，用于排查"找不到秤" */
+    @SuppressLint("MissingPermission")
+    fun debugScan(ctx: Context, seconds: Int, status: OnStatus, onList: (String) -> Unit): Boolean {
+        stop()
+        val mgr = ctx.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+        val adapter = mgr?.adapter ?: run { main.post { status.on("此设备不支持蓝牙") }; return false }
+        if (!adapter.isEnabled) { main.post { status.on("请先打开手机蓝牙") }; return false }
+        val scanner = adapter.bluetoothLeScanner ?: run { main.post { status.on("此设备不支持蓝牙低功耗") }; return false }
+        adapterRef = adapter
+        appCtx = ctx.applicationContext
+        onStatus = status
+        active = true
+        val seen = LinkedHashMap<String, String>()
+        scanRef = object : ScanCallback() {
+            override fun onScanResult(type: Int, result: ScanResult) {
+                val addr = result.device.address
+                if (!seen.containsKey(addr)) {
+                    val name = runCatching { result.scanRecord?.deviceName ?: result.device.name }.getOrNull() ?: "(无名称)"
+                    seen[addr] = "$name · $addr · ${result.rssi}dBm"
+                    android.util.Log.d("SGScale", "debugScan found: ${seen[addr]}")
+                }
+            }
+            override fun onScanFailed(errorCode: Int) {
+                main.post { status.on("扫描失败 errorCode=$errorCode（检查蓝牙/附近设备权限）") }
+                stop()
+            }
+        }
+        scanner.startScan(scanRef)
+        main.post { status.on("诊断扫描 ${seconds}s：请光脚站上秤并保持") }
+        main.postDelayed({
+            val lines = if (seen.isEmpty()) "没扫到任何蓝牙设备：多半是权限没给到或蓝牙未开"
+                else seen.values.sorted().joinToString("\n")
+            stop()
+            main.post { onList(lines) }
+        }, seconds * 1000L)
+        return true
+    }
+
     /** 返回 false 表示当场失败（无蓝牙/未开），true 表示已发起、结果走回调 */
     @SuppressLint("MissingPermission")
     fun start(ctx: Context, weight: OnWeight, status: OnStatus): Boolean {
@@ -75,6 +113,7 @@ object ScaleSync {
         scanRef = object : ScanCallback() {
             override fun onScanResult(type: Int, result: ScanResult) {
                 val name = runCatching { result.scanRecord?.deviceName ?: result.device.name }.getOrNull()
+                android.util.Log.d("SGScale", "scan seen: name=$name addr=${result.device.address} rssi=${result.rssi}")
                 if (name == DEV_NAME) connect(result.device)
             }
             override fun onScanFailed(errorCode: Int) {
