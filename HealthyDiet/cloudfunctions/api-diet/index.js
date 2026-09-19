@@ -549,7 +549,7 @@ if (path === "/foods/custom" && method === "POST") {
   if (path === "/user/weight" && method === "POST") {
     const w = Number(body.weightKg);
     if (!w || w < 20 || w > 300) return { ok: false, message: "请输入有效体重（20–300 kg）" };
-    const weightKg = +w.toFixed(1);
+    const weightKg = +w.toFixed(2);   // 两位小数：体脂秤原始读数精度（2026-09-19 二期）
     const date = String(body.date || today());
     const col = db.collection("sg_weights");
     const found = await col.where({ uid, date }).limit(1).get();

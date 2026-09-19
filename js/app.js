@@ -875,7 +875,7 @@ function renderWeightTrend(w) {
     const anchor = i === 0 && !single ? 'start' : last && !single ? 'end' : 'middle';
     const tx = i === 0 && !single ? x - 1 : last && !single ? x + 1 : x;
     return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${last ? 4.2 : 3}" fill="${last ? 'var(--primary)' : '#fff'}" stroke="var(--primary)" stroke-width="1.8"/>` +
-           `<text x="${tx.toFixed(1)}" y="${(y - 8).toFixed(1)}" text-anchor="${anchor}" font-size="9.5" font-weight="600" fill="${last ? 'var(--primary-deep)' : 'var(--ink-2)'}">${v.toFixed(1)}</text>`;
+           `<text x="${tx.toFixed(1)}" y="${(y - 8).toFixed(1)}" text-anchor="${anchor}" font-size="9.5" font-weight="600" fill="${last ? 'var(--primary-deep)' : 'var(--ink-2)'}">${v.toFixed(2)}</text>`;
   }).join('');
 
   /* X 轴：日期（与数据点一一对应；单点态只有 1 个日期） */
@@ -889,7 +889,7 @@ function renderWeightTrend(w) {
     ${dots}
     ${xLabels}`;
 
-  const delta = (raw.at(-1) - raw[0]).toFixed(1);
+  const delta = (raw.at(-1) - raw[0]).toFixed(2);
   $('#weight-delta').textContent = `当前 ${raw.at(-1)} kg · 本周 ${delta > 0 ? '+' : ''}${delta} kg`;
   $('#weight-delta').style.color = delta <= 0 ? 'var(--primary)' : 'var(--warn)';
 }
@@ -912,9 +912,9 @@ function closeWeightLogSheet() {
 $('#btn-log-weight').addEventListener('click', openWeightLogSheet);
 $('#weight-log-close').addEventListener('click', closeWeightLogSheet);
 $('#weight-log-mask').addEventListener('click', closeWeightLogSheet);
-$('#weight-log-dec').addEventListener('click', () => bumpBodyVal('#weight-log-val', -0.5, 20, 300, 1));
-$('#weight-log-inc').addEventListener('click', () => bumpBodyVal('#weight-log-val', 0.5, 20, 300, 1));
-bindStepperNorm('#weight-log-val', 20, 300, 1);
+$('#weight-log-dec').addEventListener('click', () => bumpBodyVal('#weight-log-val', -0.5, 20, 300, 2));
+$('#weight-log-inc').addEventListener('click', () => bumpBodyVal('#weight-log-val', 0.5, 20, 300, 2));
+bindStepperNorm('#weight-log-val', 20, 300, 2);
 async function saveWeightKg(w) {
   if (!w || w < 20 || w > 300) { toast('请输入有效体重'); return; }
   try {
@@ -1635,7 +1635,7 @@ function bindStepperNorm(sel, min, max, fixed, after) {
   el.addEventListener('blur', norm);
 }
 bindStepperNorm('#height-val', 100, 250, 0);
-bindStepperNorm('#weight-val', 30, 200, 1);
+bindStepperNorm('#weight-val', 30, 200, 2);
 bindStepperNorm('#age-val', 10, 100, 0);
 bindStepperNorm('#weight-goal-val', WEIGHT_MIN, WEIGHT_MAX, 1);
 bindStepperNorm('#water-goal-val', WATER_GOAL_MIN, WATER_GOAL_MAX, null, v => {

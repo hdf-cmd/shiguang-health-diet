@@ -280,7 +280,7 @@ const HealthAPI = {
   updateAvatar: dataUrl => request('avatar', { method: 'PUT', body: { data: dataUrl } }),
   /** 设置喝水目标（ml，200 的整数倍，800–3000） */
   setWaterGoal: waterGoalMl => request('waterGoal', { method: 'PUT', body: { waterGoalMl } }),
-  /** 记录每日体重（kg，一位小数；同一天重复记为覆盖） */
+  /** 记录每日体重（kg，两位小数；同一天重复记为覆盖） */
   logWeight: (weightKg, date) => request('logWeight', { method: 'POST', body: { weightKg, date } }),
 
   /* ---------- 认证（用户名 + 密码） ---------- */
