@@ -897,6 +897,7 @@ function renderWeightTrend(w) {
 /* ---------- 每日体重日志：趋势卡入口 + 弹层（反馈5） ---------- */
 function openWeightLogSheet() {
   $('#weight-log-val').value = (state.body && state.body.weightKg) || 55;
+  $('#btn-scale-sync').style.display = scaleAvail() ? '' : 'none';
   $('#weight-log-mask').classList.add('show');
   $('#weight-log-sheet').classList.add('show');
 }
@@ -910,8 +911,7 @@ $('#weight-log-mask').addEventListener('click', closeWeightLogSheet);
 $('#weight-log-dec').addEventListener('click', () => bumpBodyVal('#weight-log-val', -0.5, 20, 300, 1));
 $('#weight-log-inc').addEventListener('click', () => bumpBodyVal('#weight-log-val', 0.5, 20, 300, 1));
 bindStepperNorm('#weight-log-val', 20, 300, 1);
-$('#weight-log-save').addEventListener('click', async () => {
-  const w = Number($('#weight-log-val').value);
+async function saveWeightKg(w) {
   if (!w || w < 20 || w > 300) { toast('请输入有效体重'); return; }
   try {
     const r = await HealthAPI.logWeight(w, todayIso());
@@ -929,6 +929,18 @@ $('#weight-log-save').addEventListener('click', async () => {
   } catch (e) {
     toast('保存失败：' + (e.message || '网络异常'));
   }
+}
+$('#weight-log-save').addEventListener('click', () => saveWeightKg(Number($('#weight-log-val').value)));
+
+/* ---------- 体脂秤同步：SGNative.startScale → SG_onScaleWeight/Status（v1.2.0，仅 APK 内生效） ---------- */
+const scaleAvail = () => remindAvail() && typeof window.SGNative.startScale === 'function';
+window.SG_onScaleWeight = (kg, stable) => {
+  $('#weight-log-val').value = kg;
+  if (stable) saveWeightKg(kg);
+};
+window.SG_onScaleStatus = msg => toast(msg);
+$('#btn-scale-sync').addEventListener('click', () => {
+  if (!window.SGNative.startScale()) toast('无法启动蓝牙同步');
 });
 
 /* 报告页"月"档位：接口 getMonthReport 已预留，UI 置灰占位 */
