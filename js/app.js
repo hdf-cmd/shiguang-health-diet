@@ -796,7 +796,7 @@ function renderWeekReport(r) {
     `<div class="target-line" style="bottom:${r.target / max * 100}%"><span>目标 ${r.target}</span></div>` +
     r.kcal.map((kcal, i) => `
       <div class="col ${i === todayIdxInWeek ? 'today' : ''} ${kcal > r.target ? 'over' : ''}">
-        <div class="bar" style="height:${Math.max(4, kcal / max * 100)}%"></div>
+        <button type="button" class="bar" style="height:${Math.max(4, kcal / max * 100)}%"><span class="bar-val">${kcal > 0 ? kcal + ' kcal' : '未记录'}</span></button>
         <span class="lbl">${i === todayIdxInWeek ? '今天' : labels[i]}</span>
       </div>`).join('');
 
@@ -818,6 +818,16 @@ function renderWeekReport(r) {
   $('#report-advice').textContent = buildPeriodAdvice(r, avg);
   $('#advice-title').textContent = r.isWeek === false ? '本月建议' : '本周建议';
 }
+
+/* 点击柱状图某根柱子 → 柱顶浮出该日/该周热量；再点同一根收起，点别的切换。
+ * 事件委托绑在静态容器上，innerHTML 重渲染不受影响。 */
+$('#week-chart').addEventListener('click', e => {
+  const col = e.target.closest('.col');
+  if (!col) return;
+  const wasOn = col.classList.contains('val-on');
+  $('#week-chart').querySelectorAll('.col.val-on').forEach(c => c.classList.remove('val-on'));
+  if (!wasOn) col.classList.add('val-on');
+});
 
 /* 多维规则建议引擎（周/月报）：按达标率+热量组合生成，最多 3 条拼接。
  * 与每日建议（logic.buildAdvice）区分，改名避免与 import 同名冲突。 */
@@ -2181,6 +2191,6 @@ document.addEventListener('mousedown', e => { if (!e.target.closest('#ctx-menu')
 window.__sg = {
   state, updateState, HealthAPI,
   logic: { computeMetabolism, exerciseKcalOf, portionMacros, macroGoals, avgDeficitFromRows, buildAdvice, makeAdviceCtx, EXERCISE_LIB, ACTIVITY },
-  render: { renderRing, renderMetab, renderDailyAdvice, renderWater, renderExerciseList, renderRecordLists },
+  render: { renderRing, renderMetab, renderDailyAdvice, renderWater, renderExerciseList, renderRecordLists, renderBodyTrend },
   switchScreen, setTabbarHidden,
 };
