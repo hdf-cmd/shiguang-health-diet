@@ -1,6 +1,6 @@
 {
   "name": "shiguang-health-diet",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "private": true,
   "type": "module",
   "description": "食光 · 健康饮食 App（WebView 壳 + 本地 web 资源 + CloudBase 云函数）",

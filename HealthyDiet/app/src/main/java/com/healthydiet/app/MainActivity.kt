@@ -52,16 +52,8 @@ class MainActivity : ComponentActivity() {
         else jsScaleStatus("需要蓝牙权限才能读取体脂秤，请在设置中允许后重试")
     }
 
-    /** JS 传入的用户档案（体脂测量帧需要年龄/性别/目标体重） */
-    private var scaleAge = 30
-    private var scaleSexMale = true
-    private var scaleTargetKg = 60f
-
     /** JS 桥 SGNative.startScale 的实际执行体（须在主线程调用） */
-    fun requestScale(age: Double, sexMale: Boolean, targetKg: Double) {
-        if (age in 10.0..99.0) scaleAge = age.toInt()
-        scaleSexMale = sexMale
-        if (targetKg > 20 && targetKg < 300) scaleTargetKg = targetKg.toFloat()
+    fun requestScale() {
         val need = if (Build.VERSION.SDK_INT >= 31)
             arrayOf(android.Manifest.permission.BLUETOOTH_SCAN, android.Manifest.permission.BLUETOOTH_CONNECT)
         else
@@ -72,8 +64,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startScaleSync() {
-        ScaleSync.start(this, scaleAge, scaleSexMale, scaleTargetKg,
-            { kg, stable, imp -> webView.evaluateJavascript("window.SG_onScaleWeight&&SG_onScaleWeight($kg,${if (stable) "true" else "false"},$imp)", null) },
+        ScaleSync.start(this,
+            { kg, stable -> webView.evaluateJavascript("window.SG_onScaleWeight&&SG_onScaleWeight($kg,${if (stable) "true" else "false"})", null) },
             { msg -> jsScaleStatus(msg) })
     }
 

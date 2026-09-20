@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  computeMetabolism, macroGoals, exerciseKcalOf, portionMacros, biaEstimate,
+  computeMetabolism, macroGoals, exerciseKcalOf, portionMacros,
   avgDeficitFromRows, localIso, dateLabelOf, buildAdvice, makeAdviceCtx,
   EXERCISE_LIB, WATER_CUP_ML,
 } from '../js/logic.js';
@@ -111,30 +111,3 @@ test('buildAdvice: 无记录 → 引导记录；且最多 3 条', () => {
   assert.equal(WATER_CUP_ML, 200);
 });
 
-/* ---------- 二期：BIA 体成分估算 ---------- */
-test('biaEstimate: 男性典型输入落在合理区间且肌肉率=0.948*(100-体脂)', () => {
-  const r = biaEstimate({ weightKg: 78.7, heightCm: 172, age: 21, sexMale: true, impedanceOhm: 500 });
-  assert.ok(r, '应返回结果');
-  assert.ok(r.bodyFatPct > 8 && r.bodyFatPct < 35, `体脂率离谱: ${r.bodyFatPct}`);
-  assert.equal(r.musclePct, +((0.948 * (100 - r.bodyFatPct)).toFixed(1)));
-});
-
-test('biaEstimate: 阻抗越大体脂越高（同人身）', () => {
-  const base = { weightKg: 78.7, heightCm: 172, age: 21, sexMale: true };
-  const lo = biaEstimate({ ...base, impedanceOhm: 400 });
-  const hi = biaEstimate({ ...base, impedanceOhm: 600 });
-  assert.ok(hi.bodyFatPct > lo.bodyFatPct);
-});
-
-test('biaEstimate: 非法输入返回 null；极端阻抗钳制在 5–80', () => {
-  assert.equal(biaEstimate({ weightKg: 78.7, heightCm: 172, age: 21, sexMale: true, impedanceOhm: 0 }), null);
-  assert.equal(biaEstimate({ weightKg: 1, heightCm: 172, age: 21, sexMale: true, impedanceOhm: 500 }), null);
-  assert.equal(biaEstimate({ weightKg: 78.7, heightCm: 300, age: 21, sexMale: true, impedanceOhm: 500 }), null);
-  const extreme = biaEstimate({ weightKg: 78.7, heightCm: 172, age: 21, sexMale: true, impedanceOhm: 5000 });
-  assert.ok(extreme.bodyFatPct <= 80 && extreme.bodyFatPct >= 5);
-});
-
-test('biaEstimate: 女性分支独立且合理', () => {
-  const r = biaEstimate({ weightKg: 55, heightCm: 162, age: 25, sexMale: false, impedanceOhm: 600 });
-  assert.ok(r.bodyFatPct > 15 && r.bodyFatPct < 45, `女性体脂率离谱: ${r.bodyFatPct}`);
-});

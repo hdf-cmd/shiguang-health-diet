@@ -18,7 +18,6 @@ export const state = {
   exerciseChosen: 'run', exerciseAmount: 5,
   sheetKeyword: '',
   actualDeficit: null,   // 反馈3：近 7 天实际日均缺口缓存 { avgDeficit, days, tdee }
-  comp: null,            // 二期：体成分趋势聚合 { bfLatest, bfDelta, msDelta }（秤同步数据，缺则 null）
 };
 
 /* 变更日志（环形缓冲，便于调试/回溯；不参与渲染） */

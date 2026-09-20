@@ -17,36 +17,28 @@ import android.os.Looper
 import java.util.UUID
 
 /**
- * 蚂蚁阿福体脂秤 B1（AFU-BH-TZ-B1）BLE 读取。
+ * 蚂蚁阿福体脂秤 B1（AFU-BH-TZ-B1）BLE 读取——只取体重。
  * 协议为 20 字节定长帧：AF 45 [子命令@2] [体@3..17] [线型@18] [校验@19]，
  * 校验 = sum(raw[2..18]) & 0x1F；线型 0x51=实时体重、0x54=存档记录，
  * 体重克数在 (字节反转(u32)) & 0x3FFFF，bit31=秤判定"最终值"。
  * 协议格式参考 openScale 的逆向文档（AfuB1Lib，GPL-3，仅协议事实），本实现为自写最小集。
- * 二期取数流程：0x51 locked → ACK → 等用户下秤（帧静默 2s）→ 重同步 + 取回档案
- * （profile 0x4b/0x5b + chunk 请求）→ 新鲜 0x54 带阻抗 le16@13；15s 拿不到则回退纯体重。
+ * 阻抗/体脂链路曾于 v1.3.0 实现（commit 流程取 0x54 存档阻抗 + 本地 BIA），
+ * 老大定夺"体成分是公式估值不是实测数据，只要体重"后于 v1.3.1 移除；
+ * 0x54 连接即推的旧存档（实测 13.05kg 且时钟不准）一律忽略。
  */
 object ScaleSync {
 
     private const val DEV_NAME_PREFIX = "AFU-"   // 实测：B1 广播 AFU-BH-TZ-B1，A1 广播 AFU-WL-TZ-A1
     private const val FRAME = 20
     private const val W_LIVE = 0x51
-    private const val W_STORED = 0x54
     private const val W_CONTROL = 0x5F
     private const val W_SYNC = 0x62
     private val CCCD_UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
     private const val SCAN_TIMEOUT_MS = 30_000L
     private const val READ_TIMEOUT_MS = 90_000L
 
-    fun interface OnWeight {
-        /** impedance 为 -1 表示本次没拿到阻抗（回退纯体重），kg>0 且 stable=true 即最终结果 */
-        fun on(kg: Double, stable: Boolean, impedance: Double)
-    }
+    fun interface OnWeight { fun on(kg: Double, stable: Boolean) }
     fun interface OnStatus { fun on(message: String) }
-
-    /** 用户档案帧的四种用途（子命令 + 捕获自官方 App 的 af 开放字节对） */
-    private enum class ProfileVariant(val cmd: Int, val open: Int) {
-        INITIAL(0x3F, 0xB6), GWA1(0x4B, 0xB6), GWA2(0x5B, 0xD9)
-    }
 
     private val main = Handler(Looper.getMainLooper())
     private var gatt: BluetoothGatt? = null
@@ -62,17 +54,7 @@ object ScaleSync {
     private var scanDeadline: Runnable? = null
     private var readDeadline: Runnable? = null
     private var lastKg = -1.0
-    @Volatile private var writeCh: BluetoothGattCharacteristic? = null
-    // —— 二期 commit 流程会话状态（GATT 回调线程写、main 读，全部 @Volatile）——
-    @Volatile private var userAge = 30
-    @Volatile private var userSex = 1          // AFU 约定 1=男 0=女
-    @Volatile private var userTargetKg = 60f
-    @Volatile private var lastFrameAt = 0L
-    @Volatile private var initialSent = false
-    @Volatile private var finalKg = -1.0
-    @Volatile private var weighStartedAt = 0L
-    @Volatile private var commitSent = false
-    @Volatile private var commitSentAt = 0L
+    private var lockedSent = false
 
     val isBusy: Boolean get() = active
 
@@ -80,7 +62,7 @@ object ScaleSync {
 
     /** 返回 false 表示当场失败（无蓝牙/未开），true 表示已发起、结果走回调 */
     @SuppressLint("MissingPermission")
-    fun start(ctx: Context, age: Int, sexMale: Boolean, targetKg: Float, weight: OnWeight, status: OnStatus): Boolean {
+    fun start(ctx: Context, weight: OnWeight, status: OnStatus): Boolean {
         stop()
         val adapter = obtainAdapter(ctx) ?: run {
             main.post { status.on("此设备不支持蓝牙") }; return false
@@ -95,16 +77,9 @@ object ScaleSync {
         appCtx = ctx.applicationContext
         onWeight = weight
         onStatus = status
-        userAge = age
-        userSex = if (sexMale) 1 else 0
-        userTargetKg = targetKg
         active = true
         lastKg = -1.0
-        lastFrameAt = 0L
-        initialSent = false
-        finalKg = -1.0
-        weighStartedAt = 0L
-        commitSent = false
+        lockedSent = false
         readDeadline = runnable { finish("读取超时：请站上秤后重新点同步") }
         main.postDelayed(readDeadline!!, READ_TIMEOUT_MS)
         scanDeadline = runnable { if (gatt == null) finish("30 秒没找到秤：请光脚站上秤再点一次") }
@@ -128,10 +103,7 @@ object ScaleSync {
     fun stop() {
         active = false
         probeOnLine = null
-        writeCh = null
-        initialSent = false
-        finalKg = -1.0
-        commitSent = false
+        lockedSent = false
         scanDeadline?.let { main.removeCallbacks(it) }
         readDeadline?.let { main.removeCallbacks(it) }
         scanDeadline = null
@@ -183,7 +155,6 @@ object ScaleSync {
                         (p and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE) != 0 ||
                             (p and BluetoothGattCharacteristic.PROPERTY_WRITE) != 0
                     }
-                writeCh = wc
                 if (wc != null) {
                     main.postDelayed({ handshake(g, wc) }, 200L * (notifies.size + 2))
                 }
@@ -242,117 +213,27 @@ object ScaleSync {
         if (b == null || b.size != FRAME) return
         if ((b[0].toInt() and 0xFF) != 0xAF || (b[1].toInt() and 0xFF) != 0x45) return
         if (crc(b) != (b[19].toInt() and 0x1F)) return
-        lastFrameAt = System.currentTimeMillis()
-        when (b[18].toInt() and 0xFF) {
-            W_LIVE -> {
-                val flags = swap32(be32(b, 2))
-                val g = flags and WEIGHT_MASK
-                if (weighStartedAt == 0L && g > 2000) weighStartedAt = lastFrameAt / 1000L
-                // 秤进入称重后下发一次用户档案（官方 App 同序；测体脂需要它）
-                if (!initialSent && g > 2000) {
-                    initialSent = true
-                    sendProfile(ProfileVariant.INITIAL)
-                }
-                emitLive(g / 1000.0, bit(flags, 31))
-            }
-            // 0x54 连接即推的多为旧存档（实测 13.05kg 且时钟不准）——只有 commit 之后、
-            // 时间戳新鲜且与最终体重吻合的那条才算数，从中取阻抗 le16@13
-            W_STORED -> {
-                if (!commitSent || finalKg <= 0) return
-                val flags = swap32(be32(b, 7))
-                val g = flags and WEIGHT_MASK
-                val kg = g / 1000.0
-                val ts = le32(b, 3)
-                val now = System.currentTimeMillis() / 1000L
-                if (kg !in 2.0..300.0) return
-                if (ts < weighStartedAt - 60L || kotlin.math.abs(now - ts) > 900L) return
-                if (kotlin.math.abs(g - finalKg * 1000) > 1000) return
-                sendAck(W_STORED, (b[2].toInt() and 0xFF) ushr 2 and 0x3F)
-                publish(kg, le16(b, 13).toDouble())
-            }
-            else -> {}
+        // 只信 0x51 实时流；0x54 是秤在连接时推送的旧存档（实测 13.05kg 且秤时钟不准），
+        // 当最终值会记错体重，必须忽略
+        if ((b[18].toInt() and 0xFF) == W_LIVE) {
+            val flags = swap32(be32(b, 2))
+            emit((flags and WEIGHT_MASK) / 1000.0, bit(flags, 31))
         }
     }
 
-    private fun emitLive(rawKg: Double, locked: Boolean) {
+    private fun emit(rawKg: Double, locked: Boolean) {
         if (!active) return
         val kg = Math.round(rawKg * 100.0) / 100.0
         if (kg !in 2.0..300.0) return
         if (locked) {
-            if (finalKg > 0) return
-            finalKg = kg
-            sendAck(W_LIVE, 0)
-            main.post { onStatus?.on("测量完成，请下秤，正在取回记录…") }
-            startCommitPoll()
+            if (lockedSent) return
+            lockedSent = true
+            main.post { onWeight?.on(kg, true) }
+            finish("ok")
         } else if (kg != lastKg) {
             lastKg = kg
-            main.post { onWeight?.on(kg, false, -1.0) }
+            main.post { onWeight?.on(kg, false) }
         }
-    }
-
-    /** 等秤空闲（用户下秤、帧静默 2s）后发重同步 + 取回档案；发出后 15s 内等新鲜 0x54 */
-    private fun startCommitPoll() {
-        var waited = 0L
-        val poll = object : Runnable {
-            override fun run() {
-                if (!active) return
-                val now = System.currentTimeMillis()
-                if (!commitSent) {
-                    if (now - lastFrameAt > 2000L) {
-                        commitSent = true
-                        commitSentAt = now
-                        sendCommitFrames()
-                    }
-                } else if (now - commitSentAt > 15_000L) {
-                    publish(finalKg, -1.0)   // 取回档案超时：回退发布实时最终值（无阻抗）
-                    return
-                }
-                waited += 250
-                if (waited < 60_000L) main.postDelayed(this, 250L)
-                else publish(finalKg, -1.0)
-            }
-        }
-        main.postDelayed(poll, 500L)
-    }
-
-    private fun sendCommitFrames() {
-        val wc = writeCh ?: run { publish(finalKg, -1.0); return }
-        val g = gatt ?: run { publish(finalKg, -1.0); return }
-        val now = System.currentTimeMillis() / 1000L
-        writeFrame(g, wc, buildFrame(0x16, W_CONTROL, time4(now) + byteArrayOf(0x20) + ByteArray(10)))
-        writeFrame(g, wc, buildFrame(0x04, W_SYNC, SYNC_BODY_1))
-        writeFrame(g, wc, buildFrame(0x04, W_SYNC, SYNC_BODY_2))
-        sendProfile(ProfileVariant.GWA1)
-        sendProfile(ProfileVariant.GWA2)
-        writeFrame(g, wc, buildFrame(0x14, W_CONTROL, ByteArray(15)))   // chunk 请求 → 秤推新鲜 0x54
-    }
-
-    private fun sendProfile(v: ProfileVariant) {
-        val wc = writeCh ?: return
-        val g = gatt ?: return
-        val targetX100 = Math.round(userTargetKg * 100f) and 0xFFFF
-        val body = time4(System.currentTimeMillis() / 1000L) + byteArrayOf(
-            0, 1,
-            0xAF.toByte(), v.open.toByte(), 0x17,
-            (userAge and 0xFF).toByte(), (userSex and 0xFF).toByte(),
-            (targetX100 and 0xFF).toByte(), ((targetX100 ushr 8) and 0xFF).toByte(),
-            0x03, 0x00
-        )
-        writeFrame(g, wc, buildFrame(v.cmd, 0x61, body))
-    }
-
-    private fun sendAck(replyWire: Int, correlation: Int) {
-        val wc = writeCh ?: return
-        val g = gatt ?: return
-        writeFrame(g, wc, buildFrame(0x12, W_CONTROL,
-            byteArrayOf(replyWire.toByte(), 0, (correlation and 0xFF).toByte()) + ByteArray(12)))
-    }
-
-    private fun publish(kg: Double, impedance: Double) {
-        if (!active) return
-        val v = Math.round(kg * 100.0) / 100.0
-        main.post { onWeight?.on(v, true, impedance) }
-        finish("ok")
     }
 
     private fun finish(message: String) {
@@ -401,12 +282,6 @@ object ScaleSync {
     private fun be32(b: ByteArray, off: Int): Int =
         ((b[off].toInt() and 0xFF) shl 24) or ((b[off + 1].toInt() and 0xFF) shl 16) or
             ((b[off + 2].toInt() and 0xFF) shl 8) or (b[off + 3].toInt() and 0xFF)
-
-    private fun le16(b: ByteArray, off: Int): Int =
-        (b[off].toInt() and 0xFF) or ((b[off + 1].toInt() and 0xFF) shl 8)
-
-    private fun le32(b: ByteArray, off: Int): Long =
-        (le16(b, off).toLong()) or ((b[off + 2].toLong() and 0xFF) shl 16) or ((b[off + 3].toLong() and 0xFF) shl 24)
 
     private fun swap32(v: Int): Int =
         ((v and 0xFF) shl 24) or ((v and 0xFF00) shl 8) or
