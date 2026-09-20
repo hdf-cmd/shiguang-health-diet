@@ -39,7 +39,7 @@
 | 云函数源码 | `HealthyDiet/cloudfunctions/api-diet/`（`index.js` 路由 + `data/foods.js` 食物数据） |
 | 前端 assets 副本 | `HealthyDiet/app/src/main/assets/web/`（构建时 `preBuild` 自动同步 index.html/css/js；**img 需手动放**） |
 | 单元测试 | `tests/`（`npm test`，node:test 零依赖，40 个用例：代谢/营养素换算/日期时区/每日建议/接口层） |
-| 交接文档 | `交接文档-给下一个模型.md`（**唯一事实来源**）；`HANDOFF.md` 为早期稿，已过期 |
+| 交接文档 | `交接文档-给下一个模型.md`（**唯一事实来源**） |
 
 ## 常用命令
 
