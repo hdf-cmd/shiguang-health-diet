@@ -23,3 +23,9 @@ node_modules/
 **/keystore.properties
 **/*.jks
 **/*.keystore
+
+# Flutter
+ShiguangFlutter/.dart_tool/
+ShiguangFlutter/build/
+ShiguangFlutter/android/.gradle/
+ShiguangFlutter/.flutter-plugins*
