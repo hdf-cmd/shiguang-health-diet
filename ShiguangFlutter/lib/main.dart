@@ -1,7 +1,7 @@
 // ShiguangFlutter/lib/main.dart
 import 'package:flutter/material.dart';
+import 'app/shell.dart';
 import 'app/theme.dart';
-import 'features/auth/login_screen.dart';
 
 void main() => runApp(const ShiguangApp());
 
@@ -11,6 +11,6 @@ class ShiguangApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
         title: '食光',
         theme: shiguangTheme(),
-        home: const LoginScreen(),
+        home: const Shell(),
       );
 }
