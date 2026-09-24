@@ -37,6 +37,18 @@ for (const v of apkRefs) {
   if (v !== pkgVersion) problems.push(`README.md 引用了 食光-v${v}.apk，应为 食光-v${pkgVersion}.apk`);
 }
 
+/* Flutter 线（2.x）：pubspec.yaml 版本必须以 2. 开头，build 号 = major*10000+minor*100+patch */
+const pubspec = read('ShiguangFlutter/pubspec.yaml');
+const fv = pubspec.match(/^version:\s*(\d+)\.(\d+)\.(\d+)\+(\d+)$/m);
+if (!fv) {
+  problems.push('ShiguangFlutter/pubspec.yaml 缺规范 version: X.Y.Z+N');
+} else {
+  const [_, M, m, p, n] = fv.map(Number);
+  if (M !== 2) problems.push(`Flutter 线主版本应为 2，当前 ${M}`);
+  const expect = M * 10000 + m * 100 + p;
+  if (n !== expect) problems.push(`pubspec build 号 ${n} ≠ ${expect}（major*10000+minor*100+patch）`);
+}
+
 if (problems.length) {
   console.error('[check-version] 版本号不一致：');
   for (const p of problems) console.error('  - ' + p);

@@ -2,6 +2,8 @@
 
 **当前版本：v1.3.1** ｜ 变更历史见 [CHANGELOG.md](CHANGELOG.md)
 
+**Flutter 线：开发中（2.0.0）** ｜ 工程在 `ShiguangFlutter/`，设计见 `docs/superpowers/specs/2026-09-25-flutter-rewrite-design.md`
+
 把每一餐，记成时光。核心闭环：**记三餐 → 算热量 → 看趋势**。
 
 - **界面**：纯静态 HTML/CSS/ES Module JS（无构建），见本目录 `index.html` + `js/` + `css/`
