@@ -284,7 +284,8 @@ void main() {
 
   testWidgets('默认登录态；切注册改按钮文案', (tester) async {
     await tester.pumpWidget(MaterialApp(home: LoginScreen()));
-    expect(find.text('登录'), findsOneWidget);
+    // '登录' 同时是模式标签与提交按钮文案 → 两处
+    expect(find.text('登录'), findsNWidgets(2));
     await tester.tap(find.text('注册'));
     await tester.pump();
     expect(find.text('注册并进入'), findsOneWidget);
@@ -292,7 +293,7 @@ void main() {
 
   testWidgets('空提交显示错误行', (tester) async {
     await tester.pumpWidget(MaterialApp(home: LoginScreen()));
-    await tester.tap(find.text('登录'));
+    await tester.tap(find.widgetWithText(FilledButton, '登录'));  // 点按钮，避开同名模式标签
     await tester.pump();
     expect(find.text('请输入用户名'), findsOneWidget);
   });
@@ -804,7 +805,7 @@ node scripts/check-version.mjs                       # 期望：恢复，exit 0
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.5'
+          flutter-version: '3.24.5'   # 执行时改为 Task 1 本机 flutter --version 实装版本（账本 Ruling 2）
           channel: 'stable'
           cache: true
       - run: flutter pub get
