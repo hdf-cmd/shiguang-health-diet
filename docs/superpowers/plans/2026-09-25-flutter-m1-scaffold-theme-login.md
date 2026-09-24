@@ -19,6 +19,7 @@
 - 提交信息：简体中文、`type: 描述` 前缀（feat/fix/ci/docs/chore），与仓库现有风格一致。
 - 国内网络：pub 与引擎下载走镜像环境变量 `PUB_HOSTED_URL=https://pub.flutter-io.cn`、`FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn`；git 推 GitHub 依赖 Clash（127.0.0.1:7897），推送前照例扫历史。
 - 已知环境风险：本机工作区路径含中文（`C:\Desktop\健康饮食app`）。Gradle 构建已被 HealthyDiet 证明可行；若 `flutter create`/`flutter pub get` 报路径编码类错误，把**SDK 装在纯 ASCII 路径**（本计划默认 `C:\flutter`）即可绕开，工程位置不动。
+- 环境实测（T2/T3 确认，全任务适用）：`flutter analyze` 在中文路径下必崩（flutter_tools UTF-16 bug）→ **静态分析一律 `dart analyze`**；`flutter test` 可直跑；程序化 shell 不继承 User PATH/镜像变量，每条命令先 `export PATH="$PATH:/c/flutter/bin"`。
 - 每个任务结束即 commit；测试先行（先写失败测试→跑失败→实现→跑绿）。
 
 ---
