@@ -8,6 +8,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../home/home_controller.dart';
+import 'food_freq.dart';
 
 // 记录页/弹层只 import 本文件即可拿到复用的地基 provider。
 export '../home/home_controller.dart'
@@ -30,14 +31,16 @@ typedef FoodQuery = ({String keyword, String meal});
 /// 食物搜索结果（HealthAPI.searchFoods → 契约 searchFoods 数组：
 /// {id,name,meta,kcal,emoji,image,meals,protein,carb,fat,per100?,baseG?,unit?}）。
 /// meal 恒传当前选中餐次（H5 亦恒传 state.mealChosen，js/app.js:633）。
+/// 常吃排序（方案 B）：按 foodFreqProvider 计数稳定降序，计数更新自动重排。
 final searchProvider = FutureProvider.autoDispose
     .family<List<Map<String, dynamic>>, FoodQuery>((ref, q) async {
   final list =
       await ref.watch(healthApiProvider).searchFoods(q.keyword, q.meal);
-  return list
+  final mapped = list
       .whereType<Map>()
       .map((e) => Map<String, dynamic>.from(e))
       .toList(growable: false);
+  return sortFoodByFreq(mapped, ref.watch(foodFreqProvider));
 });
 
 /// 写动作编排：成功后 invalidate 当日 records+summary（H5 添加/删除成功后的
@@ -66,6 +69,14 @@ class RecordController {
     if (!_inFlight.add(pendingKey)) return false; // 连点兜底：同键第二次不进网络层
     try {
       await _ref.read(healthApiProvider).addFoodRecord(record);
+      // 常吃续算（方案 B）：仅成功计数，删除不回减（"吃过"是事实）。
+      // 计数是尽力而为的旁路——持久层异常绝不打断记餐主流程。
+      final name = record['name'] as String?;
+      if (name != null) {
+        try {
+          await _ref.read(foodFreqProvider.notifier).record(name);
+        } catch (_) {/* 排序降级为原序，记录本身已落库 */}
+      }
       _syncDay(date);
       return true;
     } finally {

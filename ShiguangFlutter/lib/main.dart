@@ -10,6 +10,7 @@ import 'data/health_api.dart';
 import 'data/token_store.dart';
 import 'features/auth/login_screen.dart';
 import 'features/home/home_controller.dart' show healthApiProvider;
+import 'features/record/food_freq.dart';
 
 void main() {
   // 组合根：真实依赖只在这里拼装一次（SecureTokenStore → ApiClient → AuthApi/HealthApi），
@@ -37,6 +38,7 @@ void main() {
       apiClientProvider.overrideWithValue(apiClient),
       authApiProvider.overrideWithValue(authApi),
       healthApiProvider.overrideWithValue(HealthApi(apiClient)),
+      foodFreqStoreProvider.overrideWithValue(PrefsFoodFreqStore()),
     ],
   );
   runApp(UncontrolledProviderScope(

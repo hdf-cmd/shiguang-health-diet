@@ -20,6 +20,7 @@ import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
 import '../../domain/constants.dart';
 import 'portion_sheet.dart';
+import 'food_freq.dart';
 import 'record_controller.dart';
 
 Future<void> showSearchSheet(
@@ -55,6 +56,22 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
 
   /// 已生效关键词（H5 state.sheetKeyword 语义）：初始 ''，openSheet 即出结果
   String _keyword = '';
+
+  @override
+  void initState() {
+    super.initState();
+    // 常吃排序（方案 B）：开弹层触发一次性历史初始化（幂等、不阻塞渲染；
+    // 计数就绪后 searchProvider watch foodFreqProvider 自动重排）。
+    // 旁路降级：初始化失败（无网络/无注入）本次按云端原序显示，不打断记餐。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        unawaited(ref
+            .read(foodFreqProvider.notifier)
+            .ensureLoaded()
+            .catchError((Object _) {}));
+      }
+    });
+  }
 
   @override
   void dispose() {

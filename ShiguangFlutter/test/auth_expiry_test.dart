@@ -15,6 +15,7 @@ import 'package:shiguang_flutter/app/shell.dart';
 import 'package:shiguang_flutter/data/api_client.dart';
 import 'package:shiguang_flutter/data/auth_api.dart';
 import 'package:shiguang_flutter/data/health_api.dart';
+import 'package:shiguang_flutter/features/record/food_freq.dart';
 import 'package:shiguang_flutter/data/token_store.dart';
 import 'package:shiguang_flutter/features/auth/login_screen.dart';
 import 'package:shiguang_flutter/features/home/home_controller.dart'
@@ -69,8 +70,22 @@ class _AlwaysExpiredAdapter implements HttpClientAdapter {
     apiClientProvider.overrideWithValue(apiClient),
     authApiProvider.overrideWithValue(AuthApi(apiClient, store)),
     healthApiProvider.overrideWithValue(HealthApi(apiClient)),
+    // 同构锚：与 main.dart 的 foodFreqStoreProvider override 保持一致
+    // （本用例不触记录弹层，内存空桩即可）
+    foodFreqStoreProvider.overrideWithValue(_NoopFoodFreqStore()),
   ]);
   return (container, () => expiredCalls);
+}
+
+class _NoopFoodFreqStore implements FoodFreqStore {
+  @override
+  Future<Map<String, int>> loadCounts() async => {};
+  @override
+  Future<void> saveCounts(Map<String, int> counts) async {}
+  @override
+  Future<bool> isInitialized() async => true;
+  @override
+  Future<void> markInitialized() async {}
 }
 
 /// "已登录"本地态：access/refresh token 俱在，但云端视角已失效。
