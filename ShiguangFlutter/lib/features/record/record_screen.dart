@@ -14,6 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
 import '../../domain/constants.dart';
+import '../common/food_thumb.dart';
 import 'record_controller.dart';
 import 'search_sheet.dart';
 
@@ -281,7 +282,7 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
     );
   }
 
-  /// 已记列表行：名 / portion / kcal；长按触发删除确认
+  /// 已记列表行：缩略 / 名 / portion / kcal；长按触发删除确认
   Widget _recordTile(String date, Map<String, dynamic> r) {
     final kcal = (r['kcal'] as num?) ?? 0;
     return GestureDetector(
@@ -296,6 +297,13 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
         ),
         child: Row(
           children: [
+            // 缩略图位（js/app.js:546 r.image ? img : r.emoji）：M5-T4 FoodThumb。
+            // M2 移植时此行漏了 emoji 缩略列，本任务补齐并对齐带图记录。
+            FoodThumb(
+              source: (r['image'] as String?) ?? '',
+              emoji: (r['emoji'] as String?) ?? '🍽️',
+            ),
+            const SizedBox(width: Tokens.sp3),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

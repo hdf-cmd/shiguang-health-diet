@@ -19,6 +19,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
 import '../../domain/constants.dart';
+import '../common/food_thumb.dart';
 import 'portion_sheet.dart';
 import 'food_freq.dart';
 import 'record_controller.dart';
@@ -262,8 +263,12 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
       ),
       child: Row(
         children: [
-          Text('${f['emoji'] ?? '🍽️'}',
-              style: const TextStyle(fontSize: Tokens.textXl)),
+          // 缩略图位（js/app.js:637 f.image ? img : f.emoji）：M5-T4 FoodThumb，
+          // 无图/坏图回退 emoji；尺寸 40 先按 H5 .thumb 观感，目检后可调（R4）。
+          FoodThumb(
+            source: (f['image'] as String?) ?? '',
+            emoji: (f['emoji'] as String?) ?? '🍽️',
+          ),
           const SizedBox(width: Tokens.sp3),
           Expanded(
             child: Column(
