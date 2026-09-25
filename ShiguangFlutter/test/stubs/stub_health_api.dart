@@ -114,6 +114,18 @@ class StubHealthApi implements HealthApi {
   /// 非空 → logWeight 先 await 它再返回（模拟慢网 pending）
   Completer<void>? logWeightGate;
 
+  /* ---------- M5-T7 自定义食物：addCustomFood（POST /foods/custom） ---------- */
+
+  /// addCustomFood 收到的 body（按调用顺序收集；契约 requestSample 十字键，
+  /// 见 contract/fixtures/diet-core.json routes[addCustomFood]）/ 注错。
+  /// 成功返回体 ≙ 云实返平铺 {ok,id,uid,name,...}（T2 登记），端上只消费
+  /// 不校验，桩回 {ok:true,id} + 原 body 即可。
+  final List<Map<String, dynamic>> customFoodBodies = <Map<String, dynamic>>[];
+  ApiException? customFoodError;
+
+  /// 非空 → addCustomFood 先 await 它再返回（模拟慢网，验证保存按钮防重）
+  Completer<void>? customFoodGate;
+
   /// deleteFoodRecord 收到的 id（按调用顺序收集）
   final List<String> deletedIds = <String>[];
   ApiException? deleteError;
@@ -252,6 +264,15 @@ class StubHealthApi implements HealthApi {
     if (addGate != null) await addGate!.future;
     if (addError != null) throw addError!;
     return <String, dynamic>{'id': 'rec_added_${addBodies.length}', ...record};
+  }
+
+  @override
+  Future<Map<String, dynamic>> addCustomFood(Map<String, dynamic> food) async {
+    customFoodBodies.add(Map<String, dynamic>.from(food));
+    if (customFoodGate != null) await customFoodGate!.future;
+    if (customFoodError != null) throw customFoodError!;
+    // 云实返平铺（T2）：{ok,id,uid,name,...}；本任务只消费 ok 与否
+    return <String, dynamic>{'ok': true, 'id': 'cf_${customFoodBodies.length}', ...food};
   }
 
   @override

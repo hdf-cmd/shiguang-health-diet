@@ -8,8 +8,9 @@
 // 「已添加 X · 可继续添加」（676）、body 字段（678-682）、
 // 点击后按钮 disabled 防连点直到请求结束（677/693 → pending 期禁用 +「请稍候…」，
 // 文案同 H5 提交态 js/app.js:1902）。
-// 与 H5 差异：弹层内餐次分段移到记录页顶部（简报）；「＋ 自定义食物」入口
-// 属后续任务，空结果仅保留文案。
+// 与 H5 差异：弹层内餐次分段移到记录页顶部（简报）。「＋ 自定义食物」空结果
+// 入口 M5-T7 已接线（cf-open，js/app.js:645-646/657-658）；H5 记一笔弹层头部
+// 的常驻「＋ 自定义」钮（index.html:276 #sheet-cf-open）简报范围外未接，登记报告。
 
 import 'dart:async';
 
@@ -20,6 +21,7 @@ import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
 import '../../domain/constants.dart';
 import '../common/food_thumb.dart';
+import 'custom_food_sheet.dart';
 import 'portion_sheet.dart';
 import 'food_freq.dart';
 import 'record_controller.dart';
@@ -224,6 +226,27 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
                                   style: TextStyle(
                                       fontSize: Tokens.textSm,
                                       color: Tokens.ink3)),
+                              // 空结果入口（js/app.js:645-646 #cf-open）：开
+                              // 自定义食物表单，初始名=当时关键词（:1208）；
+                              // onSaved ≙ :1251 fillSheetResults(sheetKeyword)
+                              // = 以当前关键词重查（invalidate 同键 family）。
+                              OutlinedButton(
+                                key: const ValueKey('cf-open'),
+                                onPressed: () => openCustomFoodSheet(
+                                  context,
+                                  meal: widget.meal,
+                                  initialName: _keyword,
+                                  onSaved: () => ref.invalidate(
+                                      searchProvider((
+                                        keyword: _keyword,
+                                        meal: widget.meal,
+                                      ))),
+                                ),
+                                child: const Text('＋ 自定义食物', // :646 逐字
+                                    style: TextStyle(
+                                        fontSize: Tokens.textSm,
+                                        color: Tokens.primaryDeep)),
+                              ),
                             ],
                           ),
                         )
