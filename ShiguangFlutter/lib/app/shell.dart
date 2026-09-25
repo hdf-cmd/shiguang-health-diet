@@ -2,9 +2,10 @@
 import 'package:flutter/material.dart';
 import '../features/home/home_screen.dart';
 import '../features/record/record_screen.dart';
-// 两个占位文件同为 PlaceholderScreen，Dart 无法无名歧义导入，按 brief 同构文件结构加前缀区分。
 import '../features/profile/profile_placeholder.dart' show PlaceholderScreen;
-import '../features/report/report_placeholder.dart' as report_placeholder;
+// M3-T4：报告 tab 接真实 ReportScreen；报告占位文件已删，profile 占位仍在
+//（同名 PlaceholderScreen，保留 show 显式导出）。
+import '../features/report/report_screen.dart';
 import 'theme.dart';
 
 class Shell extends StatefulWidget {
@@ -43,7 +44,7 @@ class ShellState extends State<Shell> {
         children: const [
           HomeScreen(),
           RecordScreen(),
-          report_placeholder.PlaceholderScreen('报告（M2 接入）'),
+          ReportScreen(),
           PlaceholderScreen('我的（M2 接入）'),
         ],
       ),

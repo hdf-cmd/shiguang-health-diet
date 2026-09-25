@@ -19,6 +19,10 @@ class StubHealthApi implements HealthApi {
     this.recordsError,
     this.foods,
     this.searchError,
+    this.weekReport,
+    this.weekError,
+    this.monthReport,
+    this.monthError,
   });
 
   /// 成功返回体（null 时按全零汇总/空记录处理）
@@ -53,6 +57,21 @@ class StubHealthApi implements HealthApi {
   final List<String> deletedIds = <String>[];
   ApiException? deleteError;
 
+  /* ---------- M3-T4 报告页：week/month（getWeightTrend 留到 T6） ---------- */
+
+  /// getWeekReport/getMonthReport 成功返回体（null → 全零默认，形状见
+  /// contract/fixtures/diet-core.json weekReport/monthReport responseSample）
+  Map<String, dynamic>? weekReport;
+  Map<String, dynamic>? monthReport;
+
+  /// 非空 → 对应方法抛该异常（可测试中途清空，模拟"重试后成功"）
+  ApiException? weekError;
+  ApiException? monthError;
+
+  /// 调用次数：验证重试确实重新取数
+  int weekCalls = 0;
+  int monthCalls = 0;
+
   /// 契约 fixture（contract/fixtures/diet-core.json）的字段形状：
   /// summary → {kcal,target,carb,protein,fat,water}
   static Map<String, dynamic> summaryMap({
@@ -84,6 +103,22 @@ class StubHealthApi implements HealthApi {
         'protein': 0,
         'carb': 0,
         'fat': 0,
+      };
+
+  /// 周报 fixture 形状 → {days,kcal,target,rates}（contract diet-core.json weekReport）
+  static Map<String, dynamic> weekReportMap({
+    List<String> days = const ['一', '二', '三', '四', '五', '六', '日'],
+    List<num> kcal = const [0, 0, 0, 0, 0, 0, 0],
+    num target = 1679,
+    num carb = 0,
+    num protein = 0,
+    num fat = 0,
+  }) =>
+      {
+        'days': days,
+        'kcal': kcal,
+        'target': target,
+        'rates': {'carb': carb, 'protein': protein, 'fat': fat},
       };
 
   @override
@@ -122,6 +157,20 @@ class StubHealthApi implements HealthApi {
     deletedIds.add(id);
     if (deleteError != null) throw deleteError!;
     return <String, dynamic>{'ok': true};
+  }
+
+  @override
+  Future<Map<String, dynamic>> getWeekReport({int offset = 0}) async {
+    weekCalls++;
+    if (weekError != null) throw weekError!;
+    return weekReport ?? weekReportMap();
+  }
+
+  @override
+  Future<Map<String, dynamic>> getMonthReport({int offset = 0}) async {
+    monthCalls++;
+    if (monthError != null) throw monthError!;
+    return monthReport ?? <String, dynamic>{};
   }
 
   @override

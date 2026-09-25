@@ -13,10 +13,14 @@ abstract class Tokens {
   static const ink2 = Color(0xFF55624C);
   static const ink3 = Color(0xFF8E9B84);
   static const line = Color(0xFFE4E9DC);
+  /// 发丝线 css --hairline: rgba(28,36,24,.06)（.06→0x0F；M3-T4 报告图表轴线/描边）
+  static const hairline = Color(0x0F1C2418);
   // 色彩 · 品牌
   static const primary = Color(0xFF356B45);
   static const primaryDeep = Color(0xFF234D30);
   static const primarySoft = Color(0xFFE3EFE0);
+  /// 环/焦点外发光 css --primary-glow: rgba(53,107,69,.18)（.18→0x2E；M3-T4 今天柱阴影）
+  static const primaryGlow = Color(0x2E356B45);
   // 色彩 · 营养素 / 语义
   static const nutCarb = Color(0xFFD99A34);
   static const nutProtein = Color(0xFFBF5B4B);
@@ -46,6 +50,12 @@ abstract class Tokens {
   static const shadowFloat = [
     BoxShadow(color: Color(0x421C2418), blurRadius: 44, offset: Offset(0, 14), spreadRadius: -14),
   ];
+  /// 周柱图点击气泡 css .bar-val box-shadow: 0 2px 8px -2px rgb(0 0 0/.12)（.12→0x1F）
+  static const shadowBarVal =
+      BoxShadow(color: Color(0x1F000000), blurRadius: 8, offset: Offset(0, 2), spreadRadius: -2);
+  /// segmented 选中项 css button.active box-shadow: 0 2px 8px -2px rgba(28,36,24,.14)（.14→0x24）
+  static const shadowSegmented =
+      BoxShadow(color: Color(0x241C2418), blurRadius: 8, offset: Offset(0, 2), spreadRadius: -2);
   /// 浮动 TabBar 面板底：白 92%（css --glass 为 78%，此值为 M1 shell 现用 0xEBFFFFFF，
   /// Flutter 3.24 无 withValues 故直写 ARGB；M1 终审 I1 收敛进令牌）
   static const surfaceNav = Color(0xEBFFFFFF);
