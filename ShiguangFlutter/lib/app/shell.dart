@@ -1,9 +1,9 @@
 // ShiguangFlutter/lib/app/shell.dart
 import 'package:flutter/material.dart';
 import '../features/home/home_screen.dart';
-// 三个占位文件同为 PlaceholderScreen，Dart 无法无名歧义导入，按 brief 同构文件结构加前缀区分。
+import '../features/record/record_screen.dart';
+// 两个占位文件同为 PlaceholderScreen，Dart 无法无名歧义导入，按 brief 同构文件结构加前缀区分。
 import '../features/profile/profile_placeholder.dart' show PlaceholderScreen;
-import '../features/record/record_placeholder.dart' as record_placeholder;
 import '../features/report/report_placeholder.dart' as report_placeholder;
 import 'theme.dart';
 
@@ -32,7 +32,7 @@ class ShellState extends State<Shell> {
         onPageChanged: (i) => setState(() => _index = i),
         children: const [
           HomeScreen(),
-          record_placeholder.PlaceholderScreen('记录（M2 接入）'),
+          RecordScreen(),
           report_placeholder.PlaceholderScreen('报告（M2 接入）'),
           PlaceholderScreen('我的（M2 接入）'),
         ],

@@ -10,7 +10,14 @@ import 'package:shiguang_flutter/data/api_client.dart';
 import 'package:shiguang_flutter/data/health_api.dart';
 
 class StubHealthApi implements HealthApi {
-  StubHealthApi({this.summary, this.records, this.summaryError, this.recordsError});
+  StubHealthApi({
+    this.summary,
+    this.records,
+    this.summaryError,
+    this.recordsError,
+    this.foods,
+    this.searchError,
+  });
 
   /// 成功返回体（null 时按全零汇总/空记录处理）
   Map<String, dynamic>? summary;
@@ -23,6 +30,23 @@ class StubHealthApi implements HealthApi {
   /// 调用次数：验证重试确实是重新取数，不是本地缓存翻牌
   int summaryCalls = 0;
   int recordsCalls = 0;
+
+  /* ---------- T9 记录页：search / add / delete ---------- */
+
+  /// searchFoods 成功返回体（null → 空数组，模拟"没找到"）
+  List<dynamic>? foods;
+  ApiException? searchError;
+  int searchCalls = 0;
+  String? lastSearchKeyword;
+  String? lastSearchMeal;
+
+  /// addFoodRecord 收到的 body（按调用顺序收集，测试断言契约字段）
+  final List<Map<String, dynamic>> addBodies = <Map<String, dynamic>>[];
+  ApiException? addError;
+
+  /// deleteFoodRecord 收到的 id（按调用顺序收集）
+  final List<String> deletedIds = <String>[];
+  ApiException? deleteError;
 
   /// 契约 fixture（contract/fixtures/diet-core.json）的字段形状：
   /// summary → {kcal,target,carb,protein,fat,water}
@@ -69,6 +93,29 @@ class StubHealthApi implements HealthApi {
     recordsCalls++;
     if (recordsError != null) throw recordsError!;
     return records ?? const <dynamic>[];
+  }
+
+  @override
+  Future<List<dynamic>> searchFoods(String keyword, [String? meal]) async {
+    searchCalls++;
+    lastSearchKeyword = keyword;
+    lastSearchMeal = meal;
+    if (searchError != null) throw searchError!;
+    return foods ?? const <dynamic>[];
+  }
+
+  @override
+  Future<Map<String, dynamic>> addFoodRecord(Map<String, dynamic> record) async {
+    addBodies.add(Map<String, dynamic>.from(record));
+    if (addError != null) throw addError!;
+    return <String, dynamic>{'id': 'rec_added_${addBodies.length}', ...record};
+  }
+
+  @override
+  Future<Map<String, dynamic>> deleteFoodRecord(String id) async {
+    deletedIds.add(id);
+    if (deleteError != null) throw deleteError!;
+    return <String, dynamic>{'ok': true};
   }
 
   @override

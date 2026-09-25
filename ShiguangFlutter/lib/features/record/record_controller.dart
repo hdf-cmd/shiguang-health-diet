@@ -1,0 +1,68 @@
+// ShiguangFlutter/lib/features/record/record_controller.dart
+// 记录页数据层（M2 Task 9）。recordsProvider/summaryProvider/todayProvider/
+// healthApiProvider 直接复用 home_controller 的 family 实例（同一 Provider
+// 对象同参数即同一缓存，记录页与首页天然共享，不重建）。
+// 行为权威源 js/app.js：defaultMeal 603-609、搜索弹层取数 628-651、
+// 添加/删除后「静默对账云端」refreshToday+loadRecordPage（572-573、683）。
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../home/home_controller.dart';
+
+// 记录页/弹层只 import 本文件即可拿到复用的地基 provider。
+export '../home/home_controller.dart'
+    show healthApiProvider, recordsProvider, summaryProvider, todayProvider;
+
+/// 按当前小时智能默认餐次。逐分支镜像 js/app.js:603-609 defaultMeal：
+/// <10 早餐 / <15 午餐 / <21 晚餐 / 其余零食。
+/// 小时由调用方注入（DateTime.now().hour 或测试固定值），保证可测。
+String defaultMealAt(int hour) {
+  if (hour < 10) return 'breakfast';
+  if (hour < 15) return 'lunch';
+  if (hour < 21) return 'dinner';
+  return 'snack';
+}
+
+/// searchProvider family 键：record 类型自带结构相等，keyword+meal 任一变化即新查询
+/// （对齐 H5：改关键词或切餐次都重新 fillSheetResults，js/app.js:697-700、708-712）。
+typedef FoodQuery = ({String keyword, String meal});
+
+/// 食物搜索结果（HealthAPI.searchFoods → 契约 searchFoods 数组：
+/// {id,name,meta,kcal,emoji,image,meals,protein,carb,fat,per100?,baseG?,unit?}）。
+/// meal 恒传当前选中餐次（H5 亦恒传 state.mealChosen，js/app.js:633）。
+final searchProvider = FutureProvider.autoDispose
+    .family<List<Map<String, dynamic>>, FoodQuery>((ref, q) async {
+  final list =
+      await ref.watch(healthApiProvider).searchFoods(q.keyword, q.meal);
+  return list
+      .whereType<Map>()
+      .map((e) => Map<String, dynamic>.from(e))
+      .toList(growable: false);
+});
+
+/// 写动作编排：成功后 invalidate 当日 records+summary（H5 添加/删除成功后的
+/// `Promise.all([refreshToday(), loadRecordPage()])` 对账语义，
+/// js/app.js:572-573、683、770）。失败原样抛 ApiException 由 UI 出 toast。
+class RecordController {
+  RecordController(this._ref);
+
+  final Ref _ref;
+
+  Future<void> addRecord(String date, Map<String, dynamic> record) async {
+    await _ref.read(healthApiProvider).addFoodRecord(record);
+    _syncDay(date);
+  }
+
+  Future<void> deleteRecord(String date, String id) async {
+    await _ref.read(healthApiProvider).deleteFoodRecord(id);
+    _syncDay(date);
+  }
+
+  void _syncDay(String date) {
+    _ref.invalidate(recordsProvider(date));
+    _ref.invalidate(summaryProvider(date));
+  }
+}
+
+final recordControllerProvider =
+    Provider<RecordController>((ref) => RecordController(ref));
