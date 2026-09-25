@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   computeMetabolism, macroGoals, exerciseKcalOf, portionMacros,
   avgDeficitFromRows, localIso, dateLabelOf, buildAdvice, makeAdviceCtx,
-  EXERCISE_LIB, WATER_CUP_ML,
+  EXERCISE_LIB, WATER_CUP_ML, exerciseAmountLabel, isRepRecord,
 } from '../js/logic.js';
 
 const BODY = { heightCm: 165, weightKg: 60, age: 28, gender: 'female', activity: 'light', deficit: 500 };
@@ -53,6 +53,38 @@ test('exerciseKcalOf: 距离型与时长型公式', () => {
   assert.equal(exerciseKcalOf(run, 5, 55), 285);          // 1.036*55*5
   assert.equal(exerciseKcalOf(swim, 30, 55), 231);        // 8*3.5*55/200*30
   assert.equal(exerciseKcalOf(run, 5, undefined), 285);   // 缺省体重 55
+});
+
+test('exerciseKcalOf: 次数型（俯卧撑/跳绳）按 系数×体重×次数', () => {
+  const pushup = EXERCISE_LIB.find(l => l.key === 'pushup');
+  const rope = EXERCISE_LIB.find(l => l.key === 'rope');
+  assert.equal(pushup.unit, 'rep');
+  assert.equal(rope.unit, 'rep');
+  assert.equal(exerciseKcalOf(pushup, 30, 70), 9);        // 0.0045*70*30=9.45→9
+  assert.equal(exerciseKcalOf(pushup, 1, 70), 0);         // 0.0045*70=0.315→0
+  assert.equal(exerciseKcalOf(rope, 1000, 70), 84);       // 0.0012*70*1000=84
+  assert.equal(exerciseKcalOf(rope, 500, 55), 33);        // 0.0012*55*500=33
+});
+
+test('exerciseAmountLabel: 三型各自的输入标题与单位', () => {
+  const run = EXERCISE_LIB.find(l => l.key === 'run');
+  const swim = EXERCISE_LIB.find(l => l.key === 'swim');
+  const pushup = EXERCISE_LIB.find(l => l.key === 'pushup');
+  const rope = EXERCISE_LIB.find(l => l.key === 'rope');
+  assert.deepEqual(exerciseAmountLabel(run), { name: '距离', unit: 'km' });
+  assert.deepEqual(exerciseAmountLabel(swim), { name: '时长', unit: '分钟' });
+  assert.deepEqual(exerciseAmountLabel(pushup), { name: '数量', unit: '次' });
+  assert.deepEqual(exerciseAmountLabel(rope), { name: '数量', unit: '个' });
+});
+
+test('isRepRecord: 次数型 key + 划线时刻起算，旧记录仍按分钟', () => {
+  const cutoff = Date.parse('2026-09-25T00:00:00+08:00');
+  assert.equal(isRepRecord({ key: 'pushup', createdAt: cutoff + 1000 }), true);
+  assert.equal(isRepRecord({ key: 'rope', createdAt: cutoff }), true);
+  assert.equal(isRepRecord({ key: 'pushup', createdAt: cutoff - 1000 }), false); // 改造前记的分钟
+  assert.equal(isRepRecord({ key: 'run', createdAt: cutoff + 1000 }), false);    // 距离型不算
+  assert.equal(isRepRecord({ key: 'swim', createdAt: cutoff + 1000 }), false);
+  assert.equal(isRepRecord(null), false);
 });
 
 test('portionMacros: per100 按克数线性换算', () => {

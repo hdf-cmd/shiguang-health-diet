@@ -68,6 +68,8 @@ class Exercise {
     required this.unit,
     this.perKgKm,
     this.met,
+    this.perRepKg,
+    this.repUnit,
   });
 
   final String key;
@@ -76,6 +78,8 @@ class Exercise {
   final String unit;
   final double? perKgKm;
   final double? met;
+  final double? perRepKg;
+  final String? repUnit;
 }
 
 const exerciseLib = <Exercise>[
@@ -83,10 +87,10 @@ const exerciseLib = <Exercise>[
   Exercise(key: 'walk', name: '快走', emoji: '🚶', unit: 'km', perKgKm: 0.5),
   Exercise(key: 'cycle', name: '骑行', emoji: '🚴', unit: 'km', perKgKm: 0.35),
   Exercise(key: 'swim', name: '游泳', emoji: '🏊', unit: 'min', met: 8),
-  Exercise(key: 'pushup', name: '俯卧撑', emoji: '💪', unit: 'min', met: 8),
+  Exercise(key: 'pushup', name: '俯卧撑', emoji: '💪', unit: 'rep', perRepKg: 0.0045, repUnit: '次'),
   Exercise(key: 'strength', name: '力量训练', emoji: '🏋️', unit: 'min', met: 5),
   Exercise(key: 'yoga', name: '瑜伽', emoji: '🧘', unit: 'min', met: 2.5),
-  Exercise(key: 'rope', name: '跳绳', emoji: '🤸', unit: 'min', met: 11),
+  Exercise(key: 'rope', name: '跳绳', emoji: '🤸', unit: 'rep', perRepKg: 0.0012, repUnit: '个'),
   Exercise(key: 'hiit', name: 'HIIT', emoji: '🔥', unit: 'min', met: 8),
   Exercise(key: 'ball', name: '球类', emoji: '🏀', unit: 'min', met: 7),
 ];

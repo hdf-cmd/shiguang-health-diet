@@ -1,6 +1,6 @@
 # 食光 · 健康饮食 App
 
-**当前版本：v1.3.1** ｜ 变更历史见 [CHANGELOG.md](CHANGELOG.md)
+**当前版本：v1.4.0** ｜ 变更历史见 [CHANGELOG.md](CHANGELOG.md)
 
 **Flutter 线：开发中（2.0.0）** ｜ 工程在 `ShiguangFlutter/`，设计见 `docs/superpowers/specs/2026-09-25-flutter-rewrite-design.md`
 
@@ -8,7 +8,7 @@
 
 - **界面**：纯静态 HTML/CSS/ES Module JS（无构建），见本目录 `index.html` + `js/` + `css/`
 - **后端**：腾讯云 CloudBase（环境 `cloud1-d6g4x9h9m507b429c`）——用户名密码登录 + 云数据库 + 食物库，全部收口在单入口云函数 `api-diet`
-- **APK**：`食光-v1.3.1.apk`（release 签名；Kotlin WebView 壳，页面内置于 assets，经内嵌本地服务 `http://127.0.0.1:8765` 加载以通过网关 CORS，数据走云端）
+- **APK**：`食光-v1.4.0.apk`（release 签名；Kotlin WebView 壳，页面内置于 assets，经内嵌本地服务 `http://127.0.0.1:8765` 加载以通过网关 CORS，数据走云端）
 
 ## 已实现功能（真实后端）
 
@@ -28,7 +28,7 @@
 
 ## 使用
 
-- **手机**：安装 `食光-v1.3.1.apk`（允许未知来源安装），注册账号即可使用
+- **手机**：安装 `食光-v1.4.0.apk`（允许未知来源安装），注册账号即可使用
 - **电脑浏览器**：`python -m http.server 8765` 后访问 `http://localhost:8765`（或双击 index.html 看界面，但 file:// 下会被 CORS 拦截，需经 localhost 访问才能连真实后端）
   - ⚠️ 浏览器预览时**食物图片不显示**：图片只在 `HealthyDiet/app/src/main/assets/web/img/`（APK 内路径），仓库根目录没有 `img/`。这是已知取舍，待整改（见待办 1）
 

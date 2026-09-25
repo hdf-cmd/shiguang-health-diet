@@ -38,7 +38,7 @@ void main() {
     expect(bodyDefault['deficit'], 500);
   });
 
-  test('运动库 10 项：距离型带 perKgKm，时长型带 met，字段名与 JS 一致', () {
+  test('运动库 10 项：距离型带 perKgKm、时长型带 met、次数型带 perRepKg，字段名与 JS 一致', () {
     expect(exerciseLib.length, 10);
     final run = exerciseLib.firstWhere((l) => l.key == 'run');
     final walk = exerciseLib[1]; // 建议规则 snack-over/meal-over 用 EXERCISE_LIB[1] 快走
@@ -57,8 +57,16 @@ void main() {
     // 逐项核对单位归类：前 3 距离型，其余 7 时长型
     expect(exerciseLib.where((l) => l.unit == 'km').map((l) => l.key).toList(),
         ['run', 'walk', 'cycle']);
-    expect(exerciseLib.where((l) => l.unit == 'min').length, 7);
-    expect(exerciseLib.firstWhere((l) => l.key == 'rope').met, 11);
+    // 次数型改造（2026-09-25 老大令）：俯卧撑/跳绳按 次数×体重，其余 5 项时长型
+    expect(exerciseLib.where((l) => l.unit == 'min').map((l) => l.key).toList(),
+        ['swim', 'strength', 'yoga', 'hiit', 'ball']);
+    expect(exerciseLib.where((l) => l.unit == 'rep').map((l) => l.key).toList(),
+        ['pushup', 'rope']);
+    final pushup = exerciseLib.firstWhere((l) => l.key == 'pushup');
+    expect(pushup.perRepKg, 0.0045);
+    expect(pushup.repUnit, '次');
+    expect(pushup.met, isNull);
+    expect(exerciseLib.firstWhere((l) => l.key == 'rope').perRepKg, 0.0012);
     expect(exerciseLib.firstWhere((l) => l.key == 'yoga').met, 2.5);
   });
 }
