@@ -3,8 +3,6 @@
 // 逐位翻译到 Dart，保证 H5 与 Flutter 计算结果完全一致（双栈契约）。
 // 分层铁律：本文件不得 import package:flutter。
 
-import 'dart:math' as math;
-
 /// JS Math.round(x) ≡ Math.floor(x + 0.5)（half 向 +∞ 取整，与 Dart 的“远离零”不同）
 int jsRound(num x) => (x.toDouble() + 0.5).floor();
 
@@ -22,6 +20,3 @@ String jsNumText(num v) {
 
 /// JS Math.ceil
 int jsCeil(num x) => x.toDouble().ceil();
-
-/// JS Math.max（num 版）
-num jsMax(List<num> xs) => xs.reduce(math.max);
