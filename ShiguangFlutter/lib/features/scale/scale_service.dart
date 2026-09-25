@@ -125,6 +125,9 @@ class ScaleService {
 
   /// 发起一次同步。会话进行中再调 → 直接返回进行中的同一个 Future
   /// （不并发两条会话；Kotlin 是 start 前置 stop，这里用重入等价锁定）。
+  /// 注意（I1(a)）：cancel() 返回后旧 _run 的迟到 await（scanAndConnect 等）
+  /// 可能仍在收尾，该窗口内 start() 返回的仍是本次 cancelled 的同一个
+  /// Future——重入保护延迟到 _run 真正落地才解除，杜绝双会话交叉。
   Future<ScaleOutcome> start() {
     final inflight = _inflight;
     if (inflight != null) return inflight;
@@ -141,7 +144,7 @@ class ScaleService {
     await pending.future;
   }
 
-  Future<ScaleOutcome> _run() async {
+  Future<ScaleOutcome> _run() {
     final pending = Completer<ScaleOutcome>();
     _pending = pending;
     _lastKg = null; // :81 lastKg = -1.0
@@ -152,9 +155,20 @@ class ScaleService {
       _finish(const ScaleOutcome('read-timeout')); // :83 "读取超时"
     });
 
+    // I1(a)：_inflight 必须等 _runSession 的全部 await 真正落地后才解除。
+    // 若在 _finish 里提前清，旧 _run 仍可能卡在 scanAndConnect（真机秒级），
+    // cancel→立即重来会放行第二条会话，与旧会话迟到的 close 在 transport
+    // 层交叉断连（评审 I1，test 有复现用例钉死）。
+    return _runSession(pending).whenComplete(() {
+      _inflight = null;
+      if (identical(_pending, pending)) _pending = null; // 双保险，防迟到路径漏清
+    });
+  }
+
+  Future<ScaleOutcome> _runSession(Completer<ScaleOutcome> pending) async {
     try {
       if (!await _transport.ensurePermissions()) {
-        return _finish(const ScaleOutcome('permission-denied'));
+        return await _terminate(pending, const ScaleOutcome('permission-denied'));
       }
       if (pending.isCompleted) return await pending.future; // 等待期间已被 cancel/超时终止
 
@@ -164,13 +178,15 @@ class ScaleService {
             namePrefix: 'AFU-', timeout: scanTimeout);
       } on TransportException catch (e) {
         // :67-71 蓝牙不可用；:130 连接断开/失败
-        return _finish(ScaleOutcome(
-            e.kind == 'no-bluetooth' ? 'no-bluetooth' : 'connect-fail'));
+        return await _terminate(
+            pending,
+            ScaleOutcome(
+                e.kind == 'no-bluetooth' ? 'no-bluetooth' : 'connect-fail'));
       } catch (_) {
-        return _finish(const ScaleOutcome('connect-fail'));
+        return await _terminate(pending, const ScaleOutcome('connect-fail'));
       }
       if (session == null) {
-        return _finish(const ScaleOutcome('scan-timeout')); // :85 "30 秒没找到秤"
+        return await _terminate(pending, const ScaleOutcome('scan-timeout')); // :85 "30 秒没找到秤"
       }
       if (pending.isCompleted) {
         // 等待期间会话已被终止：立刻归还刚拿到的连接，不留悬空 GATT
@@ -187,12 +203,12 @@ class ScaleService {
           await session.writeFrame(frame); // ScaleSync.kt:187-193
         }
       } catch (_) {
-        return _finish(const ScaleOutcome('connect-fail'));
+        return await _terminate(pending, const ScaleOutcome('connect-fail'));
       }
       return await pending.future;
     } catch (_) {
       // 编排层自身的意外错误：不静默挂死，归入 connect-fail
-      return _finish(const ScaleOutcome('connect-fail'));
+      return await _terminate(pending, const ScaleOutcome('connect-fail'));
     }
   }
 
@@ -214,7 +230,19 @@ class ScaleService {
     }
   }
 
+  /// M2：单一终态守卫——pending 若已被 cancel()/超时抢先完成，本会话一切
+  /// 等待方以已完成的终态为准，禁止再产出第二终态（否则 start 与 cancel 两
+  /// waiter 拿到不同结果）。pending 未完成时才走 _finish 落定新终态。
+  Future<ScaleOutcome> _terminate(
+      Completer<ScaleOutcome> pending, ScaleOutcome outcome) {
+    if (pending.isCompleted) return pending.future;
+    return Future.value(_finish(outcome));
+  }
+
   /// 终止会话：清 timer/订阅/连接，完成 outcome。幂等。
+  /// 注意（I1(a)）：这里**不**清 _inflight——重入保护的解除延迟到 _run 的
+  /// 全部 await（含此处之后 _runSession 里的迟到 scanAndConnect）真正落地，
+  /// 见 _run 注释与 test/scale_service_test.dart 的 I1 复现用例。
   ScaleOutcome _finish(ScaleOutcome outcome) {
     _readTimer?.cancel();
     _readTimer = null;
@@ -229,7 +257,6 @@ class ScaleService {
     if (pending != null && !pending.isCompleted) {
       pending.complete(outcome);
     }
-    _inflight = null;
     return outcome;
   }
 }

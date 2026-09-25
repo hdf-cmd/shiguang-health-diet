@@ -21,9 +21,10 @@
 //       writeWithoutResponse}
 //     platform_interface 9.0.3 guid.dart :68 Guid.str → 128-bit 厂商 UUID 返回
 //       小写全串 → startsWith('af000002') 与 Kotlin uuid.toString() 语义一致
-//   permission_handler 13.0.2 extension PermissionActions.request() →
-//     PermissionStatus（isGranted）；permission_handler_android 14.1.0
-//     PermissionUtils.java :489-504：API<31 时 BLUETOOTH_SCAN/CONNECT 不进
+//   permission_handler 12.0.1（pubspec.yaml:23 精确钉，非 caret）extension
+//     PermissionActions.request() → PermissionStatus（isGranted）；
+//     permission_handler_android 13.0.1（随 12.0.1 解析，见 pubspec.lock）
+//     PermissionUtils.java:283-295：API<31 时 BLUETOOTH_SCAN/CONNECT 不进
 //     请求名单（返回 granted）→ 与 H5 壳 MainActivity.kt:57-60 的
 //     「≥31 要蓝牙双权限，≤30 要精确定位」分流一致。
 //
@@ -42,13 +43,14 @@ import 'scale_service.dart';
 /// flutter_blue_plus 实现。个人/非商业项目按插件许可枚举选
 /// [License.nonprofit]（2.3.13 connect 必填参数，见 LICENSE 条款）。
 class BluePlusTransport implements ScaleTransport {
+  // I1(b)：device / 写特征 / 通知订阅**全部收进 _BluePlusSession 各持各的**，
+  // transport 实例不再存会话状态。此前它们挂在字段上，cancel→立即重来时旧
+  // 会话迟到的 close() 会从字段读到新会话的 device/subs → 断掉新会话 GATT、
+  // 取消新会话订阅（评审 I1 交叉断连根因）。transport 级只保留通知广播流
+  // （跨会话复用，属流管道而非会话资源）。
   /// transport 级广播通知流：跨会话复用，close 会话只退订不关流
   final StreamController<List<int>> _notifications =
       StreamController<List<int>>.broadcast();
-
-  final List<StreamSubscription<List<int>>> _charSubs = [];
-  BluetoothCharacteristic? _writeChr;
-  BluetoothDevice? _device;
 
   @override
   Stream<List<int>> notifications() => _notifications.stream;
@@ -134,6 +136,8 @@ class BluePlusTransport implements ScaleTransport {
     await scanSub.cancel();
     await FlutterBluePlus.stopScan(); // ScaleSync.kt:122 扫到即停扫
 
+    // I1(b)：本会话独占的资源全部局持有，成功后打包进 _BluePlusSession
+    final charSubs = <StreamSubscription<List<int>>>[];
     try {
       await device.connect(license: License.nonprofit);
       final services = await device.discoverServices();
@@ -164,27 +168,25 @@ class BluePlusTransport implements ScaleTransport {
       // 先建立订阅再交给编排层握手（Kotlin :147-159 时序）
       for (final c in notifies) {
         await c.setNotifyValue(true);
-        _charSubs.add(c.onValueReceived.listen(_notifications.add));
+        charSubs.add(c.onValueReceived.listen(_notifications.add));
       }
-      _writeChr = writeChr;
-      _device = device;
-      return _BluePlusSession(this);
+      return _BluePlusSession(device, writeChr, charSubs);
     } on TransportException {
-      await _teardown(device);
+      await _teardown(device, charSubs);
       rethrow;
     } catch (e) {
       // :130 连接失败/断开
-      await _teardown(device);
+      await _teardown(device, charSubs);
       throw TransportException('connect-fail', '$e');
     }
   }
 
-  Future<void> _teardown(BluetoothDevice? device) async {
-    for (final s in _charSubs) {
+  Future<void> _teardown(
+      BluetoothDevice? device, List<StreamSubscription<List<int>>> subs) async {
+    for (final s in subs) {
       await s.cancel();
     }
-    _charSubs.clear();
-    _writeChr = null;
+    subs.clear();
     try {
       if (device != null && device.isConnected) {
         await device.disconnect();
@@ -192,18 +194,23 @@ class BluePlusTransport implements ScaleTransport {
     } catch (_) {
       // 断开失败不再抛：会话已作废
     }
-    _device = null;
   }
 }
 
+/// 一条已连接会话。**自带** device/写特征/订阅三份资源（I1(b)），close 只
+/// 可能影响自己，不再经由任何 transport 共享字段——旧会话迟到的 close 与
+/// 新会话建立并发时不会交叉断连。
 class _BluePlusSession implements TransportSession {
-  _BluePlusSession(this._t);
-  final BluePlusTransport _t;
+  _BluePlusSession(this._device, this._writeChr, this._charSubs);
+
+  BluetoothDevice? _device;
+  BluetoothCharacteristic? _writeChr;
+  final List<StreamSubscription<List<int>>> _charSubs;
   bool _closed = false;
 
   @override
   Future<void> writeFrame(List<int> frame) async {
-    final c = _t._writeChr;
+    final c = _writeChr;
     if (c == null) throw const TransportException('connect-fail', '已断开');
     // ScaleSync.kt:197-199：有 write 属性走有响应写，否则 writeWithoutResponse
     await c.write(frame, withoutResponse: !c.properties.write);
@@ -213,13 +220,13 @@ class _BluePlusSession implements TransportSession {
   Future<void> close() async {
     if (_closed) return; // 幂等
     _closed = true;
-    final device = _t._device;
-    _t._device = null;
-    _t._writeChr = null;
-    for (final s in _t._charSubs) {
+    final device = _device;
+    _device = null;
+    _writeChr = null;
+    for (final s in _charSubs) {
       await s.cancel();
     }
-    _t._charSubs.clear();
+    _charSubs.clear();
     try {
       if (device != null && device.isConnected) {
         await device.disconnect();
