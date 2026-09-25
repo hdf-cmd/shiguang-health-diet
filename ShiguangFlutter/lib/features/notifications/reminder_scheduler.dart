@@ -59,7 +59,6 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
 import '../../domain/reminders.dart';
@@ -127,7 +126,8 @@ class ReminderScheduler {
   }
 
   /// 开关联动排程（Notify.kt setEnabled :98-108 的 schedule/cancel 两面）。
-  /// on=true：三餐 3 条 periodDaily + 喝水 waterPlanFrom(now) 当日剩余 at()；
+  /// on=true：三餐 3 条 periodDaily + 喝水 waterPlanFrom(now) 计划 at()，
+  /// 时刻整体锚 plan.targetDay（今日后缀→今日；滚日全量→明天）；
   /// on=false：cancelAll。
   ///
   /// 重排不撤旧：同 id 的 zonedSchedule 在原生以 requestCode=id 的
@@ -149,16 +149,21 @@ class ReminderScheduler {
     bool isFuture(int h, int m) =>
         _todayAt(now, h, m).isAfter(now);
     final plan = waterPlanFrom(now, isFuture: isFuture);
-    // waterPlanFrom 返回当日过滤后的**后缀**或次日全量（T5 语义）。后缀起始
-    // 下标 = waterCount - plan.length，据此保持 id/文案与"一天中第几段"对位
-    // （Kotlin scheduleWater entry.index，:173-179）。
-    final firstIndex = waterCount - plan.length;
-    for (var i = 0; i < plan.length; i++) {
-      final (h, m) = plan[i];
+    // waterPlanFrom 连同**目标日**返回：当日过滤后的后缀（targetDay=今日）
+    // 或次日全量（targetDay=明日，T5 语义）。全部槽位统一按 targetDay 的
+    // h:m 锚定，等价 Kotlin scheduleWater 的 slotTime(target, h, m)
+    // （Notify.kt:169-171 滚日分支 target=明天）——**不能**逐条 _nextAt 按
+    // 钟点判日：滚日后钟点晚于 now 的槽会被错锚回今天，今晚提前响、明天丢。
+    // 后缀起始下标 = waterCount - plan.slots.length，据此保持 id/文案与
+    // "一天中第几段"对位（Kotlin scheduleWater entry.index，:173-179）。
+    final day = plan.targetDay;
+    final firstIndex = waterCount - plan.slots.length;
+    for (var i = 0; i < plan.slots.length; i++) {
+      final (h, m) = plan.slots[i];
       final idx = firstIndex + i;
       await port.at(
         id: waterBaseId + idx,
-        scheduledDate: _nextAt(now, h, m),
+        scheduledDate: DateTime(day.year, day.month, day.day, h, m),
         title: waterTitle,
         body: waterTexts[idx],
       );
@@ -319,18 +324,27 @@ class AndroidNotificationPort implements NotificationPort {
       wallClock.second);
 
   bool _tzReady = false;
+  /// 只构造「设备 UTC 偏移」固定时区的 local Location，**不加载 tzdb**
+  /// （评审 M-a：原 import data/latest_all.dart 全量库纯属浪费）。依据
+  /// （安装源核对，timezone 0.11.1 + 插件 22.3.1）：插件 Dart 面对排程只做
+  /// tz_datetime_mapper.dart 的字段序列化（timeZoneName=location.name +
+  /// 墙钟/ISO 串），Android 端恢复/每日续排在原生以 ZoneId.of(name) 还原；
+  /// 插件 lib 全目录 grep 无任何 tz.getLocation/initializeTimeZones 依赖，
+  /// 本文件也只用自定义 Location 构造 TZDateTime → zonedSchedule 不需要
+  /// tz 数据库，省去数 MB tzdb 资源。
   void _ensureLocalLocation() {
     if (_tzReady) return;
-    tzdata.initializeTimeZones();
     final offset = DateTime.now().timeZoneOffset; // 设备当前 UTC 偏移
     final abs = offset.abs();
     String two(int n) => n.toString().padLeft(2, '0');
     final name =
         'GMT${offset.isNegative ? '-' : '+'}${two(abs.inHours)}:${two(abs.inMinutes % 60)}';
-    // 单一过渡点(0) = 全 epoch 固定偏移（timezone 包 Location 构造，
-    // src/env.dart _utc 同款形制）。中国无夏令时前提见文件头。
+    // 唯一过渡点覆盖全 epoch 的固定偏移（评审 M-c：与 timezone 包
+    // src/env.dart `_utc` 同款形制 Location(name, [minTime], [0], [zone])，
+    // 原用 [0] 使 1970 前落不进缓存段——本域全未来日期虽无实际影响，仍对齐）。
+    // 中国无夏令时前提见文件头。
     tz.setLocalLocation(tz.Location(
-        name, const [0], const [0], [tz.TimeZone(offset, isDst: false, abbreviation: name)]));
+        name, const [tz.minTime], const [0], [tz.TimeZone(offset, isDst: false, abbreviation: name)]));
     _tzReady = true;
   }
 }

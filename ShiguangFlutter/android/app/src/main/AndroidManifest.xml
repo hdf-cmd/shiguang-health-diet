@@ -1,8 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- 体脂秤同步（BLE，M4-T3）：语义对照 H5 壳 HealthyDiet/app/src/main/AndroidManifest.xml:8-12。
          12+（API 31+）用新蓝牙运行时权限且声明与位置无关；11 及以下走 legacy 对 + 精确定位。
-         flutter_blue_plus 官方 plugin manifest 为空（刻意为之），权限必须在此全量声明。
-         POST_NOTIFICATIONS 属 M4-T6 通知任务，本任务不加。 -->
+         flutter_blue_plus 官方 plugin manifest 为空（刻意为之），权限必须在此全量声明。 -->
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
@@ -11,7 +10,7 @@
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
     <!-- 提醒通知（M4-T6）：语义对照 H5 Notify.kt 渠道+闹钟面。
          POST_NOTIFICATIONS 插件自身 manifest 已带（22.3.1 android/src/main/
-         AndroidManifest.xml），此处显式声明与 T3 注释的规划一致、合并去重无碍。
+         AndroidManifest.xml），此处显式声明冗余但合并去重无碍。
          RECEIVE_BOOT_COMPLETED：插件 README 对「调度通知」的硬性要求——插件的
          ScheduledNotificationBootReceiver 借此在重启后恢复已排通知（比 H5 自写
          BootReceiver 覆盖面更好；喝水"当日重排"自愈仍走 Flutter 侧启动即排，

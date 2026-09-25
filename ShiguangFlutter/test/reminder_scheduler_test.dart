@@ -109,6 +109,8 @@ void main() {
         expect(water[i].body, waterTexts[i]);
         expect(water[i].scheduledDate,
             DateTime(2026, 9, 25, slots[i].$1, slots[i].$2));
+        expect(water[i].scheduledDate.day, now.day,
+            reason: '今日剩余：date 必须锚今天');
         expect(water[i].scheduledDate.isAfter(now), isTrue);
       }
     });
@@ -125,6 +127,7 @@ void main() {
         expect(water[i].body, waterTexts[i]);
         expect(water[i].scheduledDate,
             DateTime(2026, 9, 26, tomorrow[i].$1, tomorrow[i].$2));
+        expect(water[i].scheduledDate.day, 26, reason: '滚次日：date 必须锚明天');
       }
     });
 
@@ -150,7 +153,30 @@ void main() {
       }
     });
 
-    test('waterPlanFrom 与自算计划一致（消费 T5 规则不另起炉灶）', () async {
+    test('滚日窗口复现（终审 Important）：2026-10-08 22:30 全过 → 8 项 date 全为 10-09', () async {
+      // 该日种子下水槽：当日末槽 22:29（< 22:30 → 当日全过滚次日），
+      // 次日末槽 23:37（钟点 > now 的钟点 22:30）。旧实现对次日各项仍逐条
+      // _nextAt 判"钟点晚于 now 则今日"，会把 23:37 那条错锚到 10-08 23:37
+      // （今晚提前响、明天丢失）→ 本用例对旧实现必红。新实现按
+      // plan.targetDay 整体锚明天（对齐 Kotlin slotTime(target=明天)）。
+      final now = DateTime(2026, 10, 8, 22, 30);
+      final s = ReminderScheduler(port: port, now: () => now);
+      await s.sync(on: true);
+      final water = port.atCalls;
+      expect(water.length, 8);
+      final tomorrow = waterSlots(DateTime(2026, 10, 9));
+      // 前提自检：窗口条件成立（次日确有钟点晚于 now 的槽，否则用例失义）
+      expect(tomorrow.any((e) => e.$1 * 60 + e.$2 > 22 * 60 + 30), isTrue);
+      for (var i = 0; i < 8; i++) {
+        expect(water[i].scheduledDate,
+            DateTime(2026, 10, 9, tomorrow[i].$1, tomorrow[i].$2),
+            reason: '第 $i 项必须锚明天（date 维度，非仅钟点）');
+        expect(water[i].scheduledDate.day, 9);
+      }
+    });
+
+    test('waterPlanFrom 与自算计划一致（消费 T5 规则不另起炉灶，断完整日期维度）',
+        () async {
       final now = DateTime(2026, 9, 25, 15);
       final s = ReminderScheduler(port: port, now: () => now);
       await s.sync(on: true);
@@ -159,9 +185,29 @@ void main() {
         isFuture: (h, m) =>
             DateTime(now.year, now.month, now.day, h, m).isAfter(now),
       );
-      expect(port.atCalls.length, plan.length);
-      expect(port.atCalls.map((e) => (e.scheduledDate.hour, e.scheduledDate.minute)),
-          plan);
+      expect(port.atCalls.length, plan.slots.length);
+      expect(
+        port.atCalls
+            .map((e) => (
+                  e.scheduledDate.year,
+                  e.scheduledDate.month,
+                  e.scheduledDate.day,
+                  e.scheduledDate.hour,
+                  e.scheduledDate.minute,
+                ))
+            .toList(),
+        [
+          for (final (h, m) in plan.slots)
+            (
+              plan.targetDay.year,
+              plan.targetDay.month,
+              plan.targetDay.day,
+              h,
+              m
+            )
+        ],
+        reason: '时刻须整体锚 plan.targetDay（含 date，不止钟点）',
+      );
     });
   });
 

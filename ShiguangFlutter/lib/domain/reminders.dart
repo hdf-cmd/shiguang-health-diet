@@ -60,16 +60,22 @@ List<(int, int)> waterSlots(DateTime day) {
   });
 }
 
-/// 某刻之后的喝水计划（Notify.kt:162-172 scheduleWater 的纯规则部分）：
-/// 只保留 isFuture 判真的当日槽位；全过则滚到次日完整 8 项（次日不再过滤，
-/// 对齐 Kotlin :169-171 —— 滚动分支直接取 waterSlots(次日) 全量）。
+/// 某刻之后的喝水计划 + **目标日锚**（Notify.kt:162-172 scheduleWater 的纯规则
+/// 部分）：只保留 isFuture 判真的当日槽位（targetDay=当日）；全过则滚到次日
+/// 完整 8 项（targetDay=次日，次日不再过滤，对齐 Kotlin :169-171 —— 滚动分支
+/// 直接取 waterSlots(次日) 全量）。
+/// targetDay 随计划一并返回：调度侧（T6）对全部槽位统一用
+/// DateTime(targetDay.y, m, d, h, mi) 锚定——等价 Kotlin slotTime(target, h, m)
+/// （target 在滚日分支为明天）。不得由调度侧逐条按"钟点是否晚于 now"判日，
+/// 否则滚日后钟点晚于 now 的槽会被错锚回今天（终审 Important 缺陷）。
 /// isFuture 注入而非读时钟，保持 domain 纯函数可测；调度接线（T6）传真实比较。
-List<(int, int)> waterPlanFrom(DateTime now, {
+({DateTime targetDay, List<(int, int)> slots}) waterPlanFrom(DateTime now, {
   required bool Function(int hour, int minute) isFuture,
 }) {
   final remaining =
       waterSlots(now).where((s) => isFuture(s.$1, s.$2)).toList();
-  if (remaining.isNotEmpty) return remaining;
-  // 全过：滚次日（DateTime 日进位自动处理月末/年末）
-  return waterSlots(DateTime(now.year, now.month, now.day + 1));
+  if (remaining.isNotEmpty) return (targetDay: now, slots: remaining);
+  // 全过：滚次日，整体锚明天（DateTime 日进位自动处理月末/年末）
+  final tomorrow = DateTime(now.year, now.month, now.day + 1);
+  return (targetDay: tomorrow, slots: waterSlots(tomorrow));
 }

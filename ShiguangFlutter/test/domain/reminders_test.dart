@@ -103,36 +103,54 @@ void main() {
     });
   });
 
-  group('waterPlanFrom（Notify.kt:162-172 语义：只留未来项，全过滚次日）', () {
+  group('waterPlanFrom（Notify.kt:162-172 语义：只留未来项，全过滚次日；'
+      '终审 Important 修订：连同 targetDay 返回，供调度侧整体锚日）', () {
     bool Function(int, int) afterClock(DateTime now) =>
         (h, m) => DateTime(now.year, now.month, now.day, h, m).isAfter(now);
 
-    test('07:00 起点：8 项全留，等于当日 waterSlots', () {
+    test('07:00 起点：8 项全留等于当日 waterSlots，targetDay 锚当日', () {
       final now = DateTime(2026, 9, 25, 7, 0);
-      expect(waterPlanFrom(now, isFuture: afterClock(now)), waterSlots(now));
+      final plan = waterPlanFrom(now, isFuture: afterClock(now));
+      expect(plan.slots, waterSlots(now));
+      expect(plan.targetDay.year, 2026);
+      expect(plan.targetDay.month, 9);
+      expect(plan.targetDay.day, 25);
     });
 
-    test('23:59 起点：全部已过 → 滚次日，等于次日 waterSlots 完整 8 项', () {
+    test('23:59 起点：全部已过 → 滚次日，slots 等于次日 waterSlots 完整 8 项，'
+        'targetDay 为次日零点', () {
       final now = DateTime(2026, 9, 25, 23, 59);
       final tomorrow = DateTime(2026, 9, 26);
       final plan = waterPlanFrom(now, isFuture: afterClock(now));
-      expect(plan, hasLength(8));
-      expect(plan, waterSlots(tomorrow));
+      expect(plan.slots, hasLength(8));
+      expect(plan.slots, waterSlots(tomorrow));
+      expect(plan.targetDay, tomorrow);
     });
 
     test('10:00 起点：第 0 段（最迟 9:54）必已过，第 1..7 段（最早 10:05）必保留 → 恰好 7 项', () {
       final now = DateTime(2026, 9, 25, 10, 0);
       final plan = waterPlanFrom(now, isFuture: afterClock(now));
       final all = waterSlots(now);
-      expect(plan, hasLength(7));
-      expect(plan, all.sublist(1));
+      expect(plan.slots, hasLength(7));
+      expect(plan.slots, all.sublist(1));
+      expect(plan.targetDay.day, 25); // 未滚日：仍锚当日
     });
 
     test('滚次日时用的是次日的日期种子（不是当日重排）', () {
       // 只要两日序列不同（前面已断言种子按日期变化），滚次日的结果就必须等于次日而非当日
       final now = DateTime(2026, 9, 25, 23, 59);
       final plan = waterPlanFrom(now, isFuture: afterClock(now));
-      expect(plan, isNot(waterSlots(DateTime(2026, 9, 25))));
+      expect(plan.slots, isNot(waterSlots(DateTime(2026, 9, 25))));
+    });
+
+    test('滚日窗口（2026-10-08 22:30）：targetDay=10-09，slots=次日全量', () {
+      // 当日末槽 22:29 < 22:30 → 全过滚日；次日末槽 23:37 钟点晚于 now，
+      // 若调度侧仍按钟点判日会错锚今天——targetDay 显式携带后不再有歧义。
+      final now = DateTime(2026, 10, 8, 22, 30);
+      final plan = waterPlanFrom(now, isFuture: afterClock(now));
+      expect(plan.slots, hasLength(8));
+      expect(plan.targetDay, DateTime(2026, 10, 9));
+      expect(plan.slots, waterSlots(DateTime(2026, 10, 9)));
     });
   });
 }
