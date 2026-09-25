@@ -21,7 +21,9 @@
 //   「已存入食物库，搜索可用」(:1250) / 「已记入${MEAL_NAMES[餐次]} · ${名}」
 //   (:1248)；任一失败 catch →「保存失败：${msg||网络异常}」(:1254)。记录刷新走
 //   record_controller.addRecord 现成链（内部 invalidate 当日 records+summary，
-//   ≙ :1246-1247 refreshToday+loadRecordPage）。
+//   ≙ :1246-1247 refreshToday+loadRecordPage）。记入日期用调用方传入的
+//   [date]（M5-T8 结转 A①：≙ H5 在途常读全局 today 的当日语义，Flutter 侧
+//   消「弹层开着跨午夜、记入跑明天」双轨——search_sheet 传 widget.date）。
 // - 选图（cf-img-pick/change :1257-1272，经 T3 pickCompressedImageDataUrl）：
 //   取消静默（:1260 !file return）；压缩后超限→「图片仍过大，请换一张」
 //   （:1266 逐字）；读取/编码失败→「图片处理失败」（:1270 逐字）。预览
@@ -111,11 +113,13 @@ Key cfUnitKey(String unit) => Key('cf-unit-$unit'); // :522-523 data-unit
 Key cfMealKey(String kind) => Key('cf-meal-$kind'); // :530-532 data-meal
 
 /// 打开自定义食物表单（≙ openCustomFoodSheet，:1207）。
-/// [meal] 记入目标餐次（breakfast/lunch/dinner/snack）；[initialName] =
-/// 当时搜索关键词（:1208 sheetKeyword 语义）；[onSaved] 由 search_sheet 传
-/// 「以当前关键词重查」。[pickImage] 仅测试注入面，生产缺省走 T3 管道。
+/// [date] 记入目标日期（M5-T8 结转 A①：调用方传当日/弹层日期，≙ H5 在途常读
+/// 的全局 today）；[meal] 记入目标餐次（breakfast/lunch/dinner/snack）；
+/// [initialName] = 当时搜索关键词（:1208 sheetKeyword 语义）；[onSaved] 由
+/// search_sheet 传「以当前关键词重查」。[pickImage] 仅测试注入面，生产缺省走 T3 管道。
 Future<void> openCustomFoodSheet(
   BuildContext context, {
+  required String date,
   required String meal,
   String? initialName,
   required void Function() onSaved,
@@ -130,6 +134,7 @@ Future<void> openCustomFoodSheet(
           BorderRadius.vertical(top: Radius.circular(Tokens.radiusSheet)),
     ),
     builder: (_) => _CustomFoodSheet(
+      date: date,
       meal: meal,
       initialName: initialName,
       onSaved: onSaved,
@@ -180,12 +185,14 @@ class CfSegButton extends StatelessWidget {
 
 class _CustomFoodSheet extends ConsumerStatefulWidget {
   const _CustomFoodSheet({
+    required this.date,
     required this.meal,
     required this.initialName,
     required this.onSaved,
     required this.pickImage,
   });
 
+  final String date;
   final String meal;
   final String? initialName;
   final void Function() onSaved;
@@ -204,6 +211,11 @@ class _CustomFoodSheetState extends ConsumerState<_CustomFoodSheet> {
   final TextEditingController _protein = TextEditingController();
   final TextEditingController _carb = TextEditingController();
   final TextEditingController _fat = TextEditingController();
+
+  /// 挂层即冻结当前本地时刻（M5-T8 结转 A①）：widget.date 为空时兜底用
+  /// 「打开弹层那一刻」的当日，而非保存瞬间的 todayIso()——挂层跨午夜
+  /// 不再把记入推到明天。search_sheet 正常会传 widget.date。
+  late final DateTime _now = DateTime.now();
 
   bool _kcalManual = false; // :1172 手改热量闸
   bool _addedToLib = false; // 入库已成功（记录失败重试时不重复入库，见 _save）
@@ -322,11 +334,15 @@ class _CustomFoodSheetState extends ConsumerState<_CustomFoodSheet> {
       widget.onSaved(); // :1251 fillSheetResults 重查语义
       if (andAdd) {
         // :1244 记录 body 十字键；addRecord 内部 invalidate 当日
-        // records+summary（≙ :1246-1247 refreshToday+loadRecordPage）+ 常吃续算
+        // records+summary（≙ :1246-1247 refreshToday+loadRecordPage）+ 常吃续算。
+        // 记入日=widget.date（M5-T8 结转 A①；空值兜底挂层时刻 _now，
+        // 不再取保存瞬间的 todayIso——消跨午夜「记入跑明天」双轨）
+        final recordDate =
+            widget.date.isNotEmpty ? widget.date : localIso(_now);
         await controller.addRecord(
-          todayIso(),
+          recordDate,
           <String, dynamic>{
-            'date': todayIso(),
+            'date': recordDate,
             'meal': widget.meal, // 入参餐次（早/午/晚/零食），非三档类别
             'name': name,
             'portion': portion,
@@ -603,5 +619,12 @@ class _CustomFoodSheetState extends ConsumerState<_CustomFoodSheet> {
 
 /// 数字框输入收口：只允许数字+小数点（min/max 语义由保存闸兜底——H5 JS 侧
 /// 同样不校验 HTML 属性 min/max，行为对齐源）。
-final _numberFieldFormatter =
-    FilteringTextInputFormatter.allow(RegExp(r'^[0-9]*\.?[0-9]*$'));
+/// M5-T8 结转 A②（探针实证后换，test/custom_food_sheet_test.dart
+/// 「数字框字符类格式器」用例）：原 `^[0-9]*\.?[0-9]*$` 整串锚定在
+/// FilteringTextInputFormatter.allow 的「逐段提取匹配」语义下失效——
+/// '12.3.4'/'1e9'/'-5' 整串不匹配被**整体清空**（丢已输合法内容），
+/// '.5.' 反而被剪成 '5.'（放行非法多小数点）。字符类式逐字符过滤：
+/// 合法字符保留、非法字符剔除。多小数点（'1.2.3'）不再被格式器拦下，
+/// 由 jsFormNum 解析失败归 0 + 保存闸（热量<=0 拒）兜底，与 H5
+/// `Number(v)||0` 语义同形（H5 的 type=number 非法值同样到不了业务层）。
+final _numberFieldFormatter = FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'));

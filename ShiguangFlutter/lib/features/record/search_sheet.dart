@@ -230,10 +230,13 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
                               // 自定义食物表单，初始名=当时关键词（:1208）；
                               // onSaved ≙ :1251 fillSheetResults(sheetKeyword)
                               // = 以当前关键词重查（invalidate 同键 family）。
+                              // date=弹层入参日期（M5-T8 结转 A①：记入日与
+                              // 本弹层其他记入同源，消跨午夜 todayIso 双轨）。
                               OutlinedButton(
                                 key: const ValueKey('cf-open'),
                                 onPressed: () => openCustomFoodSheet(
                                   context,
+                                  date: widget.date,
                                   meal: widget.meal,
                                   initialName: _keyword,
                                   onSaved: () => ref.invalidate(

@@ -40,12 +40,14 @@ Future<PickedImageData> cancelPick(ImageSource _) async =>
 /// 供「保存并记入后 invalidate 重取」计数断言。
 class _Host extends ConsumerWidget {
   const _Host({
+    required this.date,
     required this.meal,
     this.initialName,
     this.onSaved,
     this.pickImage = cancelPick,
   });
 
+  final String date;
   final String meal;
   final String? initialName;
   final void Function()? onSaved;
@@ -61,6 +63,7 @@ class _Host extends ConsumerWidget {
             child: TextButton(
               onPressed: () => openCustomFoodSheet(
                 context,
+                date: date,
                 meal: meal,
                 initialName: initialName,
                 onSaved: onSaved ?? () {},
@@ -90,6 +93,7 @@ Future<void> pumpHost(
   WidgetTester tester,
   StubHealthApi api, {
   required String meal,
+  String? date,
   String? initialName,
   void Function()? onSaved,
   CustomFoodImagePicker pickImage = cancelPick,
@@ -103,8 +107,9 @@ Future<void> pumpHost(
   await tester.pumpWidget(UncontrolledProviderScope(
     container: container,
     // 真主题必须上：FilledButton × Row 非 flex 位的 infinite-width 债只有
-    // shiguangTheme 下复现（T5 目检教训）
+    // shiguangTheme 下复现（T5 目检教训；M5-T8 主题债收口后仍保留真主题）
     child: MaterialApp(theme: shiguangTheme(), home: _Host(
+          date: date ?? todayIso(),
           meal: meal,
           initialName: initialName,
           onSaved: onSaved,
@@ -484,5 +489,58 @@ void main() {
     api.customFoodGate!.complete();
     await tester.pumpAndSettle();
     expect(api.customFoodBodies, hasLength(1));
+  });
+
+  /* ---------- M5-T8 结转 A②：数字框格式器字符类化（探针实证） ---------- */
+
+  testWidgets('数字框字符类格式器：逐字符过滤——合法数字/小数点保留、字母/负号剔除，'
+      '多小数点串不再被整体清空（原整串锚定正则实证缺陷）', (tester) async {
+    final api = StubHealthApi();
+    await pumpHost(tester, api, meal: 'lunch');
+
+    // enterText 走完整编辑通道，inputFormatters 生效
+    await fill(tester, cfGramsKey, '12.5');
+    expect(fieldText(tester, cfGramsKey), '12.5'); // 合法值原样保留
+
+    // 实证①（原锚定正则缺陷）：整串不匹配的 '12.3.4' 会被 allow 的
+    // 「整串匹配否则全丢」语义清空为 ''；字符类式逐字符全放行保持不变
+    await fill(tester, cfGramsKey, '12.3.4');
+    expect(fieldText(tester, cfGramsKey), '12.3.4',
+        reason: '字符类 [0-9.] 逐字符放行——探针实证：旧整串锚定正则此输入落空串');
+
+    // 实证②：字母/负号/科学计数法字符剔除（旧行为：整串不匹配 → 清空；
+    // 新行为：合法字符保留）
+    await fill(tester, cfGramsKey, '1e9');
+    expect(fieldText(tester, cfGramsKey), '19');
+    await fill(tester, cfGramsKey, '-5');
+    expect(fieldText(tester, cfGramsKey), '5');
+    await fill(tester, cfGramsKey, '.5.');
+    expect(fieldText(tester, cfGramsKey), '.5.');
+
+    // 保存链兜底回归：多小数点串 jsFormNum 解析失败归 0 → portion='1 份'
+    // （H5 Number('12.3.4')||0 同形）；不再出现「已输数字被格式器吞掉」
+    await fill(tester, cfGramsKey, '1.2.3');
+    await fill(tester, cfNameKey, '双点饭团');
+    await fill(tester, cfKcalKey, '10');
+    await tapKey(tester, cfSaveOnlyKey);
+    await tester.pumpAndSettle();
+    expect(api.customFoodBodies.single['grams'], 0);
+    expect(api.customFoodBodies.single['portion'], '1 份');
+  });
+
+  /* ---------- M5-T8 结转 A①：记入日期走入参 date，不再取保存瞬间 todayIso ---------- */
+
+  testWidgets('保存并记入：记录 date=widget.date（宿主注入 2020-01-01），'
+      '与保存瞬间 todayIso 脱钩（消跨午夜双轨）', (tester) async {
+    final api = StubHealthApi();
+    await pumpHost(tester, api,
+        meal: 'lunch', date: '2020-01-01', initialName: '跨午夜饭团');
+    await fill(tester, cfKcalKey, '250');
+    await tapKey(tester, cfSaveAddKey);
+    await tester.pumpAndSettle();
+    // 宿主注入 date='2020-01-01'（≙ search_sheet 传 widget.date）：
+    // 记录体与 addRecord 键都落在该日，而非 DateTime.now() 当日
+    expect(api.addBodies.single['date'], '2020-01-01');
+    expect(api.addBodies.single['date'], isNot(todayIso()));
   });
 }

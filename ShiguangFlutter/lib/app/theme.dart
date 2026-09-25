@@ -77,7 +77,10 @@ ThemeData shiguangTheme() {
       style: FilledButton.styleFrom(
         backgroundColor: Tokens.primaryDeep,
         foregroundColor: Colors.white,
-        minimumSize: const Size.fromHeight(52),
+        // M5-T8 主题债收口：原 Size.fromHeight(52) 宽=∞，FilledButton 进 Row
+        // 非 flex 位会 infinite-width 崩溃（T5 弹层双钮事故）。改有限 0 宽：
+        // 宽度交由父约束/Expanded 决定，单钮整行场景仍由 stretch 布局满足。
+        minimumSize: const Size(0, 52),
         shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(Tokens.radiusSheet)),
         textStyle: const TextStyle(fontSize: Tokens.textMd, fontWeight: FontWeight.w700),

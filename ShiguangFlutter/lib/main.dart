@@ -8,6 +8,14 @@ import 'app/theme.dart';
 import 'features/auth/login_screen.dart';
 
 void main() {
+  // M5-T8 结转 C：绑定必须先于任何插件面。flutter_local_notifications 22.3.1
+  // 的 FlutterLocalNotificationsPlugin() **构造期**即 setMethodCallHandler
+  // （platform_channel.dart:589 断言 _binaryMessenger!=null||binding!=null），
+  // 而 bootstrapReminders 的 port 构造跑在 runApp 之前 → debug 冷启动必现
+  // 'bootstrapReminders failed: Failed assertion'（logcat 实测复现）。
+  // ensureInitialized 是官方前置；release 无 debugBindingType 断言故静默，
+  // 但时序错误真实存在，一处修复。
+  WidgetsFlutterBinding.ensureInitialized();
   // 组合根：真实依赖的拼装收在 app/root_container.dart 的工厂里（M4-T1）。
   // 不传参 = 生产链路（SecureTokenStore → ApiClient → AuthApi/HealthApi +
   // PrefsFoodFreqStore + 过期回调接 forceAnon）；测试注入桩后调同一个工厂，
