@@ -48,9 +48,29 @@ class RecordController {
 
   final Ref _ref;
 
-  Future<void> addRecord(String date, Map<String, dynamic> record) async {
-    await _ref.read(healthApiProvider).addFoodRecord(record);
-    _syncDay(date);
+  /// 添加在途键集合（H5「点击即 btn.disabled，finally 恢复」的等价物，
+  /// js/app.js:677/693）。慢网双击时第二次调用同键直接丢弃：不发请求、
+  /// 不重复记一笔。键由 UI 提供（食物 id，缺 id 时退化为 name），
+  /// 故搜索弹层与份量弹层对同一食物共享这一在途状态。
+  final Set<String> _inFlight = <String>{};
+
+  /// 该食物的添加请求是否仍在途（UI 据此禁用按钮并显示「请稍候…」）
+  bool isInFlight(String key) => _inFlight.contains(key);
+
+  /// 记一笔。返回 true=本次真正发出请求并成功；false=同键请求在途，本次丢弃。
+  Future<bool> addRecord(
+    String date,
+    Map<String, dynamic> record, {
+    required String pendingKey,
+  }) async {
+    if (!_inFlight.add(pendingKey)) return false; // 连点兜底：同键第二次不进网络层
+    try {
+      await _ref.read(healthApiProvider).addFoodRecord(record);
+      _syncDay(date);
+      return true;
+    } finally {
+      _inFlight.remove(pendingKey);
+    }
   }
 
   Future<void> deleteRecord(String date, String id) async {

@@ -3,9 +3,11 @@
 // 全部走 StubHealthApi（test/stubs/stub_health_api.dart），零网络。
 // 食物与记录字段形状取自 contract/fixtures/diet-core.json 的
 // searchFoods/mealRecords responseSample；行为权威源 js/app.js：
-//   默认餐次 defaultMeal 590-609、搜索弹层 openSheet/fillSheetResults 615-651、
+//   默认餐次 defaultMeal 603-609、搜索弹层 openSheet/fillSheetResults 615-651、
 //   添加 body 678-682、删除确认 557-560、份量弹层 openPortionSheet/updatePortionPreview/
 //   portion-save 714-781。
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -175,8 +177,49 @@ void main() {
     expect(api.recordsCalls, greaterThanOrEqualTo(2));
   });
 
-  /* ---------- ③ per100 食物：份量弹层 按克加 ---------- */
+  /* ---------- ②b pending 防重（H5 btn.disabled js/app.js:677/693） ---------- */
 
+  testWidgets('②b 慢网双击：添加在途期间按钮禁用为「请稍候…」，连点两次 addFoodRecord 只发一次',
+      (tester) async {
+    final api = StubHealthApi(foods: [kEggFood]);
+    api.addGate = Completer<void>(); // addFoodRecord 挂起，模拟慢网 pending
+    await tester.pumpWidget(harness(api, initialMeal: 'lunch'));
+    await tester.pumpAndSettle();
+
+    await openSheetAndSearch(tester, '鸡');
+    expect(find.text('添加'), findsOneWidget);
+
+    await tester.tap(find.text('添加'));
+    await tester.pump(); // 一帧：进入 pending（不 settle，否则等 addGate）
+    expect(api.addBodies, hasLength(1));
+    // 文案对齐 H5 提交态（js/app.js:1902 btn.textContent = '请稍候…'）
+    expect(find.text('请稍候…'), findsOneWidget);
+    expect(
+        tester
+            .widget<TextButton>(find.byKey(const ValueKey('food-action-u_egg')))
+            .onPressed,
+        isNull); // 禁用（js/app.js:677 btn.disabled = true）
+
+    // 连点两次：disabled 吞掉点击，控制器在途集再兜一层 → 不重复记一笔
+    await tester.tap(find.text('请稍候…'));
+    await tester.tap(find.text('请稍候…'));
+    await tester.pump();
+    expect(api.addBodies, hasLength(1));
+
+    api.addGate!.complete();
+    await tester.pumpAndSettle();
+    expect(api.addBodies, hasLength(1));
+    // 完成后恢复可点（js/app.js:693 finally btn.disabled = false）+ 成功 toast
+    expect(find.text('请稍候…'), findsNothing);
+    expect(
+        tester
+            .widget<TextButton>(find.byKey(const ValueKey('food-action-u_egg')))
+            .onPressed,
+        isNotNull);
+    expect(find.text('已添加 鸡蛋 · 可继续添加'), findsOneWidget);
+  });
+
+  /* ---------- ③ per100 食物：份量弹层 按克加 ---------- */
   testWidgets('③per100「按克加」：初始=baseG 实时预览；滑杆变化预览随之变化；确认后 body 宏量=portionMacros',
       (tester) async {
     final api = StubHealthApi(foods: [kRiceFood]);

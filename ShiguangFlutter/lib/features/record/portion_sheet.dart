@@ -86,8 +86,18 @@ class _PortionSheetState extends ConsumerState<PortionSheet> {
       ..showSnackBar(SnackBar(content: Text(msg)));
   }
 
+  /// 在途键与搜索弹层同键（食物 id，缺 id 退化 name）→ 同一食物只有一个
+  /// 在途写请求，H5「点了就 disabled」的语义（js/app.js:677/693）。
+  String get _pendingKey =>
+      '${widget.food['id'] ?? widget.food['name'] ?? ''}';
+
+  bool get _pending =>
+      ref.read(recordControllerProvider).isInFlight(_pendingKey);
+
   /// 确认记入：body 对齐 js/app.js:765-768（portion=`${g}${unit}`，宏量按克换算）
   Future<void> _save() async {
+    final controller = ref.read(recordControllerProvider);
+    if (controller.isInFlight(_pendingKey)) return; // 连点丢弃（H5 btn.disabled）
     final g = _grams.round();
     if (g < 10) {
       // H5 js/app.js:749 兜底（滑杆下限 5 时仅防手动异常）
@@ -109,16 +119,24 @@ class _PortionSheetState extends ConsumerState<PortionSheet> {
     };
     // pop 后本 State 即卸载，先捕获 messenger（SnackBar 在根 ScaffoldMessenger 层渲染）
     final messenger = ScaffoldMessenger.of(context);
+    final pending =
+        controller.addRecord(widget.date, body, pendingKey: _pendingKey);
+    // addRecord 同步登记在途后立即重绘 → pending 期按钮禁用 +「请稍候…」（js:677/1902）
+    if (mounted) setState(() {});
     try {
-      await ref.read(recordControllerProvider).addRecord(widget.date, body);
-      if (!mounted) return;
-      Navigator.of(context).pop(); // 份量弹层收起，回到搜索弹层可继续（H5 763）
-      messenger.showSnackBar(SnackBar(
-          content: Text('已添加 ${widget.food['name'] ?? ''} $g$_unit · 可继续添加')));
+      if (await pending) {
+        if (!mounted) return;
+        Navigator.of(context).pop(); // 份量弹层收起，回到搜索弹层可继续（H5 763）
+        messenger.showSnackBar(SnackBar(
+            content: Text(
+                '已添加 ${widget.food['name'] ?? ''} $g$_unit · 可继续添加')));
+      }
     } on ApiException catch (e) {
       _toast('添加失败：${e.message}');
     } catch (_) {
       _toast('添加失败：网络异常');
+    } finally {
+      if (mounted) setState(() {}); // 失败留在弹层时恢复按钮（H5 693）
     }
   }
 
@@ -210,8 +228,10 @@ class _PortionSheetState extends ConsumerState<PortionSheet> {
             ),
             const SizedBox(height: Tokens.sp4),
             FilledButton(
-              onPressed: _save,
-              child: const Text('确认添加'),
+              // pending 期禁用 +「请稍候…」（H5 js/app.js:677/693 disabled 语义，
+              // 文案同 js/app.js:1902 提交态），完成后随 setState 恢复
+              onPressed: _pending ? null : _save,
+              child: Text(_pending ? '请稍候…' : '确认添加'),
             ),
           ],
         ),

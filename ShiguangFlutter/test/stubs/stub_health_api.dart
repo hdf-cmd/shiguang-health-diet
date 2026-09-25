@@ -6,6 +6,8 @@
 // noSuchMethod 兜底抛 UnsupportedError——这样 HealthApi 之后新增方法时
 // 桩不用跟着改（implements 场景下分析器对显式声明 noSuchMethod 豁免
 // missing_override 检查）。
+import 'dart:async';
+
 import 'package:shiguang_flutter/data/api_client.dart';
 import 'package:shiguang_flutter/data/health_api.dart';
 
@@ -43,6 +45,9 @@ class StubHealthApi implements HealthApi {
   /// addFoodRecord 收到的 body（按调用顺序收集，测试断言契约字段）
   final List<Map<String, dynamic>> addBodies = <Map<String, dynamic>>[];
   ApiException? addError;
+
+  /// 非空 → addFoodRecord 先 await 它再返回（模拟慢网 pending，验证按钮防重）
+  Completer<void>? addGate;
 
   /// deleteFoodRecord 收到的 id（按调用顺序收集）
   final List<String> deletedIds = <String>[];
@@ -107,6 +112,7 @@ class StubHealthApi implements HealthApi {
   @override
   Future<Map<String, dynamic>> addFoodRecord(Map<String, dynamic> record) async {
     addBodies.add(Map<String, dynamic>.from(record));
+    if (addGate != null) await addGate!.future;
     if (addError != null) throw addError!;
     return <String, dynamic>{'id': 'rec_added_${addBodies.length}', ...record};
   }

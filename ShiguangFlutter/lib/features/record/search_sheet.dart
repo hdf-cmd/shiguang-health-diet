@@ -5,7 +5,9 @@
 // unit=ml→「按毫升加」、普通→「添加」）、加载态「搜索中...」（631）、
 // 空结果「没找到「kw」/换个说法，或添加自定义食物」（644-645）、
 // 失败「搜索失败：msg」+「重试」（648-649）、添加成功 toast
-// 「已添加 X · 可继续添加」（676）、body 字段（678-682）。
+// 「已添加 X · 可继续添加」（676）、body 字段（678-682）、
+// 点击后按钮 disabled 防连点直到请求结束（677/693 → pending 期禁用 +「请稍候…」，
+// 文案同 H5 提交态 js/app.js:1902）。
 // 与 H5 差异：弹层内餐次分段移到记录页顶部（简报）；「＋ 自定义食物」入口
 // 属后续任务，空结果仅保留文案。
 
@@ -76,8 +78,21 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
       ..showSnackBar(SnackBar(content: Text(msg)));
   }
 
+  /// 在途键：食物 id（缺 id 退化为 name），与份量弹层同键 → 同一食物的
+  /// 「添加」/「按克加」共享 pending 状态（H5 是按 DOM 上的那一个按钮 disabled）。
+  String _pendingKey(Map<String, dynamic> f) =>
+      '${f['id'] ?? f['name'] ?? ''}';
+
+  /// 按钮禁用/文案的在途判定：状态只存在 RecordController 一处，
+  /// 本方法每次 build 读一次（重绘由 _addFood 前后的 setState 驱动）。
+  bool _pending(Map<String, dynamic> f) =>
+      ref.read(recordControllerProvider).isInFlight(_pendingKey(f));
+
   /// 普通食物直接记一笔：body 字段对齐 js/app.js:678-682（portion=f.meta）
   Future<void> _addFood(Map<String, dynamic> f) async {
+    final controller = ref.read(recordControllerProvider);
+    final pendingKey = _pendingKey(f);
+    if (controller.isInFlight(pendingKey)) return; // H5 js/app.js:677 btn.disabled
     final body = <String, dynamic>{
       'date': widget.date,
       'meal': widget.meal,
@@ -90,13 +105,19 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
       'fat': f['fat'] ?? 0,
       'image': f['image'] ?? '',
     };
+    final pending =
+        controller.addRecord(widget.date, body, pendingKey: pendingKey);
+    // addRecord 同步登记在途后立即重绘 → pending 期按钮禁用 +「请稍候…」
+    if (mounted) setState(() {});
     try {
-      await ref.read(recordControllerProvider).addRecord(widget.date, body);
-      _toast('已添加 ${f['name'] ?? ''} · 可继续添加');
+      // false = 同键重复提交被控制器丢弃（理论上已被禁用拦住），不出 toast
+      if (await pending) _toast('已添加 ${f['name'] ?? ''} · 可继续添加');
     } on ApiException catch (e) {
       _toast('添加失败：${e.message}');
     } catch (_) {
       _toast('添加失败：网络异常');
+    } finally {
+      if (mounted) setState(() {}); // 在途解除，恢复按钮（H5 js/app.js:693）
     }
   }
 
@@ -262,11 +283,16 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
           const SizedBox(width: Tokens.sp2),
           TextButton(
             key: ValueKey('food-action-${f['id']}'),
-            onPressed: () => isPer100
-                ? showPortionSheet(context,
-                    food: f, date: widget.date, meal: widget.meal)
-                : _addFood(f),
-            child: Text(actionText),
+            // pending 期禁用并显示「请稍候…」（H5 js/app.js:677 btn.disabled、
+            // 1902 提交态文案）；重绘由 _addFood 前后 setState 驱动，
+            // 完成/失败后恢复可点（js/app.js:693 finally btn.disabled = false）。
+            onPressed: _pending(f)
+                ? null
+                : () => isPer100
+                    ? showPortionSheet(context,
+                        food: f, date: widget.date, meal: widget.meal)
+                    : _addFood(f),
+            child: Text(_pending(f) ? '请稍候…' : actionText),
           ),
         ],
       ),
