@@ -267,15 +267,22 @@ void main() {
     expect(api.trendCalls, 2);
   });
 
-  testWidgets('体重卡与区间无关：周/月切换不重拉趋势（H5 只在 loadReportPage 取一次）',
+  testWidgets('体重卡区间联动：切月不重拉、切回周重拉（H5 app.js:260-266,269-274,280 两向锁）',
       (tester) async {
     final api = StubHealthApi();
     await pumpReport(tester, api);
     expect(api.trendCalls, 1);
+    // 点"月" = loadMonthReport（app.js:269-274）：只换柱状图，不碰趋势
     await tester.tap(find.text('月'));
     await tester.pumpAndSettle();
     expect(api.trendCalls, 1);
     expect(find.text('体重趋势'), findsOneWidget);
+    expect(find.text('当前 66.4 kg · 本周 -0.80 kg'), findsOneWidget);
+    // 点"本周" = loadReportPage（app.js:260-266,280）：周报与趋势并发重取
+    // （T8 缓办 B：Flutter 此前切回不重取，与 H5 不一致）
+    await tester.tap(find.text('本周'));
+    await tester.pumpAndSettle();
+    expect(api.trendCalls, 2);
     expect(find.text('当前 66.4 kg · 本周 -0.80 kg'), findsOneWidget);
   });
 

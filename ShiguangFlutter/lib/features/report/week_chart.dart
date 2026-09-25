@@ -79,6 +79,16 @@ class WeekBarChart extends StatelessWidget {
             ],
           ),
         ),
+        // .week-chart border-bottom:1px solid --hairline（screens.css:407
+        // 图表轴线；T8 缓办 D①）——画在 140 柱区底沿即柱脚基线，标签行在下方。
+        const SizedBox(
+          width: double.infinity,
+          height: 1,
+          child: ColoredBox(
+            key: ValueKey('week-chart-axis'),
+            color: Tokens.hairline,
+          ),
+        ),
         // H5 .col 内部 lbl 与柱同列（gap 6）；Flutter 侧标签行在 140 轴下方，
         // 保证柱高%与目标线%共用同一 140 基准（浏览器里 flex-shrink 会压柱，
         // 该拆法即 H5 意图的无挤压等价形）。
@@ -212,7 +222,7 @@ class WeekBarChart extends StatelessWidget {
         ),
         Positioned(
           right: 0,
-          top: -14,
+          top: -16, // screens.css:412 .target-line span top:-16px（T8 缓办 D②：原 -14）
           child: Text(
             '目标 ${data.target}',
             style: const TextStyle(

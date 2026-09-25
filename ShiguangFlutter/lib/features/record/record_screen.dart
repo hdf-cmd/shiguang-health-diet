@@ -236,7 +236,10 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
                       fontWeight: FontWeight.w700,
                       color: Tokens.ink2)),
               const Spacer(),
-              Text('$sum kcal',
+              // T8（终审 Minor M2）：合计与行内 _n() 同口径取整——per100 记录的
+              // kcal 可能是小数，直插 '$sum' 会显 "232.0 kcal"；H5 侧
+              // js/app.js 合计走 Math.round 显示口径。
+              Text('${_n(sum)} kcal',
                   style: const TextStyle(
                       fontSize: Tokens.textSm,
                       fontWeight: FontWeight.w700,

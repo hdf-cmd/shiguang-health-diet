@@ -58,6 +58,8 @@ void main() {
     expect(find.text('每日热量 · 对比目标'), findsOneWidget); // index.html:159
     expect(find.text(avgText), findsOneWidget); // #report-avg（app.js:804）
     expect(find.text('目标 $target'), findsOneWidget); // 目标虚线标签（app.js:795）
+    // T8 缓办 D①：.week-chart 底部轴线（screens.css:407 border-bottom 1px hairline）
+    expect(find.byKey(const ValueKey('week-chart-axis')), findsOneWidget);
 
     final todayIdx = weekTodayIndex(DateTime.now());
     for (var i = 0; i < 7; i++) {

@@ -14,9 +14,19 @@
 // （H5 app.js:298-299 budget = target + exerciseKcal 的 ex 项）。
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart'; // visibleForTesting 经 material 再导出
 
 import '../../app/theme.dart';
+
+/// 内环三段色序 [carb, protein, fat]（index.html:83-88 / app.js:326-338 segs
+/// 数组顺序，与 macroFractions 返回顺序一一对应，**不得调换**）。
+/// T8 缓办 C：提到文件级供测试锁色序（此前调换 segColors 全测试仍绿）。
+@visibleForTesting
+const List<Color> plateRingSegColors = [
+  Tokens.nutCarb,
+  Tokens.nutProtein,
+  Tokens.nutFat,
+];
 
 /// 外环扫角比例（app.js:314 `pct = Math.min(1, s.kcal / budget)`）。
 /// budget=0 防除零（锁定语义，bug-for-bug 对齐浏览器）：
@@ -180,9 +190,9 @@ class _PlateRingPainter extends CustomPainter {
     }
     // 内环底轨（index.html:82：r=62 stroke=--surface-soft 宽 15）
     canvas.drawCircle(_center, PlateRing._rIn, _stroke(PlateRing._wIn, Tokens.surfaceSoft));
-    // 内环三段（index.html:83-88 顺序 carb→protein→fat，色 nut-*；linecap 默认
-    // butt=SVG 无 stroke-linecap；app.js:332-338 负 offset 顺排 ⇔ 起点=前段累加）
-    const segColors = [Tokens.nutCarb, Tokens.nutProtein, Tokens.nutFat];
+    // 内环三段（index.html:83-88 顺序 carb→protein→fat，色 nut-*；app.js:332-338
+    // 负 offset 顺排 ⇔ 起点=前段累加）；色序与 fractions 下标配对见
+    // plateRingSegColors（文件级常量，测试已锁）
     var angle = _startAngle;
     for (var i = 0; i < 3; i++) {
       final f = fractions[i];
@@ -192,7 +202,7 @@ class _PlateRingPainter extends CustomPainter {
         angle,
         _fullTurn * f,
         false,
-        _stroke(PlateRing._wIn, segColors[i]),
+        _stroke(PlateRing._wIn, plateRingSegColors[i]),
       );
       angle += _fullTurn * f;
     }

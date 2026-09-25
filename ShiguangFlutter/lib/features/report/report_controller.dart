@@ -36,9 +36,10 @@ final monthReportProvider =
 });
 
 /// 体重趋势（契约 weightTrend {points,labels}，js/app.js:262/845 renderWeightTrend
-/// 的数据源）。autoDispose 等价 H5 每次进报告页重拉；**不随周/月区间分派**——
-/// H5 只在 loadReportPage/loadMainBundle 里和周报并发取一次，点"月"只换柱状图
-/// （app.js:269-274 不碰 #weight-svg），切区间重拉会多打一次云函数且无视觉差异。
+/// 的数据源）。autoDispose 等价 H5 每次进报告页重拉；**不随区间分派数据源**——
+/// 点"月"走 loadMonthReport 不碰趋势（app.js:269-274）；点"周"走
+/// loadReportPage（app.js:260-266,280），趋势与周报**并发重取**——该重取由
+/// report_screen 分段回调里 `ref.invalidate(weightTrendProvider)` 触发（T8 缓办 B）。
 final weightTrendProvider =
     FutureProvider.autoDispose<WeightTrend>((ref) async {
   final m = await ref.watch(healthApiProvider).getWeightTrend();

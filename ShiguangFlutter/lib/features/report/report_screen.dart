@@ -154,9 +154,15 @@ class _ReportScreenState extends ConsumerState<ReportScreen> {
           children: [
             _segmentButton('本周',
                 active: range == ReportRange.week,
-                onTap: () =>
-                    ref.read(reportRangeProvider.notifier).state =
-                        ReportRange.week),
+                onTap: () {
+                  // T8 缓办 B：app.js:276-281 点"周"走 loadReportPage
+                  // （app.js:260-266），周报与 weight-trend **并发重取**；
+                  // 周报靠 autoDispose 重挂即重取，趋势被持续 watch → 须显式
+                  // invalidate 才对齐 H5。点"月"走 loadMonthReport 不碰趋势。
+                  ref.invalidate(weightTrendProvider);
+                  ref.read(reportRangeProvider.notifier).state =
+                      ReportRange.week;
+                }),
             _segmentButton('月',
                 active: range == ReportRange.month,
                 onTap: () =>
@@ -393,8 +399,9 @@ class _ReportScreenState extends ConsumerState<ReportScreen> {
   }
 
   /// 骨架卡高 ≈ 数据态 stat-card：padding 16*2 + label 13 + 4 +
-  /// num 26*1.15≈30 + 8 + track 6 ≈ 89（仅占位，无内容）
-  static const double _statCardSkeletonHeight = 89;
+  /// num 26*1.15≈30 + 8 + track 6 = 93（仅占位，无内容）。
+  /// T8 缓办 A：原写 89 与各项相加 93 矛盾，骨架↔数据切换会跳 ~4px。
+  static const double _statCardSkeletonHeight = 93;
 
   /// 加载态建议卡：#advice-title 是静态 HTML（index.html:166 初值
   /// "本周建议"；H5 点"月"后到月报回来前标题其实不动——Flutter 侧区间
@@ -422,6 +429,14 @@ class _ReportScreenState extends ConsumerState<ReportScreen> {
             height: 140,
             width: double.infinity,
             key: ValueKey('week-chart-skeleton'),
+          ),
+          // index.html:160 #week-chart 是静态 div：H5 加载期其
+          // border-bottom:1px --hairline（screens.css:407）本就可见——
+          // 底线随骨架一起画（T8 缓办 D① 延伸）。
+          SizedBox(
+            width: double.infinity,
+            height: 1,
+            child: ColoredBox(color: Tokens.hairline),
           ),
         ],
       ),

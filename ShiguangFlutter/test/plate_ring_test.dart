@@ -63,6 +63,15 @@ void main() {
     });
   });
 
+  /* ---------- 纯计算：内环三段色序锁（T8 缓办 C：此前调换色序全测试仍绿） ---------- */
+  test('plateRingSegColors = [nutCarb, nutProtein, nutFat]，与 macroFractions 返回顺序一一对应', () {
+    expect(plateRingSegColors,
+        const [Tokens.nutCarb, Tokens.nutProtein, Tokens.nutFat]);
+    // 三色两两互异：调换任意两色本断言必红（macroFractions 文档顺序
+    // [carb, protein, fat] ⇔ segColors 下标 0/1/2 配对，painter 逐 i 取色）
+    expect(plateRingSegColors.toSet(), hasLength(3));
+  });
+
   /* ---------- 纯计算：超预算色（app.js:323 `kcal > budget ? warn : primary`） ---------- */
   group('ringProgressColor', () {
     test('kcal > budget → warn', () {
