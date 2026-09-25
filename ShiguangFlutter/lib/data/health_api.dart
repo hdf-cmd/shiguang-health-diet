@@ -1,5 +1,5 @@
 // ShiguangFlutter/lib/data/health_api.dart
-// HealthAPI 业务方法（M2 所需子集）。契约唯一权威源：js/api.js 的
+// HealthAPI 业务方法（M2 + M3-T2 报告所需子集）。契约唯一权威源：js/api.js 的
 // HealthAPI（274-358 行）与 ROUTES（59-98 行），并由仓库根
 // contract/fixtures/diet-core.json 双端契约测试锁定（本侧
 // test/data/contract_test.dart、H5 侧 tests/contract.test.js）。
@@ -88,4 +88,21 @@ class HealthApi {
     final data = await _client.callValue('/foods/builtin');
     return data is List ? data : const <dynamic>[];
   }
+
+  /* ---------- 报告（M3-T2；路由 js/api.js:92-94，响应契约 index.js:462-546/579-601） ---------- */
+
+  /// 本周（周一起）7 天柱状 + 宏量达标率（js/api.js:348 getWeekReport；
+  /// rates 云端封顶 100；offset 往回推周数，缺省 0 = 本周）
+  Future<Map<String, dynamic>> getWeekReport({int offset = 0}) => _client
+      .call('/report/week', params: <String, dynamic>{'offset': offset});
+
+  /// 月报（js/api.js:350 getMonthReport；kcal 为各周有记录日的日均，
+  /// days=有记录天数，total=月总热量，isWeek 恒 false）
+  Future<Map<String, dynamic>> getMonthReport({int offset = 0}) => _client
+      .call('/report/month', params: <String, dynamic>{'offset': offset});
+
+  /// 体重趋势最近 7 条（js/api.js:351 getWeightTrend；无日志时云端回推
+  /// 7 个重复当前体重。响应可能带 bodyFat/muscle——v1.3.1 体成分下线，不消费）
+  Future<Map<String, dynamic>> getWeightTrend() =>
+      _client.call('/report/weight-trend');
 }

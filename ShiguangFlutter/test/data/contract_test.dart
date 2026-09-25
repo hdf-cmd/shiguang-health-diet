@@ -1,6 +1,6 @@
 // ShiguangFlutter/test/data/contract_test.dart
 // 双栈契约测试（Dart 侧）：读仓库根 contract/fixtures/diet-core.json（与 H5
-// tests/contract.test.js 同一份契约），对 health_api.dart 每个 M2 方法：
+// tests/contract.test.js 同一份契约），对 health_api.dart 每个契约登记方法：
 //   ① 注入 recording adapter 调方法，断言 envelope 的 path/method/params/body
 //      与 fixture 的模板路径、httpMethod、requestSample 一致（:param 按 js/api.js:242
 //      的 encodeURIComponent 语义回填）；
@@ -126,6 +126,12 @@ void main() {
         return api.getBuiltinFoods();
       case 'logWeight':
         return api.logWeight(b['weightKg'] as num, b['date'] as String?);
+      case 'getWeekReport':
+        return api.getWeekReport(offset: p['offset'] as int);
+      case 'getMonthReport':
+        return api.getMonthReport(offset: p['offset'] as int);
+      case 'getWeightTrend':
+        return api.getWeightTrend();
       default:
         throw StateError('contract_test 未接入的 dartMethod: ${r.dartMethod}');
     }

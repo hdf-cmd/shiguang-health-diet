@@ -1,5 +1,5 @@
 {
-  "$comment": "食光 M2 双栈契约 fixture：一份契约两端测（Dart test/data/contract_test.dart + H5 tests/contract.test.js）。responseFields 用点路径；responseShape=array 时字段作用于首元素。readOnly 路由的 responseFields/responseSample 来自 2026-09-25 对 uitest01 的真实只读采集（已脱敏：id 用 u_test/rec_test_* 占位，无 token）；写路由（POST/PUT/DELETE）字段清单按红线不实测，来源见 .superpowers/sdd/2026-09-25-flutter-m2-network-domain/task-6-report.md（js/api.js 调用点 + cloudfunctions/api-diet/index.js 路由处理行号）。",
+  "$comment": "食光 M2 双栈契约 fixture：一份契约两端测（Dart test/data/contract_test.dart + H5 tests/contract.test.js）。responseFields 用点路径；responseShape=array 时字段作用于首元素。readOnly 路由的 responseFields/responseSample 来自 2026-09-25 对 uitest01 的真实只读采集（已脱敏：id 用 u_test/rec_test_* 占位，无 token）；写路由（POST/PUT/DELETE）字段清单按红线不实测，来源见 .superpowers/sdd/2026-09-25-flutter-m2-network-domain/task-6-report.md（js/api.js 调用点 + cloudfunctions/api-diet/index.js 路由处理行号）。M3 增补：三条 /report/* 只读路由（weekReport/monthReport/weightTrend）的 responseFields/responseSample 按云函数返回代码手写构造（api-diet/index.js:462-546 周报月报、579-601 体重趋势；bodyFat/muscle 字段 v1.3.1 起体成分下线，契约不收录），样本值延续 uitest01 脱敏口径（target 1679、体重 66.x、id 用 u_test 风格）。",
   "routes": [
     {
       "route": "profile",
@@ -138,6 +138,58 @@
       "requestSample": { "body": { "weightKg": 66.5, "date": "2026-09-25" } },
       "responseShape": "object",
       "responseFields": ["ok", "weightKg", "date", "patch"]
+    },
+    {
+      "route": "weekReport",
+      "dartMethod": "getWeekReport",
+      "jsMethod": "getWeekReport",
+      "path": "/report/week",
+      "httpMethod": "GET",
+      "readOnly": true,
+      "requestSample": { "params": { "offset": 1 } },
+      "responseShape": "object",
+      "responseFields": ["days", "kcal", "target", "rates.carb", "rates.protein", "rates.fat"],
+      "responseSample": {
+        "days": ["一", "二", "三", "四", "五", "六", "日"],
+        "kcal": [1720, 1688, 0, 1856, 1745, 0, 988],
+        "target": 1679,
+        "rates": { "carb": 86, "protein": 72, "fat": 64 }
+      }
+    },
+    {
+      "route": "monthReport",
+      "dartMethod": "getMonthReport",
+      "jsMethod": "getMonthReport",
+      "path": "/report/month",
+      "httpMethod": "GET",
+      "readOnly": true,
+      "requestSample": { "params": { "offset": 1 } },
+      "responseShape": "object",
+      "responseFields": ["weeks", "kcal", "target", "days", "total", "rates.carb", "rates.protein", "rates.fat", "isWeek"],
+      "responseSample": {
+        "weeks": ["W1", "W2", "W3", "W4"],
+        "kcal": [1652, 1723, 0, 1688],
+        "target": 1679,
+        "days": 19,
+        "total": 31956,
+        "rates": { "carb": 78, "protein": 69, "fat": 73 },
+        "isWeek": false
+      }
+    },
+    {
+      "route": "weightTrend",
+      "dartMethod": "getWeightTrend",
+      "jsMethod": "getWeightTrend",
+      "path": "/report/weight-trend",
+      "httpMethod": "GET",
+      "readOnly": true,
+      "requestSample": {},
+      "responseShape": "object",
+      "responseFields": ["points", "labels"],
+      "responseSample": {
+        "points": [67.2, 67.0, 66.8, 66.66, 66.6, 66.5, 66.4],
+        "labels": ["9.19", "9.20", "9.21", "9.22", "9.23", "9.24", "9.25"]
+      }
     }
   ]
 }
