@@ -136,6 +136,15 @@ void main() {
     });
   });
 
+  group('默认 Dio 超时契约（评审 T5 Important：15s 超时显式断言）', () {
+    test('defaultDio 的三超时均为 15s（对齐 js/api.js:249 AbortSignal.timeout(15000)）', () {
+      final dio = ApiClient.defaultDio();
+      expect(dio.options.connectTimeout, const Duration(seconds: 15));
+      expect(dio.options.sendTimeout, const Duration(seconds: 15));
+      expect(dio.options.receiveTimeout, const Duration(seconds: 15));
+    });
+  });
+
   group('401 → 单飞续期 → 重试一次', () {
     test('续期成功：写回新 token（refresh_token 轮换、expires_in 缺省 7200），重试一次并返回数据', () async {
       final reqs = <_Captured>[];
@@ -200,6 +209,43 @@ void main() {
       expect(await store.read(), isNull);
       expect(reqs.where((r) => r.url == ApiClient.apiBase), hasLength(1)); // 不重试
       expect(reqs.where((r) => r.url != ApiClient.apiBase), hasLength(1));
+    });
+
+    test('续期响应 200 但缺 access_token → 视为失败：不重试、清 token（js/api.js:49 falsy 分支）', () async {
+      final reqs = <_Captured>[];
+      await store.write(signedInToken());
+      final client = clientWith((pending, apiCount, refreshCount) {
+        // 200 + 合法 JSON，但没有 access_token（js 侧 data.access_token 为 undefined → false）
+        if (pending.url != ApiClient.apiBase) return (200, {'token_type': 'bearer'}, Duration.zero);
+        return (401, <String, dynamic>{}, Duration.zero);
+      }, reqs);
+
+      await expectLater(
+        client.call('/user/profile'),
+        throwsA(isA<ApiException>().having((e) => e.message, 'message', '登录已过期，请重新登录')),
+      );
+      expect(await store.read(), isNull); // 清 token
+      expect(reqs.where((r) => r.url == ApiClient.apiBase), hasLength(1)); // 不重试
+      expect(reqs.where((r) => r.url != ApiClient.apiBase), hasLength(1));
+      // 本地 token 未被续期写回污染（若误写回，accessToken 会变化）
+    });
+
+    test('本地 token 缺 refreshToken → 续期直接 false，不发 /auth/v1/token 请求（js/api.js:44）', () async {
+      final reqs = <_Captured>[];
+      await store.write(TokenData({
+        'accessToken': 'old-at',
+        'expiresIn': 7200,
+        'savedAt': 1000,
+      })); // 无 refreshToken 键
+      final client = clientWith((_, _, _) => (401, <String, dynamic>{}, Duration.zero), reqs);
+
+      await expectLater(
+        client.call('/user/profile'),
+        throwsA(isA<ApiException>().having((e) => e.message, 'message', '登录已过期，请重新登录')),
+      );
+      expect(await store.read(), isNull); // 仍走「净 401」清 token 分支
+      expect(reqs.where((r) => r.url == ApiClient.apiBase), hasLength(1)); // 不重试
+      expect(reqs.where((r) => r.url != ApiClient.apiBase), isEmpty); // 根本没发起续期请求
     });
 
     test('并发 401 单飞：两个在途请求共享同一次续期', () async {

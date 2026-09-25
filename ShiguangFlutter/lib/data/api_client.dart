@@ -7,6 +7,7 @@
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import 'token_store.dart';
 
@@ -27,7 +28,7 @@ typedef RawResponse = ({int status, Map<String, dynamic> data});
 class ApiClient {
   ApiClient({required TokenStore tokenStore, Dio? dio})
       : _store = tokenStore,
-        _dio = dio ?? _defaultDio();
+        _dio = dio ?? defaultDio();
 
   /// 云函数单入口（js/api.js:17）
   static const String apiBase =
@@ -41,8 +42,12 @@ class ApiClient {
   static const String publishableKey =
       'eyJhbGciOiJSUzI1NiIsImtpZCI6IjlkMWRjMzFlLWI0ZDAtNDQ4Yi1hNzZmLWIwY2M2M2Q4MTQ5OCJ9.eyJpc3MiOiJodHRwczovL2Nsb3VkMS1kNmc0eDloOW01MDdiNDI5Yy5hcC1zaGFuZ2hhaS50Y2ItYXBpLnRlbmNlbnRjbG91ZGFwaS5jb20iLCJzdWIiOiJhbm9uIiwiYXVkIjoiY2xvdWQxLWQ2ZzR4OWg5bTUwN2I0MjljIiwiZXhwIjo0MDkyOTU3MDc0LCJpYXQiOjE3ODkyNzM4NzQsIm5vbmNlIjoieURIazNvS0FUcUdWbElUUFZ6d2VzdyIsImF0X2hhc2giOiJ5REhrM29LQVRxR1ZsSVRQVnp3ZXN3IiwibmFtZSI6IkFub255bW91cyIsInNjb3BlIjoiYW5vbnltb3VzIiwicHJvamVjdF9pZCI6ImNsb3VkMS1kNmc0eDloOW01MDdiNDI5YyIsIm1ldGEiOnsicGxhdGZvcm0iOiJQdWJsaXNoYWJsZUtleSJ9LCJ1c2VyX3R5cGUiOiIiLCJjbGllbnRfdHlwZSI6ImNsaWVudF91c2VyIiwiaXNfc3lzdGVtX2FkbWluIjpmYWxzZX0.fjfcG-D1b9n7gZ7BtQTcwB82EwxlxzDx2ULaJ-S2ONWX04D2-WQfjR060QNprSsG3CR-agmO-ACSAv7gckCLCF01WcoQONKGKRlRRG8qvVpPTtHOM3lSn5VbJK9_Mhhm1Ex8YqPFxl_7XrLv4iFR-4dycOrImsuYTjfcf4NFCPzzFe5sed1cs-aoXvlIXNMvoJPXhT9mHh8XHoIuWGJJf6upi0rLc130Qm-u7lFZxuwX-_ikhyyYFtP0Wy9cC3E9UsHi6bn3lIYbbs07RtRYNyz6XOjr6nPZ2GJhPd75YGdvdy9mhGoNVtxW8zUlIo8q00EAltlEvtVjhWDc70D-rw';
 
-  static Dio _defaultDio() {
-    // 对齐 js/api.js:249 的 AbortSignal.timeout(15000)
+  /// 未注入 Dio 时使用的默认实例：三超时恒 15s。
+  /// 对齐 js/api.js:249 的 AbortSignal.timeout(15000)。
+  /// 提为 @visibleForTesting 静态工厂，使「注入 Dio 路径无超时保证」
+  /// 这一契约缺口可被单测显式断言（评审 T5 Important）。
+  @visibleForTesting
+  static Dio defaultDio() {
     return Dio(BaseOptions(
       connectTimeout: const Duration(seconds: 15),
       sendTimeout: const Duration(seconds: 15),
