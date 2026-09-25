@@ -46,3 +46,7 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# M5-T1: release 签名材料，绝不入库
+android/key.properties
+android/*.jks
