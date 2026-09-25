@@ -94,7 +94,7 @@ List<int> liveFrame(double kg, {bool locked = false}) {
   return f;
 }
 ```
-断言：`parseScaleFrame(liveFrame(66.66))!.kgRaw == 66.66`、locked 位、0x54 存档帧→null、坏 crc→null、坏帧头→null、长度≠20→null；`filterReading`：2.0–300.0 过滤、round 两位（66.666→66.67）、locked 直通 changed=true、非 locked 同值 changed=false；`handshakeFrames(1780000000)` 三帧的 f[2]/f[18]/校时字节小端 `d8 01 0b 6a`、f[19]=各自 crc；`buildFrame` 空 body 越界不崩（body 最长 15）。
+断言：`parseScaleFrame(liveFrame(66.66))!.kgRaw == 66.66`、locked 位、0x54 存档帧→null、坏 crc→null、坏帧头→null、长度≠20→null；`filterReading`：2.0–300.0 过滤、round 两位（66.666→66.67）、locked 直通 changed=true、非 locked 同值 changed=false；`handshakeFrames(1780000000)` 三帧的 f[2]/f[18]/校时字节小端 `00 a5 18 6a`（1780000000=0x6A18A500；T2 评审修正本计划原笔误 0x6A0B01D8）、f[19]=各自 crc；`buildFrame` 空 body 越界不崩（body 最长 15）。
 - [ ] **Step 2:** 跑 RED（编译错）。
 - [ ] **Step 3:** 实现（文件头注释标权威源 ScaleSync.kt 行号；**不 import 任何插件**，purity 守卫自动覆盖）。
 - [ ] **Step 4:** `flutter test test/domain/` 绿（purity 无红）；全量 216+新增不回退；提交 `feat: B1秤协议纯Dart移植——帧编解码/0x51过滤/0x54忽略/握手校时，真机形状测试向量`。
