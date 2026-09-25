@@ -35,6 +35,20 @@ abstract class Tokens {
   // 字号
   static const textXs = 11.0, textSm = 13.0, textMd = 15.0, textLg = 17.0;
   static const textXl = 24.0, textNum = 46.0;
+  /// 品牌大标题（登录页/门控页「食光」）：css 无该变量，值取自 M1 现用 40（M1 终审 I1 收敛）
+  static const textHero = 40.0;
+  // 阴影（css/design-tokens.css --shadow-card / --shadow-float 逐字镜像；
+  // rgba(28,36,24,α)：.04→0x0A、.12→0x1F、.26→0x42；`0 Y B S` → offset/blur/spread）
+  static const shadowCard = [
+    BoxShadow(color: Color(0x0A1C2418), blurRadius: 2, offset: Offset(0, 1)),
+    BoxShadow(color: Color(0x1F1C2418), blurRadius: 28, offset: Offset(0, 10), spreadRadius: -14),
+  ];
+  static const shadowFloat = [
+    BoxShadow(color: Color(0x421C2418), blurRadius: 44, offset: Offset(0, 14), spreadRadius: -14),
+  ];
+  /// 浮动 TabBar 面板底：白 92%（css --glass 为 78%，此值为 M1 shell 现用 0xEBFFFFFF，
+  /// Flutter 3.24 无 withValues 故直写 ARGB；M1 终审 I1 收敛进令牌）
+  static const surfaceNav = Color(0xEBFFFFFF);
 }
 
 ThemeData shiguangTheme() {

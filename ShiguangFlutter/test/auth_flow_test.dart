@@ -8,7 +8,10 @@ import 'package:shiguang_flutter/app/auth_state.dart';
 import 'package:shiguang_flutter/data/api_client.dart';
 import 'package:shiguang_flutter/data/auth_api.dart';
 import 'package:shiguang_flutter/data/token_store.dart';
+import 'package:shiguang_flutter/features/home/home_controller.dart' show healthApiProvider;
 import 'package:shiguang_flutter/main.dart';
+
+import 'stubs/stub_health_api.dart';
 
 /// 桩 AuthApi：四场景全靠构造参数控制，零网络。
 /// implements 而非 extends——AuthApi 的具体构造需要 ApiClient，桩不需要。
@@ -45,7 +48,12 @@ class StubAuthApi implements AuthApi {
 }
 
 Widget harness(StubAuthApi api) => ProviderScope(
-      overrides: [authApiProvider.overrideWithValue(api)],
+      overrides: [
+        authApiProvider.overrideWithValue(api),
+        // T8 起 Shell 首 tab 是真实数据 HomeScreen：healthApi 一并桩掉，
+        // 认证用例绝不触碰 SecureTokenStore/网络路径（空数据 = 三餐"未记录"）
+        healthApiProvider.overrideWithValue(StubHealthApi()),
+      ],
       child: const ShiguangApp(),
     );
 

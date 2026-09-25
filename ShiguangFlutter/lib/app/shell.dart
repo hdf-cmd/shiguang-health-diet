@@ -1,6 +1,6 @@
 // ShiguangFlutter/lib/app/shell.dart
 import 'package:flutter/material.dart';
-import '../features/home/home_static_screen.dart';
+import '../features/home/home_screen.dart';
 // 三个占位文件同为 PlaceholderScreen，Dart 无法无名歧义导入，按 brief 同构文件结构加前缀区分。
 import '../features/profile/profile_placeholder.dart' show PlaceholderScreen;
 import '../features/record/record_placeholder.dart' as record_placeholder;
@@ -31,7 +31,7 @@ class ShellState extends State<Shell> {
         controller: _controller,
         onPageChanged: (i) => setState(() => _index = i),
         children: const [
-          HomeStaticScreen(),
+          HomeScreen(),
           record_placeholder.PlaceholderScreen('记录（M2 接入）'),
           report_placeholder.PlaceholderScreen('报告（M2 接入）'),
           PlaceholderScreen('我的（M2 接入）'),
@@ -43,10 +43,9 @@ class ShellState extends State<Shell> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: Tokens.sp2, vertical: Tokens.sp2),
             decoration: BoxDecoration(
-              color: const Color(0xEBFFFFFF),  // 白 92%（3.24 无 withValues）
+              color: Tokens.surfaceNav, // 白 92%（M1-I1：裸色值收敛进令牌）
               borderRadius: BorderRadius.circular(Tokens.radiusLg),
-              boxShadow: const [BoxShadow(
-                  color: Color(0x421C2418), blurRadius: 44, offset: Offset(0, 14))],
+              boxShadow: Tokens.shadowFloat, // css --shadow-float 逐字镜像
             ),
             child: Row(
               children: [

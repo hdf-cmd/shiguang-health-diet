@@ -6,11 +6,13 @@ import 'app/shell.dart';
 import 'app/theme.dart';
 import 'data/api_client.dart';
 import 'data/auth_api.dart';
+import 'data/health_api.dart';
 import 'data/token_store.dart';
 import 'features/auth/login_screen.dart';
+import 'features/home/home_controller.dart' show healthApiProvider;
 
 void main() {
-  // 组合根：真实依赖只在这里拼装一次（SecureTokenStore → ApiClient → AuthApi），
+  // 组合根：真实依赖只在这里拼装一次（SecureTokenStore → ApiClient → AuthApi/HealthApi），
   // 经 ProviderScope.overrides 注入；不造全局单例，测试在各自 ProviderScope
   // 里 override 成桩（见 test/auth_flow_test.dart）。
   final tokenStore = SecureTokenStore();
@@ -21,6 +23,7 @@ void main() {
       tokenStoreProvider.overrideWithValue(tokenStore),
       apiClientProvider.overrideWithValue(apiClient),
       authApiProvider.overrideWithValue(authApi),
+      healthApiProvider.overrideWithValue(HealthApi(apiClient)),
     ],
     child: const ShiguangApp(),
   ));
@@ -84,7 +87,7 @@ class _Splash extends StatelessWidget {
           child: Column(mainAxisSize: MainAxisSize.min, children: const [
             Text('食光',
                 style: TextStyle(
-                    fontSize: 40,
+                    fontSize: Tokens.textHero,
                     fontWeight: FontWeight.w800,
                     color: Tokens.primaryDeep)),
             SizedBox(height: Tokens.sp2),

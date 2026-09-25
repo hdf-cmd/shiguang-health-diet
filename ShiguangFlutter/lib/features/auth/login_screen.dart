@@ -58,7 +58,7 @@ class _LoginScreenState extends State<LoginScreen> {
         padding: const EdgeInsets.symmetric(horizontal: Tokens.sp5),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           const Text('食光', style: TextStyle(
-              fontSize: 40, fontWeight: FontWeight.w800, color: Tokens.primaryDeep)),
+              fontSize: Tokens.textHero, fontWeight: FontWeight.w800, color: Tokens.primaryDeep)),
           const SizedBox(height: Tokens.sp2),
           const Text('把每一餐，记成时光',
               style: TextStyle(fontSize: Tokens.textSm, color: Tokens.ink2)),
@@ -68,7 +68,7 @@ class _LoginScreenState extends State<LoginScreen> {
             decoration: BoxDecoration(
               color: Tokens.surface,
               borderRadius: BorderRadius.circular(Tokens.radiusLg),
-              boxShadow: const [BoxShadow(color: Color(0x141C2418), blurRadius: 28, offset: Offset(0, 10))],
+              boxShadow: Tokens.shadowCard, // css --shadow-card 逐字镜像（M1-I1 收敛）
             ),
             child: Column(children: [
               _modeSwitch(),
