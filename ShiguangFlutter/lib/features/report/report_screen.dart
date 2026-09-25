@@ -3,7 +3,7 @@
 // 页头"健康报告" + segmented（本周/月，app.js:276-281 点击切区间）+ 热量卡
 // （标题"每日热量 · 对比目标"、#report-avg 日均/月均文案、#week-chart 柱状图）
 // + 达标统计卡（#report-stats，app.js:806-815）+ 期间建议卡
-// （.advice-card，app.js:817-818）。体重趋势不在本任务（T6）。
+// （.advice-card，app.js:817-818）+ 体重趋势卡（.weight-trend，app.js:845-905，T6）。
 // 月视图复用 WeekBarChart：labels=r.weeks、todayIndex=-1（app.js:793
 // isWeek===false 不高亮今天）；周数由 labels.length 动态决定（31 天月 5 周）。
 // 选中气泡态是本组件的局部状态（H5 事件委托 val-on 语义）：单一
@@ -16,6 +16,7 @@ import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
 import '../../domain/report.dart';
 import 'report_controller.dart';
+import 'weight_trend.dart';
 import 'week_chart.dart';
 
 class ReportScreen extends ConsumerStatefulWidget {
@@ -126,6 +127,11 @@ class _ReportScreenState extends ConsumerState<ReportScreen> {
             const SizedBox(height: Tokens.sp4),
             _adviceSkeletonCard(range),
           ],
+          // 体重趋势卡：index.html:170 .card.weight-trend 是报告页静态卡框，
+          // 数据来自独立接口（app.js:262 与周报并发取一次），因此不参与上面
+          // 报告三态分派，自己管加载/错误/空数据/有数据四态，周报失败也在。
+          const SizedBox(height: Tokens.sp4), // .weight-trend margin-top --sp-4
+          _weightCard(),
         ],
       ),
     );
@@ -417,6 +423,66 @@ class _ReportScreenState extends ConsumerState<ReportScreen> {
             width: double.infinity,
             key: ValueKey('week-chart-skeleton'),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// 体重趋势卡（index.html:170-174 `.card.weight-trend`，几何/文案见
+  /// weight_trend.dart 顶部对照表）。标题行右侧 `.card-title .more` 即
+  /// #weight-delta（app.js:903-904）：文案降/平 primary、升 warn，空数据为空串。
+  /// **卡内不渲染"＋ 记今日体重"按钮**（index.html:173 #btn-log-weight）：
+  /// 本里程碑不做写入口（简报 Step 5），HealthApi.logWeight 已就绪，
+  /// 入口 UI 归后续「我的」页里程碑。
+  Widget _weightCard() {
+    final trend = ref.watch(weightTrendProvider);
+    final data = trend.value;
+    final points = data?.points ?? const <double>[];
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text('体重趋势',
+                    style: TextStyle(
+                        fontSize: Tokens.textMd,
+                        fontWeight: FontWeight.w600,
+                        color: Tokens.ink)),
+              ),
+              Text(
+                weightDeltaText(points),
+                style: TextStyle(
+                    fontSize: Tokens.textXs,
+                    fontWeight: FontWeight.w400, // .card-title .more
+                    color: weightDeltaColor(points),
+                    letterSpacing: 0.7), // --ls-wide .06em × 11px ≈ 0.7
+              ),
+            ],
+          ),
+          const SizedBox(height: Tokens.sp3), // .weight-trend svg margin-top --sp-3
+          if (trend.hasError) ...[
+            Text(_errorMessage(trend.error),
+                style: const TextStyle(
+                    color: Tokens.danger, fontSize: Tokens.textMd)),
+            const SizedBox(height: Tokens.sp2),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                // 重试 = 重新取体重趋势（照报告卡 invalidate 口径）
+                onPressed: () => ref.invalidate(weightTrendProvider),
+                child: const Text('重试'),
+              ),
+            ),
+          ] else if (data != null)
+            WeightTrendChart(points: data.points, labels: data.labels)
+          else
+            // 加载态：H5 此刻 #weight-svg 是带 viewBox 的空 SVG，按同比例占位
+            const AspectRatio(
+              key: ValueKey('weight-trend-skeleton'),
+              aspectRatio: 320 / 132,
+            ),
         ],
       ),
     );

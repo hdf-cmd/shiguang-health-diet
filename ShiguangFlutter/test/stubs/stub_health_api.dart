@@ -23,6 +23,8 @@ class StubHealthApi implements HealthApi {
     this.weekError,
     this.monthReport,
     this.monthError,
+    this.weightTrend,
+    this.weightTrendError,
   });
 
   /// 成功返回体（null 时按全零汇总/空记录处理）
@@ -57,20 +59,24 @@ class StubHealthApi implements HealthApi {
   final List<String> deletedIds = <String>[];
   ApiException? deleteError;
 
-  /* ---------- M3-T4 报告页：week/month（getWeightTrend 留到 T6） ---------- */
+  /* ---------- M3-T4 报告页：week/month；T6 体重趋势 ---------- */
 
-  /// getWeekReport/getMonthReport 成功返回体（null → 全零默认，形状见
-  /// contract/fixtures/diet-core.json weekReport/monthReport responseSample）
+  /// getWeekReport/getMonthReport/getWeightTrend 成功返回体（null → 默认样本，
+  /// 形状见 contract/fixtures/diet-core.json weekReport/monthReport/weightTrend
+  /// responseSample）
   Map<String, dynamic>? weekReport;
   Map<String, dynamic>? monthReport;
+  Map<String, dynamic>? weightTrend;
 
   /// 非空 → 对应方法抛该异常（可测试中途清空，模拟"重试后成功"）
   ApiException? weekError;
   ApiException? monthError;
+  ApiException? weightTrendError;
 
   /// 调用次数：验证重试确实重新取数
   int weekCalls = 0;
   int monthCalls = 0;
+  int trendCalls = 0;
 
   /// 契约 fixture（contract/fixtures/diet-core.json）的字段形状：
   /// summary → {kcal,target,carb,protein,fat,water}
@@ -145,6 +151,17 @@ class StubHealthApi implements HealthApi {
         'isWeek': false,
       };
 
+  /// 体重趋势 fixture 形状 → {points:[num], labels:[String]}
+  /// （contract diet-core.json weightTrend.responseSample）。与 week/month 桩对称：
+  /// 默认可被 WeightTrend.fromMap 解析；7 点递减使 delta 稳定为 -0.80。
+  static Map<String, dynamic> weightTrendMap({
+    List<num> points = const [67.2, 67, 66.8, 66.66, 66.6, 66.5, 66.4],
+    List<String> labels = const [
+      '9.19', '9.20', '9.21', '9.22', '9.23', '9.24', '9.25'
+    ],
+  }) =>
+      {'points': points, 'labels': labels};
+
   @override
   Future<Map<String, dynamic>> getDailySummary(String date) async {
     summaryCalls++;
@@ -195,6 +212,13 @@ class StubHealthApi implements HealthApi {
     monthCalls++;
     if (monthError != null) throw monthError!;
     return monthReport ?? monthReportMap();
+  }
+
+  @override
+  Future<Map<String, dynamic>> getWeightTrend() async {
+    trendCalls++;
+    if (weightTrendError != null) throw weightTrendError!;
+    return weightTrend ?? weightTrendMap();
   }
 
   @override

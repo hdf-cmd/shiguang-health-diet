@@ -1,13 +1,14 @@
 // ShiguangFlutter/lib/features/report/report_controller.dart
 // 报告页数据层 riverpod provider（M3 Task 4）。
 // 惯例照抄 home_controller.dart（M2 T8）：测试只 override healthApiProvider
-// 即可全链路换桩；本文件只管周/月报取数 + 视图区间，体重趋势留 T6。
+// 即可全链路换桩；本文件管周/月报取数 + 视图区间 + 体重趋势取数（T6）。
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 // riverpod 3.x：StateProvider 收敛在 legacy 导出（未废弃，@publicInLegacy）
 import 'package:flutter_riverpod/legacy.dart' show StateProvider;
 
 import '../../domain/report.dart';
 import '../home/home_controller.dart' show healthApiProvider;
+import 'weight_trend.dart';
 
 /// 报告区间（H5 segmented data-range：week/month，index.html:153-154）
 enum ReportRange { week, month }
@@ -32,4 +33,14 @@ final monthReportProvider =
     FutureProvider.autoDispose<ReportData>((ref) async {
   final m = await ref.watch(healthApiProvider).getMonthReport();
   return parseMonthReport(m);
+});
+
+/// 体重趋势（契约 weightTrend {points,labels}，js/app.js:262/845 renderWeightTrend
+/// 的数据源）。autoDispose 等价 H5 每次进报告页重拉；**不随周/月区间分派**——
+/// H5 只在 loadReportPage/loadMainBundle 里和周报并发取一次，点"月"只换柱状图
+/// （app.js:269-274 不碰 #weight-svg），切区间重拉会多打一次云函数且无视觉差异。
+final weightTrendProvider =
+    FutureProvider.autoDispose<WeightTrend>((ref) async {
+  final m = await ref.watch(healthApiProvider).getWeightTrend();
+  return WeightTrend.fromMap(m);
 });
