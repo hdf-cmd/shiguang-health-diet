@@ -25,6 +25,8 @@ class StubHealthApi implements HealthApi {
     this.monthError,
     this.weightTrend,
     this.weightTrendError,
+    this.summaryGate,
+    this.recordsGate,
   });
 
   /// 成功返回体（null 时按全零汇总/空记录处理）
@@ -54,6 +56,11 @@ class StubHealthApi implements HealthApi {
 
   /// 非空 → addFoodRecord 先 await 它再返回（模拟慢网 pending，验证按钮防重）
   Completer<void>? addGate;
+
+  /// M3-T7：非空 → getDailySummary/getMealRecords 先 await 它再返回
+  /// （模拟慢网 pending，验证首页加载期骨架与全空态可分辨）
+  Completer<void>? summaryGate;
+  Completer<void>? recordsGate;
 
   /// deleteFoodRecord 收到的 id（按调用顺序收集）
   final List<String> deletedIds = <String>[];
@@ -166,6 +173,7 @@ class StubHealthApi implements HealthApi {
   Future<Map<String, dynamic>> getDailySummary(String date) async {
     summaryCalls++;
     if (summaryError != null) throw summaryError!;
+    if (summaryGate != null) await summaryGate!.future;
     return summary ?? summaryMap();
   }
 
@@ -173,6 +181,7 @@ class StubHealthApi implements HealthApi {
   Future<List<dynamic>> getMealRecords(String date) async {
     recordsCalls++;
     if (recordsError != null) throw recordsError!;
+    if (recordsGate != null) await recordsGate!.future;
     return records ?? const <dynamic>[];
   }
 

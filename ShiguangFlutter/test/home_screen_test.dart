@@ -26,14 +26,15 @@ void main() {
         id: 'rec_test_2', meal: 'dinner', name: '鸡胸肉', portion: '禽肉 · 1 块约 100g', kcal: 133),
   ];
 
-  testWidgets('有记录：环中心=summary.kcal，已摄入/目标行，三餐行渲染真实记录', (tester) async {
+  testWidgets('有记录：环中心=还可摄入(budget-kcal)，aside 已摄入/额度行，三餐行渲染真实记录', (tester) async {
     final api = StubHealthApi(summary: kSummary, records: kRecords);
     await tester.pumpWidget(harness(api));
     await tester.pumpAndSettle();
 
     expect(find.text('今日盘子'), findsOneWidget);
-    expect(find.text('712'), findsOneWidget); // 环中心 = 已摄入 kcal
-    expect(find.text('712 / 1679 kcal'), findsOneWidget); // 已摄入 / 目标（云函数 target，非硬编码）
+    // M3-T7：环中心改显 max(0, budget-kcal)=1679-712（H5 renderRing app.js:300）
+    expect(find.text('967'), findsOneWidget);
+    expect(find.textContaining('已摄入 712 kcal'), findsOneWidget); // aside 行（云函数 target，非硬编码）
     expect(find.text('1975'), findsNothing);
     expect(find.textContaining('鸡蛋'), findsOneWidget);
     expect(find.textContaining('72 kcal'), findsOneWidget);
@@ -46,13 +47,13 @@ void main() {
     expect(find.text('未记录'), findsOneWidget); // 仅午餐空态
   });
 
-  testWidgets('全空：三餐都是"未记录"，环中心 0', (tester) async {
+  testWidgets('全空：三餐都是"未记录"，环中心=预算全额（摄入 0）', (tester) async {
     final api = StubHealthApi(summary: StubHealthApi.summaryMap(target: 1679));
     await tester.pumpWidget(harness(api));
     await tester.pumpAndSettle();
 
-    expect(find.text('0'), findsOneWidget); // 环中心 kcal=0（H5 语义：无记录即 0）
-    expect(find.text('0 / 1679 kcal'), findsOneWidget);
+    expect(find.text('1679'), findsOneWidget); // 环中心 = budget-0（H5：无记录即全额可吃）
+    expect(find.textContaining('已摄入 0 kcal'), findsOneWidget);
     expect(find.text('未记录'), findsNWidgets(3));
   });
 
@@ -66,7 +67,7 @@ void main() {
 
     expect(find.text('登录已过期，请重新登录'), findsOneWidget);
     expect(find.text('重试'), findsOneWidget);
-    expect(find.text('712'), findsNothing);
+    expect(find.text('967'), findsNothing);
 
     // 桩翻转为成功 → 点重试（ref.invalidate 重新取数）
     api.summaryError = null;
@@ -77,7 +78,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('登录已过期，请重新登录'), findsNothing);
-    expect(find.text('712 / 1679 kcal'), findsOneWidget);
+    expect(find.textContaining('已摄入 712 kcal'), findsOneWidget);
     expect(find.textContaining('鸡胸肉'), findsOneWidget);
     expect(api.summaryCalls, 2); // 证明确实重发请求，非缓存翻牌
     expect(api.recordsCalls, 2);
