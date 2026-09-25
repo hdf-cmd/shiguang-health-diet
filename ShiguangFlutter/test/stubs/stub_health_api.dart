@@ -30,6 +30,8 @@ class StubHealthApi implements HealthApi {
     this.bodyMetrics,
     this.bodyError,
     this.logWeightError,
+    this.profile,
+    this.profileError,
   });
 
   /// 成功返回体（null 时按全零汇总/空记录处理）
@@ -64,6 +66,26 @@ class StubHealthApi implements HealthApi {
   /// （模拟慢网 pending，验证首页加载期骨架与全空态可分辨）
   Completer<void>? summaryGate;
   Completer<void>? recordsGate;
+
+  /* ---------- M5-T5 资料卡：getProfile / updateProfile / updateAvatar ---------- */
+
+  /// getProfile 成功返回体（null → [profileMap] 默认档，键集锁自
+  /// contract/fixtures/diet-core.json routes[profile].responseFields）。
+  /// 凡挂 ProfileScreen 的既有用例经此默认档渲染资料头，不再触 noSuchMethod。
+  Map<String, dynamic>? profile;
+  ApiException? profileError;
+  int profileCalls = 0;
+
+  /// updateProfile 收到的 data（按调用顺序收集；成功时浅合并进 [profile]，
+  /// ≙ 云端语义 js/api.js:277「部分字段浅合并进用户文档」——供重取断言）
+  final List<Map<String, dynamic>> profileUpdateBodies =
+      <Map<String, dynamic>>[];
+  ApiException? profileUpdateError;
+
+  /// updateAvatar 最近一次收到的 dataURL / 调用次数 / 注错
+  String? lastAvatarData;
+  int avatarCalls = 0;
+  ApiException? avatarError;
 
   /* ---------- M4-T4 体重卡：getBodyMetrics / logWeight ---------- */
 
@@ -234,6 +256,45 @@ class StubHealthApi implements HealthApi {
     bodyCalls++;
     if (bodyError != null) throw bodyError!;
     return bodyMetrics ?? const <String, dynamic>{'weightKg': 55};
+  }
+
+  /// 契约 fixture 形状（diet-core.json routes[profile].responseSample 同键集；
+  /// 值取 H5 静态默认 index.html:180-183「食/食光用户/把每一餐，记成时光」）。
+  static Map<String, dynamic> profileMap() => <String, dynamic>{
+        'id': 'u_test',
+        'nickname': '食光用户',
+        'avatarText': '食',
+        'avatarData': null,
+        'signature': '把每一餐，记成时光',
+        'goal': {'dailyKcal': 1679, 'targetWeight': 55, 'waterMl': 1600},
+        'body': <String, dynamic>{},
+        'bodyUpdatedAt': 0,
+      };
+
+  @override
+  Future<Map<String, dynamic>> getProfile() async {
+    profileCalls++;
+    if (profileError != null) throw profileError!;
+    return profile ?? profileMap();
+  }
+
+  @override
+  Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> data) async {
+    profileUpdateBodies.add(Map<String, dynamic>.from(data));
+    if (profileUpdateError != null) throw profileUpdateError!;
+    final p = profile ??= profileMap();
+    p.addAll(data); // 云端浅合并（js/api.js:277 注释面）
+    return <String, dynamic>{'ok': true, ...p};
+  }
+
+  @override
+  Future<Map<String, dynamic>> updateAvatar(String dataUrl) async {
+    avatarCalls++;
+    lastAvatarData = dataUrl;
+    if (avatarError != null) throw avatarError!;
+    (profile ??= profileMap())['avatarData'] = dataUrl;
+    // 云实返 {ok,avatarData}（contract routes[avatar].responseFields）
+    return <String, dynamic>{'ok': true, 'avatarData': dataUrl};
   }
 
   @override

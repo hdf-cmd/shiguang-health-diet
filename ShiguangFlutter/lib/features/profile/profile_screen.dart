@@ -1,6 +1,8 @@
 // ShiguangFlutter/lib/features/profile/profile_screen.dart
 // M4 Task 4/7：「我的」页体——体重卡（当前值/手动 ±0.5/秤同步秒存）
 // + 消息提醒卡（T7：总开关/测试餐点/测试喝水）+ 退出登录。
+// M5 Task 5：标题下插资料卡头部（_profileHead：头像/昵称/签名，点击开编辑
+// 弹层；T6 接线次序 = 资料头→体重卡→身体卡(T6)→提醒卡→退出）。
 // 行为权威源 H5：
 // - index.html:459-482 记体重区：label「今日体重」、stepper −/＋（aria ±0.5kg）、
 //   保存、hint「点数字可直接输入…」、秤按钮「⚖️ 从体脂秤同步（光脚站上秤）」——文案逐字。
@@ -28,9 +30,13 @@ import '../../app/auth_state.dart';
 import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
 import '../../domain/dates.dart' show todayIso;
+import '../common/food_thumb.dart';
 import '../home/home_controller.dart' show healthApiProvider;
 import '../notifications/reminder_scheduler.dart';
 import '../scale/scale_service.dart';
+import 'profile_edit_sheet.dart'
+    show avatarDataOf, avatarInitial, openProfileEditSheet;
+import 'profile_providers.dart' show profileProvider;
 
 /// 当前体重（body-metrics.weightKg；键名对齐 contract/fixtures/diet-core.json
 /// 与 domain/models.dart BodyMetrics.fromMap 的 weightKg）。
@@ -275,6 +281,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     fontWeight: FontWeight.w800,
                     color: Tokens.ink)),
             const SizedBox(height: Tokens.sp3),
+            _profileHead(), // M5-T5：资料卡（T6 身体卡接线次序：本行之后是体重卡）
+            const SizedBox(height: Tokens.sp3),
             _weightCard(weight),
             const SizedBox(height: Tokens.sp3),
             _remindCard(),
@@ -288,6 +296,99 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       color: Tokens.danger, fontSize: Tokens.textMd)),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// 资料卡头部（M5-T5；≙ index.html:179-186 #profile-head +
+  /// js/app.js renderProfile :1004-1020 渲染规则，文案逐字面）：
+  /// - data：昵称(:1005)/签名(:1006)；avatarData 非空画圆头像(:1009-1014)，
+  ///   否则画 avatarText||nickname 首字(:1015-1019，页头无「食」兜底)；
+  ///   点击 → openProfileEditSheet（≙ :1149 #profile-head click）。
+  /// - loading：占位「…」（简报 Step 3）；error：「未登录信息」点击重试
+  ///   （ref.invalidate）。版式（卡壳/排布）R4 自主：与体重卡同壳。
+  Widget _profileHead() {
+    final profile = ref.watch(profileProvider);
+    final p = profile.value;
+
+    final Widget body;
+    if (p == null) {
+      // 加载中/失败共用占位骨架：头像位 + 文案位
+      final tip = profile is AsyncError
+          ? const Text('未登录信息', // 简报 Step 3 指定占位
+              style: TextStyle(fontSize: Tokens.textMd, color: Tokens.ink3))
+          : const Text('…', // 加载态占位
+              style: TextStyle(fontSize: Tokens.textMd, color: Tokens.ink3));
+      body = Row(
+        children: [
+          const _HeadAvatar(child: SizedBox.shrink()),
+          const SizedBox(width: Tokens.sp3),
+          Expanded(child: tip),
+        ],
+      );
+    } else {
+      final avatarData = avatarDataOf(p);
+      body = Row(
+        children: [
+          _HeadAvatar(
+            child: avatarData != null
+                ? FoodThumb(source: avatarData, size: 56)
+                : Text(avatarInitial(p), // :1018 avatarText||nickname 首字
+                    style: const TextStyle(
+                        fontSize: Tokens.textXl,
+                        fontWeight: FontWeight.w700,
+                        color: Tokens.primaryDeep)),
+          ),
+          const SizedBox(width: Tokens.sp3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text((p['nickname'] as String?) ?? '', // :1005
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: Tokens.textLg,
+                        fontWeight: FontWeight.w700,
+                        color: Tokens.ink)),
+                if (((p['signature'] as String?) ?? '').isNotEmpty)
+                  Text(p['signature'] as String, // :1006
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: Tokens.textSm, color: Tokens.ink3)),
+              ],
+            ),
+          ),
+          const SizedBox(width: Tokens.sp2),
+          const Text('编辑 ›', // index.html:185 ph-edit 逐字
+              style: TextStyle(fontSize: Tokens.textSm, color: Tokens.ink3)),
+        ],
+      );
+    }
+
+    return Semantics(
+      label: '编辑资料', // index.html:179 aria-label 逐字
+      button: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          if (p == null) {
+            // 失败占位可点重试（简报 Step 3）；在途 loading 点击无害（幂等重取）
+            ref.invalidate(profileProvider);
+            return;
+          }
+          openProfileEditSheet(context, ref); // ≙ app.js:1149 → :1137
+        },
+        child: Container(
+          padding: const EdgeInsets.all(Tokens.sp4),
+          decoration: BoxDecoration(
+            color: Tokens.surface,
+            borderRadius: BorderRadius.circular(Tokens.radiusLg),
+            boxShadow: Tokens.shadowCard,
+          ),
+          child: body,
         ),
       ),
     );
@@ -483,4 +584,25 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       ),
     );
   }
+}
+
+/// 页头头像位（56 圆壳，≙ index.html:180 .avatar）。[child] 为空时是
+/// 加载/失败占位壳；FoodThumb 自带圆角矩形裁剪，外层圆壳 antiAlias 收成圆形
+/// （T4 备忘：圆形需外层裁剪，尺寸传大）。
+class _HeadAvatar extends StatelessWidget {
+  const _HeadAvatar({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 56,
+        height: 56,
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          color: Tokens.primarySoft,
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Center(child: child),
+      );
 }

@@ -13,6 +13,7 @@ import '../data/token_store.dart';
 // app→features 的单向依赖本就存在（root_container.dart 同层同法拼装），
 // home_controller ↔ auth_state 的文件级环 Dart 合法且此前已成立。
 import '../features/home/home_controller.dart' show recordsProvider, summaryProvider;
+import '../features/profile/profile_providers.dart' show profileProvider;
 import '../features/profile/profile_screen.dart' show profileWeightProvider;
 import '../features/record/food_freq.dart' show foodFreqProvider;
 import '../features/report/report_controller.dart'
@@ -60,6 +61,7 @@ class AuthNotifier extends Notifier<AuthStatus> {
   /// 持久面不动（M4 冻结面）。healthApi/apiClient 为无状态通道，无需失效。
   void _invalidateAccountScopedCaches() {
     ref
+      ..invalidate(profileProvider) // M5-T5：昵称/头像/签名同属账号级缓存
       ..invalidate(profileWeightProvider)
       ..invalidate(summaryProvider) // family：整族失效
       ..invalidate(recordsProvider) // family：整族失效
