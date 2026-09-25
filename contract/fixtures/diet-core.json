@@ -190,6 +190,30 @@
         "points": [67.2, 67.0, 66.8, 66.66, 66.6, 66.5, 66.4],
         "labels": ["9.19", "9.20", "9.21", "9.22", "9.23", "9.24", "9.25"]
       }
+    },
+    {
+      "route": "updateProfile", "dartMethod": "updateProfile", "jsMethod": "updateProfile",
+      "path": "/user/profile", "httpMethod": "PUT", "readOnly": false,
+      "requestSample": { "body": { "nickname": "小满", "signature": "把每一餐，记成时光" } },
+      "responseShape": "object", "responseFields": ["ok"]
+    },
+    {
+      "route": "setGoal", "dartMethod": "setGoal", "jsMethod": "setGoal",
+      "path": "/user/goal", "httpMethod": "PUT", "readOnly": false,
+      "requestSample": { "body": { "dailyKcal": 1679, "targetWeight": 55 } },
+      "responseShape": "object", "responseFields": ["ok"]
+    },
+    {
+      "route": "avatar", "dartMethod": "updateAvatar", "jsMethod": "updateAvatar",
+      "path": "/user/avatar", "httpMethod": "PUT", "readOnly": false,
+      "requestSample": { "body": { "data": "data:image/jpeg;base64,AAAA" } },
+      "responseShape": "object", "responseFields": ["ok", "avatarData"]
+    },
+    {
+      "route": "addCustomFood", "dartMethod": "addCustomFood", "jsMethod": "addCustomFood",
+      "path": "/foods/custom", "httpMethod": "POST", "readOnly": false,
+      "requestSample": { "body": { "name": "测试饭团", "kcal": 250, "grams": 100, "unit": "g", "meals": ["lunch", "dinner"], "protein": 5, "carb": 40, "fat": 6, "portion": "100g", "image": "" } },
+      "responseShape": "object", "responseFields": ["ok", "id", "uid", "name", "kcal", "grams", "unit", "meals", "protein", "carb", "fat", "portion", "emoji", "image", "createdAt"]
     }
   ]
 }

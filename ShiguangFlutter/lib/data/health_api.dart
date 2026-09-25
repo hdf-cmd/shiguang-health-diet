@@ -39,6 +39,25 @@ class HealthApi {
             'date': ?date, // null 时丢键（对齐 js JSON.stringify 对 undefined 的剥离）
           });
 
+  /// 修改资料/身体档案（js/api.js:277 updateProfile：部分字段浅合并进用户文档，
+  /// 云函数按 key 覆写——T5 发 {nickname,signature}、T6 发 body 六字段+bmi，互不越界）
+  Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> data) =>
+      _client.call('/user/profile', method: 'PUT', body: data);
+
+  /// 每日目标（js/api.js:278 setGoal：body 即 {dailyKcal, targetWeight}）
+  Future<Map<String, dynamic>> setGoal(num dailyKcal, num targetWeight) =>
+      _client.call('/user/goal',
+          method: 'PUT',
+          body: <String, dynamic>{
+            'dailyKcal': dailyKcal,
+            'targetWeight': targetWeight,
+          });
+
+  /// 上传头像 dataURL（js/api.js:280 updateAvatar：body {data}，云端原样存字符串）
+  Future<Map<String, dynamic>> updateAvatar(String dataUrl) =>
+      _client.call('/user/avatar',
+          method: 'PUT', body: <String, dynamic>{'data': dataUrl});
+
   /* ---------- 饮食记录 ---------- */
 
   /// 某日热量与营养素汇总（js/api.js:320 getDailySummary）
@@ -88,6 +107,10 @@ class HealthApi {
     final data = await _client.callValue('/foods/builtin');
     return data is List ? data : const <dynamic>[];
   }
+
+  /// 新增自定义食物（js/app.js:1241 调用面：{name,kcal,grams,unit,meals,protein,carb,fat,portion,image}）
+  Future<Map<String, dynamic>> addCustomFood(Map<String, dynamic> food) =>
+      _client.call('/foods/custom', method: 'POST', body: food);
 
   /* ---------- 报告（M3-T2；路由 js/api.js:92-94，响应契约 index.js:462-546/579-601） ---------- */
 

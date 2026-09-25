@@ -91,6 +91,14 @@ void main() {
     switch (r.dartMethod) {
       case 'getProfile':
         return api.getProfile();
+      case 'updateProfile':
+        return api.updateProfile(Map<String, dynamic>.from(b));
+      case 'setGoal':
+        return api.setGoal(b['dailyKcal'] as num, b['targetWeight'] as num);
+      case 'updateAvatar':
+        return api.updateAvatar(b['data'] as String);
+      case 'addCustomFood':
+        return api.addCustomFood(Map<String, dynamic>.from(b));
       case 'getBodyMetrics':
         return api.getBodyMetrics();
       case 'getDailySummary':
