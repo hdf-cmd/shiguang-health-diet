@@ -1,8 +1,9 @@
 // ShiguangFlutter/lib/features/auth/login_screen.dart
 import 'package:flutter/material.dart';
 import '../../app/theme.dart';
+import '../../data/api_client.dart' show ApiException;
 
-/// M2 真实登录复用：返回 null 表示通过，否则为错误文案（与 H5 auth-error 行为一致）
+/// 本地前置校验（与 H5 auth-error 行为一致）：返回 null 表示通过，否则为错误文案
 String? validateAuth({required bool isRegister, required String username, required String password}) {
   if (username.trim().isEmpty) return '请输入用户名';
   if (password.length < 8) return '密码至少 8 位';
@@ -11,14 +12,16 @@ String? validateAuth({required bool isRegister, required String username, requir
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key, this.onSubmit});
-  /// M2 注入真实登录；M1 为空 → 提交通过校验后弹占位 SnackBar
-  final Future<void> Function(String username, String password)? onSubmit;
+  /// M2 真实登录：由门控注入（register 模式先注册再登录，见 AuthNotifier.submit）；
+  /// 上抛的 ApiException.message 显示到错误行。为空 → 占位 SnackBar（M1 兼容）。
+  final Future<void> Function(String username, String password, bool isRegister)? onSubmit;
   @override
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
 class _LoginScreenState extends State<LoginScreen> {
   bool _isRegister = false;
+  bool _busy = false;
   final _user = TextEditingController();
   final _pass = TextEditingController();
   String? _error;
@@ -28,11 +31,23 @@ class _LoginScreenState extends State<LoginScreen> {
         isRegister: _isRegister, username: _user.text, password: _pass.text);
     setState(() => _error = err);
     if (err != null) return;
-    if (widget.onSubmit != null) {
-      await widget.onSubmit!(_user.text.trim(), _pass.text);
-    } else if (mounted) {
+    if (widget.onSubmit == null) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('M2 将接入真实登录')));
+      return;
+    }
+    // H5 js/app.js:1901-1903：提交期间禁用按钮、文案改"请稍候…"
+    setState(() => _busy = true);
+    try {
+      await widget.onSubmit!(_user.text.trim(), _pass.text, _isRegister);
+      // 成功：门控置 authed 后本 widget 被 Shell 替换，无需自处理
+    } on ApiException catch (e) {
+      // H5 js/app.js:1921-1923：err.textContent = e.message || '操作失败'
+      if (mounted) setState(() => _error = e.message);
+    } catch (_) {
+      if (mounted) setState(() => _error = '操作失败');
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -77,8 +92,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               const SizedBox(height: Tokens.sp4),
               FilledButton(
-                  onPressed: _submit,
-                  child: Text(_isRegister ? '注册并进入' : '登录')),
+                  onPressed: _busy ? null : _submit,
+                  child: Text(_busy
+                      ? '请稍候…'
+                      : (_isRegister ? '注册并进入' : '登录'))),
             ]),
           ),
         ]),
@@ -95,7 +112,11 @@ class _LoginScreenState extends State<LoginScreen> {
         for (final (label, reg) in [('登录', false), ('注册', true)])
           Expanded(
             child: GestureDetector(
-              onTap: () => setState(() => _isRegister = reg),
+              // H5 data-auth 点击会清错误行（js/app.js:1891）
+              onTap: () => setState(() {
+                _isRegister = reg;
+                _error = null;
+              }),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
                 padding: const EdgeInsets.symmetric(vertical: Tokens.sp2),
