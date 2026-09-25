@@ -239,4 +239,191 @@ void main() {
     expect(find.byKey(const ValueKey('week-bar-0')), findsOneWidget);
     expect(api.weekCalls, 2); // 确实重发请求，非缓存翻牌
   });
+
+  /* ================= M3 Task 5：月视图 + 达标统计卡 + 期间建议卡 ================= */
+
+  // 月桩默认体（stub monthReportMap）：weeks W1..W4、kcal [1652,1723,0,1688]、
+  // days 19、rates 78/69/73。月均口径 = 对**周日均数组**再算有记录均值
+  // （app.js:271-273 与 renderWeekReport:802-803 同一公式）：
+  // round((1652+1723+1688)/3) = round(1687.66…) = 1688。
+  const monthAvgText = '月均 1688 kcal · 记 19 天';
+  // 周建议（carb 86 / protein 72 / fat 64，日均 1599 ≤ 1679 且 > 0.7×1679）：
+  // 仅蛋白规则触发（app.js:835）。
+  const weekAdvice = '蛋白质达标率 72%，偏低，每餐加一份鱼、虾、蛋或豆制品。';
+  // 月建议：蛋白 69<80 + 日均 1688 超目标 1679（app.js:839 分支）。
+  const monthAdvice =
+      '蛋白质达标率 69%，偏低，每餐加一份鱼、虾、蛋或豆制品；'
+      '日均 1688 kcal 超目标 1679 kcal，想控重每日减 9 kcal 左右。';
+
+  Future<void> switchToMonth(WidgetTester tester) async {
+    await tester.tap(find.text('月')); // index.html:154 segmented data-range=month
+    await tester.pumpAndSettle(); // 月柱 700ms 入场动画收敛
+  }
+
+  testWidgets('切月：柱标签 W1..W4、月均文案、无今天高亮（app.js:268-274,793）',
+      (tester) async {
+    final api = StubHealthApi(weekReport: kWeek);
+    await pumpReport(tester, api);
+    await switchToMonth(tester);
+
+    // 标题行 #report-avg 换成月均文案，周日均文案消失
+    expect(find.text(monthAvgText), findsOneWidget);
+    expect(find.text(avgText), findsNothing);
+
+    // 柱按 labels.length 动态：4 周桩 → 4 根，无第 5 根
+    for (var i = 0; i < 4; i++) {
+      expect(find.byKey(ValueKey('week-bar-$i')), findsOneWidget, reason: '柱 $i');
+    }
+    expect(find.byKey(const ValueKey('week-bar-4')), findsNothing);
+
+    // 标签行 = weeks 数组；周标签与"今天"全部消失（todayIndex=-1）
+    for (final w in ['W1', 'W2', 'W3', 'W4']) {
+      expect(find.text(w), findsOneWidget, reason: '标签 $w');
+    }
+    expect(find.text('今天'), findsNothing);
+    expect(find.text('三'), findsNothing);
+
+    // 柱 0（1652 ≤ 1679 非 over）若是"今天"会变渐变——纯色 primarySoft
+    // 即证明 todayIndex=-1（周一跑也不误判，不依赖真实星期几）
+    final bar0 = tester
+        .widget<Container>(find.byKey(const ValueKey('week-bar-fill-0')))
+        .decoration! as BoxDecoration;
+    expect(bar0.color, Tokens.primarySoft);
+    expect(bar0.gradient, isNull);
+    expect(api.monthCalls, 1); // 切月确实拉了月报
+  });
+
+  testWidgets('月视图动态周数：31 天月 5 周样本 → 5 根柱 + W5（不写死 4）',
+      (tester) async {
+    final api = StubHealthApi(weekReport: kWeek, monthReport:
+        StubHealthApi.monthReportMap(
+      weeks: const ['W1', 'W2', 'W3', 'W4', 'W5'],
+      kcal: const [1600, 1700, 1500, 1650, 0], // 5 条，末周未记录
+      days: 26,
+      total: 6450,
+    ));
+    await pumpReport(tester, api);
+    await switchToMonth(tester);
+
+    for (var i = 0; i < 5; i++) {
+      expect(find.byKey(ValueKey('week-bar-$i')), findsOneWidget, reason: '柱 $i');
+    }
+    expect(find.text('W5'), findsOneWidget);
+    // round((1600+1700+1500+1650)/4) = round(1612.5) = 1613（jsRound 半值进位）
+    expect(find.text('月均 1613 kcal · 记 26 天'), findsOneWidget);
+  });
+
+  testWidgets('建议卡：标题与正文随 周/月 切换（app.js:817-818）', (tester) async {
+    final api = StubHealthApi(weekReport: kWeek);
+    await pumpReport(tester, api);
+
+    expect(find.text('本周建议'), findsOneWidget);
+    expect(find.text(weekAdvice), findsOneWidget);
+
+    await switchToMonth(tester);
+    expect(find.text('本月建议'), findsOneWidget);
+    expect(find.text('本周建议'), findsNothing);
+    expect(find.text(monthAdvice), findsOneWidget);
+    expect(find.text(weekAdvice), findsNothing);
+  });
+
+  testWidgets('达标统计卡：三张 label + rate% + 进度条宽 rate%（app.js:806-815）',
+      (tester) async {
+    final api = StubHealthApi(weekReport: kWeek); // rates 86/72/64
+    await pumpReport(tester, api);
+
+    final cases = {
+      'carb': ['碳水达标', '86', 86, Tokens.nutCarb],
+      'protein': ['蛋白达标', '72', 72, Tokens.nutProtein],
+      'fat': ['脂肪控制', '64', 64, Tokens.nutFat],
+    };
+    for (final e in cases.entries) {
+      final key = e.key, v = e.value;
+      final card = find.byKey(ValueKey('stat-card-$key'));
+      expect(card, findsOneWidget, reason: 'stat-card-$key');
+      expect(find.descendant(of: card, matching: find.text(v[0] as String)),
+          findsOneWidget,
+          reason: '${v[0]} label'); // .label
+      expect(find.descendant(of: card, matching: find.text(v[1] as String)),
+          findsOneWidget,
+          reason: '${v[1]} num'); // .num（rate 与 ' %' 分列，components.css:192-193）
+
+      // fill 宽 / track 宽 ≈ rate%（width:${rate}%），色走 Tokens
+      final track = find.byKey(ValueKey('stat-track-$key'));
+      final fill = find.byKey(ValueKey('stat-fill-$key'));
+      expect(tester.getSize(fill).width / tester.getSize(track).width,
+          closeTo((v[2] as int) / 100, 0.02),
+          reason: '$key fill 宽 ${v[2]}%');
+      expect(
+          (tester.widget<Container>(fill).decoration! as BoxDecoration).color,
+          v[3],
+          reason: '$key 色');
+      expect(
+          (tester.widget<Container>(track).decoration! as BoxDecoration).color,
+          Tokens.surfaceSoft,
+          reason: '$key 轨底色 surface-soft');
+    }
+
+    // 切月后统计卡跟着月报 rates 78/69/73 走
+    await switchToMonth(tester);
+    expect(find.text('78'), findsOneWidget);
+    expect(find.text('69'), findsOneWidget);
+    expect(find.text('73'), findsOneWidget);
+    final fillCarb = find.byKey(const ValueKey('stat-fill-carb'));
+    final trackCarb = find.byKey(const ValueKey('stat-track-carb'));
+    expect(tester.getSize(fillCarb).width / tester.getSize(trackCarb).width,
+        closeTo(0.78, 0.02));
+  });
+
+  testWidgets('加载态：统计卡/建议卡静态骨架补齐，数据位为空（index.html:163-165）',
+      (tester) async {
+    final pending = Completer<ReportData>();
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        healthApiProvider.overrideWithValue(StubHealthApi()),
+        weekReportProvider.overrideWith((ref) => pending.future),
+      ],
+      child: const MaterialApp(home: ReportScreen()),
+    ));
+    await tester.pumpAndSettle();
+
+    // 三张 stat-card 框 + 建议卡标题（HTML 静态部分）可见
+    for (final key in ['carb', 'protein', 'fat']) {
+      expect(find.byKey(ValueKey('stat-card-$key')), findsOneWidget,
+          reason: '骨架 stat-card-$key');
+    }
+    expect(find.text('本周建议'), findsOneWidget); // #advice-title 静态初值
+    // 数据位为空：label/rate/建议正文都不在树里
+    expect(find.text('碳水达标'), findsNothing);
+    expect(find.text(weekAdvice), findsNothing);
+    expect(find.text('86'), findsNothing);
+  });
+
+  testWidgets('月视图错误态：报后端 message + 重试重新取月报', (tester) async {
+    final api = StubHealthApi(
+        weekReport: kWeek, monthError: ApiException('月报加载失败'));
+    await pumpReport(tester, api);
+
+    await tester.tap(find.text('月'));
+    // 定步 pump 不推进时钟 → 不踩 Riverpod 3 失败退避重试（同周错误态用例）
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('月报加载失败'), findsOneWidget);
+    expect(find.text('重试'), findsOneWidget);
+    expect(find.text(monthAvgText), findsNothing);
+
+    api.monthError = null;
+    await tester.tap(find.text('重试'));
+    await tester.pump(); // invalidate → loading 骨架
+    await tester.pump(); // 微任务成功 → 数据态
+    await tester.pump();
+
+    expect(find.text('月报加载失败'), findsNothing);
+    expect(find.text(monthAvgText), findsOneWidget);
+    expect(find.text('本月建议'), findsOneWidget);
+    expect(api.monthCalls, 2); // 重试打的是月报，不是周报
+    expect(api.weekCalls, 1);
+  });
 }
