@@ -62,10 +62,25 @@ class ApiClient {
   /// _refreshInflight，避免 refresh_token 轮换互踩）。
   Future<bool>? _refreshInflight;
 
-  /// 业务请求入口。path 为路由表里的路径模板（可含 :param），
+  /// 业务请求入口（对象响应路由）。path 为路由表里的路径模板（可含 :param），
   /// params 既用于替换 :param（encodeURIComponent 语义），也原样进 envelope。
-  /// 返回响应 JSON；一切业务/HTTP 错误统一抛 [ApiException]。
+  /// 返回响应 JSON 对象；一切业务/HTTP 错误统一抛 [ApiException]。
+  /// 数组响应路由（/diet/records、/foods/search、/foods/builtin 等）请走
+  /// [callValue]——js/api.js:264 是直接 `return data`，数组原样返回。
   Future<Map<String, dynamic>> call(
+    String path, {
+    String method = 'GET',
+    Map<String, dynamic>? params,
+    Map<String, dynamic>? body,
+  }) async {
+    final data =
+        await callValue(path, method: method, params: params, body: body);
+    return data is Map<String, dynamic> ? data : <String, dynamic>{};
+  }
+
+  /// [call] 的同契约变体：保留响应原始类型（对象/数组），对齐 js realRequest
+  /// 「json 解析失败按 {}，否则原样返回 data」的行为（js/api.js:251,264）。
+  Future<Object?> callValue(
     String path, {
     String method = 'GET',
     Map<String, dynamic>? params,
@@ -93,27 +108,32 @@ class ApiClient {
       await _store.clear();
       throw ApiException('登录已过期，请重新登录');
     }
+    final data = _decodeLoose(resp.raw);
     // js/api.js:262：非 200 → data.message || `请求失败(${status})`
     if (resp.status != 200) {
-      throw ApiException(_fallbackMessage(resp.data, '请求失败(${resp.status})'));
+      throw ApiException(
+          _fallbackMessage(_asMap(data), '请求失败(${resp.status})'));
     }
-    // js/api.js:263：200 但 ok:false → data.message || '操作失败'
-    if (resp.data['ok'] == false) {
-      throw ApiException(_fallbackMessage(resp.data, '操作失败'));
+    // js/api.js:263：200 但 ok:false → data.message || '操作失败'（数组无 ok 键，js 同样放行）
+    if (data is Map && data['ok'] == false) {
+      throw ApiException(_fallbackMessage(_asMap(data), '操作失败'));
     }
-    return resp.data;
+    return data;
   }
 
   /// 低层直发：envelope 恒用 PUBLISHABLE_KEY，不做 401 续期
   /// （供 AuthApi 的 login/register 用，对齐 js/api.js:290-308 的裸 fetch）。
   Future<RawResponse> postPublishable(
       String path, Map<String, dynamic> body) async {
-    return _doFetch(path, 'POST', const {}, body, publishableKey);
+    final resp =
+        await _doFetch(path, 'POST', const {}, body, publishableKey);
+    return (status: resp.status, data: _decodeJsonObject(resp.raw));
   }
 
   /// js/api.js:244-253 的 doFetch：POST API_BASE，body 为
   /// {path, method, params, body: body||{}}，头 Content-Type json + Bearer。
-  Future<RawResponse> _doFetch(String path, String method,
+  /// 此处只回传原始响应文本，解码由调用方按 js 语义选择。
+  Future<({int status, String? raw})> _doFetch(String path, String method,
       Map<String, dynamic> params, Map<String, dynamic>? body, String bearer) async {
     final resp = await _dio.post<String>(
       apiBase,
@@ -131,7 +151,7 @@ class ApiClient {
         validateStatus: (_) => true,
       ),
     );
-    return (status: resp.statusCode ?? 0, data: _decodeJsonObject(resp.data));
+    return (status: resp.statusCode ?? 0, raw: resp.data);
   }
 
   /// single-flight 包装（js/api.js:37-42）：并发调用共享同一个 Future，
@@ -193,6 +213,21 @@ class ApiClient {
     });
     return p;
   }
+
+  /// 宽松解码（callValue 用）：保留 JSON 原始类型（对象/数组），
+  /// null/非法 → {}（对齐 js `resp.json().catch(() => ({}))` 后直接 return data）。
+  Object? _decodeLoose(String? raw) {
+    try {
+      return jsonDecode(raw ?? '');
+    } catch (_) {
+      return <String, dynamic>{};
+    }
+  }
+
+  /// 错误消息取值用：非对象响应按空对象处理
+  /// （js 里对数组取 .message 得 undefined，同样落入兜底文案）。
+  Map<String, dynamic> _asMap(Object? v) =>
+      v is Map ? Map<String, dynamic>.from(v) : <String, dynamic>{};
 
   /// 宽松解码：null/非法/非对象 → {}（对齐 js `resp.json().catch(() => ({}))`
   /// 后 `data.message` 恒取不到值的行为）。

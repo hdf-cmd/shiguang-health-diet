@@ -1,0 +1,143 @@
+{
+  "$comment": "食光 M2 双栈契约 fixture：一份契约两端测（Dart test/data/contract_test.dart + H5 tests/contract.test.js）。responseFields 用点路径；responseShape=array 时字段作用于首元素。readOnly 路由的 responseFields/responseSample 来自 2026-09-25 对 uitest01 的真实只读采集（已脱敏：id 用 u_test/rec_test_* 占位，无 token）；写路由（POST/PUT/DELETE）字段清单按红线不实测，来源见 .superpowers/sdd/2026-09-25-flutter-m2-network-domain/task-6-report.md（js/api.js 调用点 + cloudfunctions/api-diet/index.js 路由处理行号）。",
+  "routes": [
+    {
+      "route": "profile",
+      "dartMethod": "getProfile",
+      "jsMethod": "getProfile",
+      "path": "/user/profile",
+      "httpMethod": "GET",
+      "readOnly": true,
+      "requestSample": {},
+      "responseShape": "object",
+      "responseFields": [
+        "id", "nickname", "avatarText", "avatarData", "signature",
+        "goal.dailyKcal", "goal.targetWeight", "goal.waterMl",
+        "body.heightCm", "body.weightKg", "body.bmi", "body.age", "body.gender", "body.activity", "body.deficit",
+        "bodyUpdatedAt"
+      ],
+      "responseSample": {
+        "id": "u_test",
+        "nickname": "全盘测试昵称",
+        "avatarText": "食",
+        "avatarData": null,
+        "signature": "好好吃饭，好好生活",
+        "goal": { "dailyKcal": 1679, "targetWeight": 55, "waterMl": 1600 },
+        "body": { "heightCm": 168, "weightKg": 66.66, "bmi": 23.6, "age": 30, "gender": "female", "activity": "moderate", "deficit": 500 },
+        "bodyUpdatedAt": 1789870660760
+      }
+    },
+    {
+      "route": "bodyMetrics",
+      "dartMethod": "getBodyMetrics",
+      "jsMethod": null,
+      "path": "/user/body-metrics",
+      "httpMethod": "GET",
+      "readOnly": true,
+      "requestSample": {},
+      "responseShape": "object",
+      "responseFields": ["heightCm", "weightKg", "bmi"],
+      "responseSample": { "heightCm": 168, "weightKg": 66.66, "bmi": 23.6 }
+    },
+    {
+      "route": "dailySummary",
+      "dartMethod": "getDailySummary",
+      "jsMethod": "getDailySummary",
+      "path": "/diet/summary",
+      "httpMethod": "GET",
+      "readOnly": true,
+      "requestSample": { "params": { "date": "2026-09-25" } },
+      "responseShape": "object",
+      "responseFields": ["kcal", "target", "carb", "protein", "fat", "water"],
+      "responseSample": { "kcal": 0, "target": 1679, "carb": 0, "protein": 0, "fat": 0, "water": 0 }
+    },
+    {
+      "route": "mealRecords",
+      "dartMethod": "getMealRecords",
+      "jsMethod": "getMealRecords",
+      "path": "/diet/records",
+      "httpMethod": "GET",
+      "readOnly": true,
+      "requestSample": { "params": { "date": "2026-09-13" } },
+      "responseShape": "array",
+      "responseFields": ["id", "meal", "name", "portion", "kcal", "emoji", "image", "protein", "carb", "fat"],
+      "responseSample": [
+        { "id": "rec_test_1", "meal": "dinner", "name": "鸡胸肉", "portion": "禽肉 · 1 块约 100g", "kcal": 133, "emoji": "🍗", "image": "", "protein": 8, "carb": 17, "fat": 4 }
+      ]
+    },
+    {
+      "route": "addFoodRecord",
+      "dartMethod": "addFoodRecord",
+      "jsMethod": "addFoodRecord",
+      "path": "/diet/records",
+      "httpMethod": "POST",
+      "readOnly": false,
+      "requestSample": {
+        "body": { "date": "2026-09-25", "meal": "lunch", "name": "米饭", "portion": "1 碗约 150g", "kcal": 174, "emoji": "🍚" }
+      },
+      "responseShape": "object",
+      "responseFields": ["id", "meal", "name", "portion", "kcal", "emoji"]
+    },
+    {
+      "route": "deleteFoodRecord",
+      "dartMethod": "deleteFoodRecord",
+      "jsMethod": "deleteFoodRecord",
+      "path": "/diet/records/:id",
+      "httpMethod": "DELETE",
+      "readOnly": false,
+      "requestSample": { "params": { "id": "rec_test_1" } },
+      "responseShape": "object",
+      "responseFields": ["ok"]
+    },
+    {
+      "route": "addWater",
+      "dartMethod": "addWater",
+      "jsMethod": "addWater",
+      "path": "/diet/water",
+      "httpMethod": "POST",
+      "readOnly": false,
+      "requestSample": { "body": { "date": "2026-09-25", "delta": 1 } },
+      "responseShape": "object",
+      "responseFields": ["water"]
+    },
+    {
+      "route": "searchFoods",
+      "dartMethod": "searchFoods",
+      "jsMethod": "searchFoods",
+      "path": "/foods/search",
+      "httpMethod": "GET",
+      "readOnly": true,
+      "requestSample": { "params": { "keyword": "米饭" } },
+      "responseShape": "array",
+      "responseFields": ["id", "name", "meta", "kcal", "emoji", "image", "meals", "protein", "carb", "fat", "per100", "baseG"],
+      "responseSample": [
+        { "id": "u_06", "name": "米饭", "meta": "主食 · 1 碗约 150g", "kcal": 174, "emoji": "🍚", "image": "img/foods/rice.jpg", "meals": ["lunch", "dinner"], "protein": 4, "carb": 39, "fat": 0, "per100": { "kcal": 116, "protein": 2.6, "carb": 25.9, "fat": 0.3 }, "baseG": 200 }
+      ]
+    },
+    {
+      "route": "builtinFoods",
+      "dartMethod": "getBuiltinFoods",
+      "jsMethod": "getBuiltinFoods",
+      "path": "/foods/builtin",
+      "httpMethod": "GET",
+      "readOnly": true,
+      "requestSample": {},
+      "responseShape": "array",
+      "responseFields": ["id", "name", "meta", "kcal", "emoji", "image", "hidden"],
+      "responseSample": [
+        { "id": "u_01", "name": "纯牛奶", "meta": "奶类 · 1 盒 250ml", "kcal": 175, "emoji": "🥛", "image": "img/foods/milk.jpg", "hidden": false }
+      ]
+    },
+    {
+      "route": "logWeight",
+      "dartMethod": "logWeight",
+      "jsMethod": "logWeight",
+      "path": "/user/weight",
+      "httpMethod": "POST",
+      "readOnly": false,
+      "requestSample": { "body": { "weightKg": 66.5, "date": "2026-09-25" } },
+      "responseShape": "object",
+      "responseFields": ["ok", "weightKg", "date", "patch"]
+    }
+  ]
+}
