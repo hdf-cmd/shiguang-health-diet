@@ -1,7 +1,7 @@
 // ShiguangFlutter/lib/domain/reminders.dart
 // 提醒规则纯函数：三餐槽位表 + 喝水「日期种子分层随机」。
 // 权威源：HealthyDiet/app/src/main/java/com/healthydiet/app/Notify.kt
-//   常量 WATER_COUNT/START/END：:69-71；三餐 PLAN：:73-79；喝水文案 WATER_TEXTS：:81-90；
+//   常量 WATER_COUNT/START/END：:69-71；三餐 PLAN：:75-79；喝水文案 WATER_TEXTS：:81-90；
 //   waterSlots：:151-159；scheduleWater「只留未来项，全过滚次日」语义：:162-172。
 // 裁定 R3：H5 用 java.util.Random(seed)，Dart 无法逐位复现也无需复现（通知时刻不是数据
 //   契约）。移植的是分布规则——16h 切 8 段、段内随机、两端各留 5 分钟 guard band、

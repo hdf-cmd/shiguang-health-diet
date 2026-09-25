@@ -19,6 +19,7 @@ import 'dart:ui' show Size;
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shiguang_flutter/features/notifications/reminder_scheduler.dart';
 
 /// 一条路由的桩响应：HTTP 状态码 + 响应体文本（ApiClient 自行解码，
 /// 故 status 非 200 也能带业务 message，对齐 js/api.js:262 的取法）。
@@ -104,4 +105,61 @@ Future<void> useBigSurface(WidgetTester tester,
     {double w = 500, double h = 1600}) async {
   await tester.binding.setSurfaceSize(Size(w, h));
   addTearDown(() => tester.binding.setSurfaceSize(null));
+}
+
+/// 零动作通知端口：[NoopReminderScheduler] 覆写了 UI 会调到的全部方法，
+/// 这里只需满足构造；一旦有用例真把调用漏到端口层，loud fail 好过静默触插件。
+class NullNotificationPort implements NotificationPort {
+  @override
+  Future<void> init() async {}
+  @override
+  Future<void> periodDaily(
+          {required int id,
+          required int hour,
+          required int minute,
+          required String title,
+          required String body}) async =>
+      throw UnsupportedError('NullNotificationPort.periodDaily 不应被调用');
+  @override
+  Future<void> at(
+          {required int id,
+          required DateTime scheduledDate,
+          required String title,
+          required String body}) async =>
+      throw UnsupportedError('NullNotificationPort.at 不应被调用');
+  @override
+  Future<void> show(
+          {required int id,
+          required String title,
+          required String body}) async =>
+      throw UnsupportedError('NullNotificationPort.show 不应被调用');
+  @override
+  Future<void> cancelAll() async =>
+      throw UnsupportedError('NullNotificationPort.cancelAll 不应被调用');
+}
+
+/// no-op 提醒调度器（T8 缓办 B）：凡挂 ProfileScreen 的用例，initState 都会
+/// 调 enabled()——不 override reminderSchedulerProvider 的话会真触
+/// SharedPreferences 抛 MissingPluginException，被 initState 的 catchError
+/// 静默吞掉：测试绿但走的是失败兜底路径，非确定。行为面测试
+/// （profile_reminders_test）自带记录型 FakeScheduler，这里只服务"页面能挂
+/// 起来"的基础用例。
+class NoopReminderScheduler extends ReminderScheduler {
+  NoopReminderScheduler({bool enabledValue = false})
+      : _enabled = enabledValue,
+        super(port: NullNotificationPort());
+
+  bool _enabled;
+
+  @override
+  Future<bool> enabled() async => _enabled;
+
+  @override
+  Future<void> setEnabled(bool on) async => _enabled = on;
+
+  @override
+  Future<void> testMeal() async {}
+
+  @override
+  Future<void> testWater() async {}
 }

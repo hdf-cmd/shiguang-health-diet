@@ -311,5 +311,47 @@ void main() {
       expect(o.status, 'cancelled');
       expect(t.writes, isEmpty);
     });
+
+    test('T8 缓办A：transport 不 honor cancelSignal → 编排层兜底 close 晚到会话，'
+        '不握手不串台，新会话照常走完 ok', () async {
+      // 钉死 scale_service.dart:200-207 兜底分支（T4 I1 修复后此路径失去
+      // 测试）：cancelSignal 先行落地而 scanAndConnect 迟到产出会话（真机
+      // 形状 = 扫描恰在信号落地前已进入连接阶段）→ lateSession?.close()
+      // 归还 + 吞迟到异常；该会话绝不进握手/readings，新会话不受影响。
+      final t = FakeTransport(gateScans: true, ignoreCancelSignal: true);
+      final svc = build(t);
+      final readings = <ScaleReading>[];
+      svc.readings.listen(readings.add);
+
+      final f1 = svc.start();
+      await settle();
+      expect(t.scanGates.length, 1);
+      expect(t.lastCancelSignal, isNotNull);
+
+      await svc.cancel();
+      expect((await f1).status, 'cancelled'); // 走 pending 已完成分支即返回
+      expect(t.scanAborts, 0); // 本变体不协作收尾，兜底路径专属
+
+      final lateSession = t.completeScanGate(0); // 晚到：扫描此刻才成功
+      await settle();
+      expect(lateSession.closed, isTrue); // 兜底：晚到会话被归还
+      expect(lateSession.transportDisconnected, isTrue);
+      expect(t.writes, isEmpty); // 晚到会话从未被握手（不污染会话语义）
+      expect(readings, isEmpty);
+
+      final f2 = svc.start(); // 新会话照常
+      await settle();
+      expect(t.scanAndConnectCalls, 2);
+      final s2 = t.completeScanGate(1);
+      await settle();
+      expect(t.writes.length, 3); // 新会话握手三帧正常写出
+      t.emit(liveFrame(66.66, locked: true));
+      final o2 = await f2;
+      expect(o2.status, 'ok');
+      expect(o2.kg, 66.66);
+      expect(readings.map((r) => r.kg).toList(), [66.66]);
+      expect(s2.closed, isTrue);
+      expect(lateSession.closed, isTrue); // close 幂等，不被二次触碰新会话
+    });
   });
 }

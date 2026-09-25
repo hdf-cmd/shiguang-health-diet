@@ -7,6 +7,8 @@
 // （setEnabled 已联动 sync，UI 不再补 sync 调用——现码 reminder_scheduler.dart:179-183 核实）。
 // 注入方式：override reminderSchedulerProvider 为 FakeScheduler（记录调用/可抛），
 // 零插件零 SharedPreferences。
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -64,6 +66,10 @@ class FakeScheduler extends ReminderScheduler {
   bool throwOnSetEnabled = false;
   bool throwOnTest = false;
 
+  /// 非空 → setEnabled 先挂在该 Completer 上（T8 缓办 C：模拟在途窗口，
+  /// 测 _reminderBusy 重入门禁）。
+  Completer<void>? setEnabledGate;
+
   @override
   Future<bool> enabled() async {
     if (throwOnEnabled) throw Exception('boom');
@@ -72,6 +78,8 @@ class FakeScheduler extends ReminderScheduler {
 
   @override
   Future<void> setEnabled(bool on) async {
+    final gate = setEnabledGate;
+    if (gate != null) await gate.future;
     if (throwOnSetEnabled) throw Exception('boom');
     setEnabledCalls.add(on);
     _enabled = on; // 真调度器同为「落盘 + 联动 sync」，状态随调用更新
@@ -221,5 +229,35 @@ void main() {
     expect(switchValue(tester), isFalse); // H5 默认关（Notify.kt:92-93 语义）
     expect(find.text('提醒开关设置失败'), findsNothing); // 初值失败静默
     expect(tester.takeException(), isNull);
+  });
+
+  /* ---------- ⑤ 重入门禁（T8 缓办 C，仿体重 _saving） ---------- */
+
+  testWidgets('⑤setEnabled 在途连拨两次：只发一次 setEnabled，在途开关禁用',
+      (tester) async {
+    final fake = FakeScheduler(enabledValue: false)
+      ..setEnabledGate = Completer<void>();
+    await pumpProfile(tester, fake);
+
+    await tester.tap(find.byType(Switch)); // 关→开，setEnabled 挂 gate 在途
+    await tester.pump();
+    expect(switchValue(tester), isTrue); // 乐观置位（app.js:1043-1049 先翻 UI）
+    expect(fake.setEnabledCalls, isEmpty); // 尚未落地
+
+    await tester.tap(find.byType(Switch)); // 在途连拨：busy → onChanged=null no-op
+    await tester.pump();
+    expect(fake.setEnabledCalls, isEmpty);
+    expect(switchValue(tester), isTrue); // 不被二次拨回
+
+    fake.setEnabledGate!.complete();
+    await tester.pumpAndSettle();
+    expect(fake.setEnabledCalls, [true]); // 全程只发一次
+    expect(switchValue(tester), isTrue);
+    expect(find.text('提醒已开启：每天定点弹系统通知'), findsOneWidget);
+
+    // 门禁解除后可正常再拨（busy 已复位）
+    await tester.tap(find.byType(Switch));
+    await tester.pumpAndSettle();
+    expect(fake.setEnabledCalls, [true, false]);
   });
 }

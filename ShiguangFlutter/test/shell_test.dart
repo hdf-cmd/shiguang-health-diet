@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shiguang_flutter/app/shell.dart';
 import 'package:shiguang_flutter/features/home/home_controller.dart' show healthApiProvider;
+import 'package:shiguang_flutter/features/notifications/reminder_scheduler.dart'
+    show reminderSchedulerProvider;
 
 import 'harness.dart';
 import 'stubs/stub_health_api.dart';
@@ -11,8 +13,13 @@ import 'stubs/stub_health_api.dart';
 void main() {
   // T8 起首页 tab 是真实数据 HomeScreen：provider 必须进测试作用域，
   // healthApi 桩掉（空数据 → 三餐"未记录"），不落真实 TokenStore。
+  // T8 缓办 B：「我的」tab 的 ProfileScreen initState 会读
+  // reminderSchedulerProvider().enabled()——no-op 桩掉，不真触插件。
   Widget harness() => ProviderScope(
-        overrides: [healthApiProvider.overrideWithValue(StubHealthApi())],
+        overrides: [
+          healthApiProvider.overrideWithValue(StubHealthApi()),
+          reminderSchedulerProvider.overrideWithValue(NoopReminderScheduler()),
+        ],
         child: const MaterialApp(home: Shell()),
       );
 

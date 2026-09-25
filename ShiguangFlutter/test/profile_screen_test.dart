@@ -16,6 +16,8 @@ import 'package:shiguang_flutter/data/token_store.dart';
 import 'package:shiguang_flutter/domain/dates.dart' show todayIso;
 import 'package:shiguang_flutter/features/home/home_controller.dart'
     show healthApiProvider;
+import 'package:shiguang_flutter/features/notifications/reminder_scheduler.dart'
+    show reminderSchedulerProvider;
 import 'package:shiguang_flutter/features/profile/profile_screen.dart'
     show ProfileScreen;
 import 'package:shiguang_flutter/features/scale/scale_service.dart';
@@ -48,6 +50,9 @@ ProviderContainer profileContainer({
       tokenStoreProvider.overrideWithValue(store ?? InMemoryTokenStore()),
       scaleServiceProvider
           .overrideWithValue(scale ?? fastScale(FakeTransport())),
+      // T8 缓办 B：initState 的 enabled() 走 no-op，不再真触 SharedPreferences
+      // 抛 MissingPluginException 后被 catchError 静默吞（走确定路径）。
+      reminderSchedulerProvider.overrideWithValue(NoopReminderScheduler()),
     ],
     // 对齐 buildRootContainer：H5 语义失败不自动重试（root_container.dart:84）
     retry: (_, _) => null,
@@ -109,6 +114,30 @@ void main() {
     await tester.tap(find.text('−')); // 20.10-0.5 越界 → 钳到 20.00
     await tester.pump();
     expect(kgOf(tester), '20.00');
+  });
+
+  testWidgets('②b 边界 toast（app.js:1633 逐字）：300 再点＋「已到上限」；20 再点−「已到下限」',
+      (tester) async {
+    await pumpProfile(tester, newApi());
+
+    await tester.enterText(find.byType(TextField), '300.00');
+    await tester.tap(find.text('＋')); // 已在上限再＋ → 值不动 + toast
+    await tester.pumpAndSettle();
+    expect(kgOf(tester), '300.00');
+    expect(find.text('已到上限'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), '20.00');
+    await tester.tap(find.text('−')); // 已在下限再− → 值不动 + toast
+    await tester.pumpAndSettle();
+    expect(kgOf(tester), '20.00');
+    expect(find.text('已到下限'), findsOneWidget);
+
+    // 越界回拉不算触界（H5 next!==cur 无 toast）：350 点＋ → 钳到 300.00 静默
+    await tester.enterText(find.byType(TextField), '350');
+    await tester.tap(find.text('＋'));
+    await tester.pumpAndSettle();
+    expect(kgOf(tester), '300.00');
+    expect(find.text('已到上限'), findsNothing);
   });
 
   /* ---------- ③ 保存 → logWeight + toast 逐字（js/app.js:930-944） ---------- */

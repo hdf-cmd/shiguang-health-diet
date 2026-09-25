@@ -93,6 +93,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   /// 开关状态；null = enabled() 在途（初值经异步读偏好，build 里不 await）。
   bool? _remindOn;
 
+  /// 重入门禁（T8 缓办 C，仿 [_saving]）：setEnabled 在途时忽略再次拨动，
+  /// 防快速连拨两次出现「乐观置位→失败回弹」交织出与云端不符的终态。
+  bool _reminderBusy = false;
+
   @override
   void initState() {
     super.initState();
@@ -110,14 +114,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   /// sync 排程/撤销（T6 reminder_scheduler.dart:179-183），UI 不再补 sync；
   /// 失败回弹到切换前的值并 toast。
   Future<void> _setReminders(bool on) async {
+    if (_reminderBusy) return; // 在途连拨：忽略（T8 缓办 C）
     final prev = _remindOn;
-    setState(() => _remindOn = on); // renderRemindSwitch 的立即翻转
+    setState(() {
+      _remindOn = on; // renderRemindSwitch 的立即翻转
+      _reminderBusy = true;
+    });
     try {
       await ref.read(reminderSchedulerProvider).setEnabled(on);
       _toast(on ? '提醒已开启：每天定点弹系统通知' : '提醒已关闭'); // app.js:1048 逐字
     } catch (_) {
       if (mounted) setState(() => _remindOn = prev);
       _toast('提醒开关设置失败'); // H5 桥为 fire-and-forget 无失败分支，文案自拟（报告登记）
+    } finally {
+      if (mounted) setState(() => _reminderBusy = false);
     }
   }
 
@@ -164,12 +174,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   /// ±0.5 步进（js/app.js:927-928 bumpBodyVal(step=±0.5, min=20, max=300, dp=2)）。
   /// 以"分"为整数运算，避免浮点累加漂出两位小数。
+  /// T8 缓办 D：钳制后与原值相等 → toast「已到上限/已到下限」
+  /// （js/app.js:1633 `if (next === cur)` 逐支对照）。
   void _bump(double deltaKg) {
     final base = ((_parsedKg ?? _seedKgFallback()) * 100).round();
     var next = base + (deltaKg * 100).round();
     if (next < 2000) next = 2000; // 下界 20kg（bumpBodyVal min 钳制）
     if (next > 30000) next = 30000; // 上界 300kg
     _kgCtl.text = (next / 100).toStringAsFixed(2);
+    if (next == base) _toast(deltaKg > 0 ? '已到上限' : '已到下限'); // app.js:1633 逐字
   }
 
   double _seedKgFallback() {
@@ -428,7 +441,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 label: '消息提醒', // index.html:233 aria-label 逐字
                 child: Switch(
                   value: _remindOn ?? false,
-                  onChanged: _remindOn == null ? null : _setReminders,
+                  // 初值在途禁用；setEnabled 在途亦禁用（T8 缓办 C）
+                  onChanged: (_remindOn == null || _reminderBusy)
+                      ? null
+                      : _setReminders,
                 ),
               ),
             ],

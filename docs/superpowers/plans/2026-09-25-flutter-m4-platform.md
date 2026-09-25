@@ -154,7 +154,7 @@ List<int> liveFrame(double kg, {bool locked = false}) {
   - `const mealSlots = [(8, 0, 101, '早餐提醒', '吃早餐了吗？点开记一笔，牛奶面包肉包都在食物库'), (12, 0, 102, '午餐提醒', '记录午餐，看看今天的热量缺口还剩多少'), (18, 30, 103, '晚餐提醒', '记录晚餐，收个尾看看今日营养达标情况')]`（**逐字抄 Notify.kt:76-78**，含 id）
   - `List<String> waterTexts`（Notify.kt:82-88 五条逐字）
   - `List<(int, int)> waterSlots(DateTime day)`：`key = year*1000 + dayOfYear`；`rnd = Random(key*1000003)`；`stratum = (24*60 - 8*60) ~/ 8 = 120`；`m = 480 + i*120 + 5 + rnd.nextInt(110)`；返回 `(m~/60, m%60)` 8 项——**规则逐字 Notify.kt:151-159，随机源换 Dart（裁定 R3）**
-  - `List<(int,int)> waterPlanFrom(DateTime now, {bool Function((int h,int m)) isFuture})`：当天剩余槽位，全过则滚次日（Notify.kt:160-170 语义）
+  - `({DateTime targetDay, List<(int,int)> slots}) waterPlanFrom(DateTime now, {required bool Function(int h,int m) isFuture})`：当天剩余槽位（targetDay=当日），全过则滚次日完整 8 项（targetDay=次日）——T6 评审补正：目标日随计划返回，调度侧整体锚 targetDay（Notify.kt:162-172 语义）
 - Consumes: 无。
 
 - [ ] **Step 1:** 写失败测试：waterSlots 确定性（同 day 两次调用逐位相等）、8 项、每项 ∈ [8:00,24:00)、第 i 项落在 `[480+120i+5, 480+120i+115]` 分层带内、不同日产出不同序列；waterPlanFrom 23:59 起点→全滚次日 8 项、07:00 起点→8 项全留；mealSlots 文案与 Notify.kt 逐字（测试里硬编码期望字符串——从 Kotlin 抄，双源核对）。

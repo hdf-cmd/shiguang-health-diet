@@ -66,6 +66,7 @@ class FakeTransport implements ScaleTransport {
     this.scanReturnsSession = true,
     this.scanError,
     this.gateScans = false,
+    this.ignoreCancelSignal = false,
   });
 
   final bool permissionsGranted;
@@ -78,6 +79,12 @@ class FakeTransport implements ScaleTransport {
   /// completeScanGate "让扫描迟到成功"。真机扫描是秒级等待，即时完成的假
   /// 实现测不出"cancel 时旧 scanAndConnect 仍在途"的并发窗口（评审 I1）。
   final bool gateScans;
+
+  /// true（配合 gateScans）= scanAndConnect **不**协作取消：cancelSignal 先行
+  /// 落地也照旧挂在 gate 上，由测试 completeScanGate 迟到产出会话。模拟
+  /// honor 不了 cancelSignal 的 transport 实现，专打编排层
+  /// scale_service.dart:200-207 的兜底分支（T8 缓办 A）。
+  final bool ignoreCancelSignal;
 
   final List<List<int>> writes = [];
   final List<FakeSession> sessions = [];
@@ -148,7 +155,7 @@ class FakeTransport implements ScaleTransport {
     if (gateScans) {
       final gate = Completer<TransportSession?>();
       scanGates.add(gate);
-      if (cancelSignal != null) {
+      if (cancelSignal != null && !ignoreCancelSignal) {
         final winner = await Future.any(<Future<Object?>>[
           gate.future.then<Object?>((s) => s),
           cancelSignal.then<Object?>((_) => _abortToken),
