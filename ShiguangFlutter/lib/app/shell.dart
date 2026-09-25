@@ -18,6 +18,16 @@ class ShellState extends State<Shell> {
   int _index = 0;
   static const _tabs = ['首页', '记录', '报告', '我的'];
 
+  /// 仅供测试断言 dispose 后不再被使用（M1 遗留核销）。
+  @visibleForTesting
+  PageController get debugPageController => _controller;
+
+  @override
+  void dispose() {
+    _controller.dispose(); // M1 遗留：PageController 必须随 State 释放
+    super.dispose();
+  }
+
   void goToTab(int i) {
     setState(() => _index = i);
     _controller.animateToPage(i,

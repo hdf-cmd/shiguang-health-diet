@@ -22,4 +22,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('我的（M2 接入）'), findsOneWidget);
   });
+
+  // M1 遗留核销：ShellState 必须释放 PageController，否则泄漏。
+  testWidgets('卸载 Shell 后 PageController 已释放（M1 遗留 dispose 核销）', (tester) async {
+    await tester.pumpWidget(harness());
+    final state = tester.state<ShellState>(find.byType(Shell));
+    await tester.pumpWidget(const SizedBox.shrink()); // 真卸载，触发 State.dispose
+    expect(state.mounted, isFalse);
+    // 未 dispose 的 controller 仍可挂新视图；已 dispose 再被使用会抛断言错误。
+    expect(() => state.debugPageController.addListener(() {}), throwsAssertionError);
+    expect(tester.takeException(), isNull);
+  });
 }
