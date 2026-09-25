@@ -83,3 +83,25 @@ class Summary {
         'water': water,
       };
 }
+
+/// 每 100g 食物营养（对应食物库 food.per100，字段名与云函数返回一致）
+class Per100 {
+  const Per100({
+    required this.kcal,
+    required this.protein,
+    required this.carb,
+    required this.fat,
+  });
+
+  factory Per100.fromMap(Map<String, Object?> m) => Per100(
+        kcal: (m['kcal'] as num?) ?? 0,
+        protein: (m['protein'] as num?) ?? 0,
+        carb: (m['carb'] as num?) ?? 0,
+        fat: (m['fat'] as num?) ?? 0,
+      );
+
+  final num kcal;
+  final num protein;
+  final num carb;
+  final num fat;
+}
