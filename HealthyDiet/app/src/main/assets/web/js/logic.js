@@ -39,13 +39,27 @@ export const EXERCISE_LIB = [
   { key: 'walk',     name: '快走',     emoji: '🚶', unit: 'km',  perKgKm: 0.5 },
   { key: 'cycle',    name: '骑行',     emoji: '🚴', unit: 'km',  perKgKm: 0.35 },
   { key: 'swim',     name: '游泳',     emoji: '🏊', unit: 'min', met: 8 },
-  { key: 'pushup',   name: '俯卧撑',   emoji: '💪', unit: 'min', met: 8 },
+  { key: 'pushup',   name: '俯卧撑',   emoji: '💪', unit: 'rep', perRepKg: 0.0045, repUnit: '次' },
   { key: 'strength', name: '力量训练', emoji: '🏋️', unit: 'min', met: 5 },
   { key: 'yoga',     name: '瑜伽',     emoji: '🧘', unit: 'min', met: 2.5 },
-  { key: 'rope',     name: '跳绳',     emoji: '🤸', unit: 'min', met: 11 },
+  { key: 'rope',     name: '跳绳',     emoji: '🤸', unit: 'rep', perRepKg: 0.0012, repUnit: '个' },
   { key: 'hiit',     name: 'HIIT',     emoji: '🔥', unit: 'min', met: 8 },
   { key: 'ball',     name: '球类',     emoji: '🏀', unit: 'min', met: 7 },
 ];
+
+/* 次数型运动换算系数（kcal = perRepKg × 体重kg × 次数）：由 MET 推得——
+ *   俯卧撑 MET8 约 30 次/分 → 8×3.5×W/200/30 ≈ 0.0047·W/次，取 0.0045（70kg 30 个≈9 kcal）
+ *   跳绳   MET11 约 160 个/分 → 11×3.5×W/200/160 ≈ 0.0012·W/个（70kg 1000 个≈84 kcal）
+ * 划线时刻：此时间点之后创建的 pushup/rope 记录按次数计；之前的历史数据记的是分钟，
+ * 仍按分钟显示（kcal 值不变，仅单位标签）。部署若跨天请同步后移此常量。 */
+export const REP_UNIT_CUTOFF = Date.parse('2026-09-25T00:00:00+08:00');
+const REP_KEYS = { pushup: 1, rope: 1 };
+
+/* 该记录是否按"次数"展示（云端 unit 白名单只认 km/min，rep 落库即 min，
+ * 故判别只能靠 key + createdAt） */
+export function isRepRecord(rec) {
+  return !!rec && !!REP_KEYS[rec.key] && (rec.createdAt || 0) >= REP_UNIT_CUTOFF;
+}
 
 /* ============================================================
  * 日期工具（本地时区安全：不用 toISOString，避免 UTC 偏移跳天）
@@ -113,13 +127,21 @@ export function macroGoals(targetKcal) {
 }
 
 /* ============================================================
- * 运动消耗：距离型 = 系数 × 体重 × 距离；时长型 = MET × 3.5 × 体重 / 200 × 分钟
+ * 运动消耗：距离型 = 系数 × 体重 × 距离；次数型 = 系数 × 体重 × 次数；
+ *          时长型 = MET × 3.5 × 体重 / 200 × 分钟
  * ============================================================ */
 export function exerciseKcalOf(lib, amount, weightKg) {
   const w = weightKg || 55;
-  return lib.unit === 'km'
-    ? Math.round(lib.perKgKm * w * amount)
-    : Math.round(lib.met * 3.5 * w / 200 * amount);
+  if (lib.unit === 'km') return Math.round(lib.perKgKm * w * amount);
+  if (lib.unit === 'rep') return Math.round(lib.perRepKg * w * amount);
+  return Math.round(lib.met * 3.5 * w / 200 * amount);
+}
+
+/* 弹层输入控件的标题与单位（三型各自） */
+export function exerciseAmountLabel(lib) {
+  if (lib.unit === 'km') return { name: '距离', unit: 'km' };
+  if (lib.unit === 'rep') return { name: '数量', unit: lib.repUnit || '次' };
+  return { name: '时长', unit: '分钟' };
 }
 
 /* 每 100g 食物按克数换算宏量 */

@@ -9,6 +9,7 @@ import {
   ACTIVITY, BODY_DEFAULT, EXERCISE_LIB,
   localIso, todayIso, dateLabelOf,
   macroGoals, computeMetabolism, exerciseKcalOf, portionMacros, avgDeficitFromRows,
+  exerciseAmountLabel, isRepRecord,
   buildAdvice, makeAdviceCtx,
 } from './logic.js';
 import { state, updateState, isViewingToday } from './state.js';
@@ -1744,7 +1745,7 @@ function renderExerciseList() {
       <span class="thumb">${r.emoji}</span>
       <span class="info">
         <span class="name">${r.name}</span>
-        <span class="meta" style="display:block">${r.amount}${r.unit === 'km' ? ' km' : ' 分钟'}</span>
+        <span class="meta" style="display:block">${isRepRecord(r) ? r.amount + ' ' + (EXERCISE_LIB.find(l => l.key === r.key).repUnit) : r.amount + (r.unit === 'km' ? ' km' : ' 分钟')}</span>
       </span>
       <span class="kcal">-${r.kcal}<small> kcal</small></span>
       <button class="del" data-xdel="${r.id}" aria-label="删除${r.name}">✕</button>
@@ -1759,8 +1760,9 @@ function fillExerciseChips() {
 }
 function updateExercisePreview() {
   const lib = currentLib();
-  $('#exercise-amount-label').textContent = lib.unit === 'km' ? '距离' : '时长';
-  $('#exercise-amount-unit').textContent = lib.unit === 'km' ? 'km' : '分钟';
+  const lab = exerciseAmountLabel(lib);
+  $('#exercise-amount-label').textContent = lab.name;
+  $('#exercise-amount-unit').textContent = lab.unit;
   const w = state.body ? state.body.weightKg : 55;
   $('#exercise-kcal-preview').innerHTML =
     `预计消耗 <b>${exerciseKcalOf(lib, Number($('#exercise-amount-val').value), w)}</b> kcal`;
@@ -1782,7 +1784,7 @@ $('#exercise-mask').addEventListener('click', closeExerciseSheet);
 $('#exercise-chips').addEventListener('click', e => {
   const c = e.target.closest('[data-xkey]'); if (!c) return;
   state.exerciseChosen = c.dataset.xkey;
-  state.exerciseAmount = currentLib().unit === 'km' ? 5 : 20;
+  state.exerciseAmount = currentLib().unit === 'km' ? 5 : currentLib().unit === 'rep' ? 10 : 20;
   fillExerciseChips();
   $('#exercise-amount-val').value = state.exerciseAmount;
   updateExercisePreview();
@@ -1797,7 +1799,7 @@ $('#exercise-amount-dec').addEventListener('click', () => {
 $('#exercise-amount-inc').addEventListener('click', () => {
   const lib = currentLib();
   const step = lib.unit === 'km' ? 0.5 : 5;
-  const max = lib.unit === 'km' ? 100 : 300;
+  const max = lib.unit === 'km' ? 100 : lib.unit === 'rep' ? 2000 : 300;
   state.exerciseAmount = Math.min(max, +((Number($('#exercise-amount-val').value) || 0) + step).toFixed(1));
   $('#exercise-amount-val').value = state.exerciseAmount;
   updateExercisePreview();
@@ -1808,7 +1810,7 @@ $('#exercise-save').addEventListener('click', async () => {
   const w = state.body ? state.body.weightKg : 55;
   const kcal = exerciseKcalOf(lib, state.exerciseAmount, w);
   if (!kcal) { toast('请先设置运动量'); return; }
-  const temp = { id: 'tmpx_' + Date.now(), key: lib.key, name: lib.name, emoji: lib.emoji, amount: state.exerciseAmount, unit: lib.unit, kcal };
+  const temp = { id: 'tmpx_' + Date.now(), key: lib.key, name: lib.name, emoji: lib.emoji, amount: state.exerciseAmount, unit: lib.unit, kcal, createdAt: Date.now() };
   updateState(s => { s.exercises.push(temp); s.exerciseKcal += kcal; }, 'exercise.add');   // 乐观更新（反馈8）
   renderExerciseList();
   renderRing();
