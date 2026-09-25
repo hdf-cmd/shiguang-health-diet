@@ -323,6 +323,55 @@ void main() {
     });
   });
 
+  group('会话过期回调 onSessionExpired（M3 Task 1 / I1）', () {
+    test('续期失败清 token 时触发 onSessionExpired（且只触发一次）', () async {
+      var fired = 0;
+      await store.write(signedInToken());
+      // 业务请求恒 401、续期端点非 2xx → 终判过期：清 token + 抛固定文案
+      final adapter = _StubAdapter((pending, _, _) {
+        if (pending.url != ApiClient.apiBase) {
+          return (400, {'error': 'invalid_grant'}, Duration.zero);
+        }
+        return (401, <String, dynamic>{}, Duration.zero);
+      });
+      final client = ApiClient(
+        tokenStore: store,
+        dio: Dio()..httpClientAdapter = adapter,
+        onSessionExpired: () => fired++,
+      );
+
+      await expectLater(
+        client.call('/diet/summary', params: {'date': '2026-09-25'}),
+        throwsA(isA<ApiException>()
+            .having((e) => e.message, 'message', '登录已过期，请重新登录')),
+      );
+      expect(fired, 1); // 同一请求终判过期只触发一次
+      expect(await store.read(), isNull); // token 已清
+    });
+
+    test('未过期路径（200/续期成功重试）不触发 onSessionExpired', () async {
+      var fired = 0;
+      await store.write(signedInToken());
+      final adapter = _StubAdapter((pending, apiCount, _) {
+        if (pending.url != ApiClient.apiBase) {
+          return (200, {'access_token': 'new-at'}, Duration.zero);
+        }
+        return apiCount == 0
+            ? (401, <String, dynamic>{}, Duration.zero)
+            : (200, {'ok': true}, Duration.zero);
+      });
+      final client = ApiClient(
+        tokenStore: store,
+        dio: Dio()..httpClientAdapter = adapter,
+        onSessionExpired: () => fired++,
+      );
+
+      final data = await client.call('/diet/summary');
+      expect(data['ok'], isTrue);
+      expect(fired, 0); // 续期成功重试，会话未过期
+    });
+  });
+
   group('AuthApi（login/register 恒用 PUBLISHABLE_KEY，不走 401 续期）', () {
     test('loginByUsername：envelope=/auth/login，成功写 token（含 savedAt）并返回', () async {
       final reqs = <_Captured>[];

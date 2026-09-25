@@ -13,18 +13,30 @@ import 'features/home/home_controller.dart' show healthApiProvider;
 
 void main() {
   // 组合根：真实依赖只在这里拼装一次（SecureTokenStore → ApiClient → AuthApi/HealthApi），
-  // 经 ProviderScope.overrides 注入；不造全局单例，测试在各自 ProviderScope
+  // 经 ProviderContainer.overrides 注入；不造全局单例，测试在各自 scope
   // 里 override 成桩（见 test/auth_flow_test.dart）。
+  // I1 断环：回调引用 container，container 的 overrides 又引用 apiClient，
+  // 用 late final 先声明 container、构造 ApiClient 时只捕获其闭包、随后回填。
+  late final ProviderContainer container;
   final tokenStore = SecureTokenStore();
-  final apiClient = ApiClient(tokenStore: tokenStore);
+  final apiClient = ApiClient(
+    tokenStore: tokenStore,
+    // 401 续期失败清 token → 门控直接置 anon 回登录页（forceAnon 幂等，
+    // 并发过期请求各触发一次无碍）
+    onSessionExpired: () =>
+        container.read(authStateProvider.notifier).forceAnon(),
+  );
   final authApi = AuthApi(apiClient, tokenStore);
-  runApp(ProviderScope(
+  container = ProviderContainer(
     overrides: [
       tokenStoreProvider.overrideWithValue(tokenStore),
       apiClientProvider.overrideWithValue(apiClient),
       authApiProvider.overrideWithValue(authApi),
       healthApiProvider.overrideWithValue(HealthApi(apiClient)),
     ],
+  );
+  runApp(UncontrolledProviderScope(
+    container: container,
     child: const ShiguangApp(),
   ));
 }

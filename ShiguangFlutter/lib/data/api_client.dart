@@ -26,8 +26,11 @@ class ApiException implements Exception {
 typedef RawResponse = ({int status, Map<String, dynamic> data});
 
 class ApiClient {
-  ApiClient({required TokenStore tokenStore, Dio? dio})
-      : _store = tokenStore,
+  ApiClient({
+    required TokenStore tokenStore,
+    Dio? dio,
+    this.onSessionExpired,
+  })  : _store = tokenStore,
         _dio = dio ?? defaultDio();
 
   /// 云函数单入口（js/api.js:17）
@@ -57,6 +60,13 @@ class ApiClient {
 
   final TokenStore _store;
   final Dio _dio;
+
+  /// I1（M2 终审 Important）：401 终判过期、清 token 之后的通知通道。
+  /// 组合根（main.dart）用它把过期事件接到 authStateProvider.forceAnon()，
+  /// 使 Shell 内任意页的过期请求能立刻把用户弹回登录页，而非反复报
+  /// 「登录已过期」。同一请求终判过期只回调一次；并发多个 401 各回调
+  /// 一次可接受（forceAnon 幂等）。可为 null（测试/无 UI 场景）。
+  final void Function()? onSessionExpired;
 
   /// single-flight：并发 401 共享同一次续期（对齐 js/api.js:36-42 的
   /// _refreshInflight，避免 refresh_token 轮换互踩）。
@@ -106,6 +116,8 @@ class ApiClient {
     // js/api.js:261：仍 401（含无 token 从未进续期的情形）→ 清 token 抛固定文案
     if (resp.status == 401) {
       await _store.clear();
+      // I1：全文件唯一的「清 token + 抛登录已过期」终判处，紧挨 clear 回调一次
+      onSessionExpired?.call();
       throw ApiException('登录已过期，请重新登录');
     }
     final data = _decodeLoose(resp.raw);

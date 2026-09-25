@@ -43,6 +43,9 @@ class AuthNotifier extends Notifier<AuthStatus> {
     state = authed ? AuthStatus.authed : AuthStatus.anon;
   }
 
+  /// I1：ApiClient 会话过期清 token 后调用，跳过 bootstrap 直接回登录页
+  void forceAnon() => state = AuthStatus.anon;
+
   /// 登录/注册提交（H5 js/app.js:1905-1907 对齐：注册模式 register 成功后
   /// 立即 login；两步任一异常都原样上抛，由 LoginScreen 落错误行）。
   /// 成功后写状态由调用方无需关心——这里置 authed 使门控切 Shell。
