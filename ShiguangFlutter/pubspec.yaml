@@ -2,7 +2,7 @@ name: shiguang_flutter
 description: "食光——健康饮食与体重管理 Flutter 客户端（2.0 重写线）。"
 publish_to: 'none'
 
-version: 2.2.0+20200
+version: 2.3.0+20300
 
 environment:
   sdk: ^3.13.4
