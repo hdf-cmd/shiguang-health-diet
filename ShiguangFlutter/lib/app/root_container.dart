@@ -22,6 +22,7 @@
 // features/* 只依赖 provider，不 import 具体实现。
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/api_client.dart';
@@ -29,6 +30,7 @@ import '../data/auth_api.dart';
 import '../data/health_api.dart';
 import '../data/token_store.dart';
 import '../features/home/home_controller.dart' show healthApiProvider;
+import '../features/notifications/reminder_scheduler.dart';
 import '../features/record/food_freq.dart';
 import 'auth_state.dart';
 
@@ -84,4 +86,22 @@ ProviderContainer buildRootContainer({
     retry: (_, _) => null,
   );
   return container;
+}
+
+/// 启动提醒自愈（M4-T6，对齐 H5 MainActivity:105 ensureWaterSchedule 的
+/// "启动即补排"点）：init（渠道/权限，幂等）→ 按持久化开关重排
+/// 三餐每日 + 当日剩余喝水。喝水不做多天链式（M4 降级面，见
+/// reminder_scheduler.dart 文件头），启动重排即自愈。
+///
+/// 失败**静默容忍**（debugPrint）：通知链路坏不能挡 App 启动，
+/// 下次启动再来；对齐 H5 Notify.post 捕 SecurityException 的静默语义。
+/// main() 里 fire-and-forget 调用；widget 测试不启动它，天然跳过。
+Future<void> bootstrapReminders(ProviderContainer container) async {
+  try {
+    final scheduler = container.read(reminderSchedulerProvider);
+    await scheduler.init();
+    await scheduler.sync(on: await scheduler.enabled());
+  } catch (e) {
+    debugPrint('bootstrapReminders failed: $e');
+  }
 }

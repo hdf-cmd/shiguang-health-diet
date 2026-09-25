@@ -12,8 +12,13 @@ void main() {
   // 不传参 = 生产链路（SecureTokenStore → ApiClient → AuthApi/HealthApi +
   // PrefsFoodFreqStore + 过期回调接 forceAnon）；测试注入桩后调同一个工厂，
   // 于是端到端用例验的就是生产装配本身（M3「手抄同构」地债已清）。
+  final container = buildRootContainer();
+  // M4-T6 提醒启动自愈（对齐 H5 MainActivity:105 ensureWaterSchedule）：
+  // init→sync(on: enabled())，fire-and-forget——内部已 try/catch，不挡启动。
+  // 测试环境不走 main()，插件面天然零波及（调度动作单测用 FakePort）。
+  bootstrapReminders(container);
   runApp(UncontrolledProviderScope(
-    container: buildRootContainer(),
+    container: container,
     child: const ShiguangApp(),
   ));
 }

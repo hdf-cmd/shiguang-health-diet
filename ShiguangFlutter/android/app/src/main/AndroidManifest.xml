@@ -9,10 +9,34 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
+    <!-- 提醒通知（M4-T6）：语义对照 H5 Notify.kt 渠道+闹钟面。
+         POST_NOTIFICATIONS 插件自身 manifest 已带（22.3.1 android/src/main/
+         AndroidManifest.xml），此处显式声明与 T3 注释的规划一致、合并去重无碍。
+         RECEIVE_BOOT_COMPLETED：插件 README 对「调度通知」的硬性要求——插件的
+         ScheduledNotificationBootReceiver 借此在重启后恢复已排通知（比 H5 自写
+         BootReceiver 覆盖面更好；喝水"当日重排"自愈仍走 Flutter 侧启动即排，
+         见 bootstrapReminders）。
+         全 inexact（AndroidScheduleMode.inexactAllowWhileIdle → 原生
+         setAndAllowWhileIdle，安装源核对），故**不**声明
+         SCHEDULE_EXACT_ALARM / USE_EXACT_ALARM，绕开 Android 14 精确闹钟授权。 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <application
         android:label="shiguang_flutter"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <!-- flutter_local_notifications 调度receiver（README「AndroidManifest.xml
+             setup」16+ 起必配；manifest 声明式 receiver 用 exported="false"
+             满足 Android 14 RECEIVER_EXPORTED 门禁） -->
+        <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
+        <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
+            </intent-filter>
+        </receiver>
         <activity
             android:name=".MainActivity"
             android:exported="true"
