@@ -51,7 +51,9 @@
 //    的私有 receiver 以 exported="false" 显式满足）。全 inexact，因此**不**
 //    声明 SCHEDULE_EXACT_ALARM/USE_EXACT_ALARM。
 //
-// 分层：AndroidNotificationPort 是全工程**唯一** import 插件处；
+// 分层：AndroidNotificationPort 是全工程**唯一** import flutter_local_notifications
+// 插件处（权限插件 permission_handler 另在 blue_plus_transport.dart 出现，
+// 不属本条限定范围）；
 // ReminderScheduler 只依赖 NotificationPort 抽象（测试注入 FakePort）。
 // domain 规则层不在此重复实现——一切时刻/文案来自 reminders.dart（T5）。
 

@@ -282,7 +282,11 @@ class ScaleService {
     sub?.cancel();
     final session = _session;
     _session = null;
-    session?.close(); // fire-and-forget：transport close 幂等且不抛
+    // 终审 M1：close 仍可能抛——blue_plus_transport.dart:285-287 的
+    // `s.cancel()` 在 try 外，特征订阅取消异常会让 fire-and-forget 的
+    // future 成为孤儿 → unhandled error。统一 unawaited+catchError 吞掉。
+    final closing = session?.close();
+    if (closing != null) unawaited(closing.catchError((Object _) {}));
     final pending = _pending;
     _pending = null;
     if (pending != null && !pending.isCompleted) {

@@ -9,6 +9,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/api_client.dart';
 import '../data/auth_api.dart';
 import '../data/token_store.dart';
+// 终审 I1：登出/换号失效全部账号数据 provider，需引用各 feature 的 provider。
+// app→features 的单向依赖本就存在（root_container.dart 同层同法拼装），
+// home_controller ↔ auth_state 的文件级环 Dart 合法且此前已成立。
+import '../features/home/home_controller.dart' show recordsProvider, summaryProvider;
+import '../features/profile/profile_screen.dart' show profileWeightProvider;
+import '../features/record/food_freq.dart' show foodFreqProvider;
+import '../features/report/report_controller.dart'
+    show monthReportProvider, weekReportProvider, weightTrendProvider;
 
 /// 门控三态：
 /// - unknown：TokenStore 读取尚未完成。H5 没有此态（web 同步读 localStorage，
@@ -36,6 +44,31 @@ class AuthNotifier extends Notifier<AuthStatus> {
   @override
   AuthStatus build() => AuthStatus.unknown;
 
+  /// 终审 I1：登出/换号 = H5 `location.reload()` 的等价物——组合根 container
+  /// 终身存活，只置 anon 不清内存态，跨账号缓存会串：
+  /// - keepAlive 源（profileWeightProvider/foodFreqProvider）不随 Shell 卸载
+  ///   而 dispose，换号后 ProfileScreen 用旧账号体重播种输入位，误点保存即把
+  ///   A 的体重写进 B 的 /user/weight；
+  /// - autoDispose 家族源（summary/records/周月报/趋势）在用户仍停留于 Shell
+  ///   页面时点登出（UI 监听未卸）同样穿过切页存活。
+  /// 故登出与登录成功两处都显式失效全部；后者另覆盖「会话过期 forceAnon →
+  /// 不经 signOut 直接换号登录」路径。family 不带参 invalidate 即整族失效
+  /// （安装源 riverpod-3.4.3 provider_container.dart:1156-1167
+  /// `case Family():` 遍历 listFamily 逐个 invalidateSelf，已读源核实）。
+  /// 边界说明：foodFreqProvider 失效只清内存计数；prefs 里的持久计数下次
+  /// ensureLoaded 仍会读回（init 标记未清）——按终查处方只失效 provider，
+  /// 持久面不动（M4 冻结面）。healthApi/apiClient 为无状态通道，无需失效。
+  void _invalidateAccountScopedCaches() {
+    ref
+      ..invalidate(profileWeightProvider)
+      ..invalidate(summaryProvider) // family：整族失效
+      ..invalidate(recordsProvider) // family：整族失效
+      ..invalidate(weekReportProvider)
+      ..invalidate(monthReportProvider)
+      ..invalidate(weightTrendProvider)
+      ..invalidate(foodFreqProvider);
+  }
+
   /// 启动门控：经 AuthApi.isLoggedIn() 读一次 TokenStore
   /// （即 `store.read() != null`，与 H5 `!!_loadToken()` 同判定）。
   Future<void> bootstrap() async {
@@ -53,6 +86,7 @@ class AuthNotifier extends Notifier<AuthStatus> {
   Future<void> signOut() async {
     await ref.read(tokenStoreProvider).clear();
     state = AuthStatus.anon;
+    _invalidateAccountScopedCaches();
   }
 
   /// 登录/注册提交（H5 js/app.js:1905-1907 对齐：注册模式 register 成功后
@@ -66,6 +100,10 @@ class AuthNotifier extends Notifier<AuthStatus> {
     final auth = ref.read(authApiProvider);
     if (isRegister) await auth.registerByUsername(username, password);
     await auth.loginByUsername(username, password);
+    // 换号兜底：forceAnon（会话过期）路径不经过 signOut，注册/登录成功后
+    // 旧账号缓存同样必须全清——先失效（token 已由 loginByUsername 落库，
+    // 在途监听重取即新账号数据），再置 authed 切 Shell。
+    _invalidateAccountScopedCaches();
     state = AuthStatus.authed;
   }
 }
