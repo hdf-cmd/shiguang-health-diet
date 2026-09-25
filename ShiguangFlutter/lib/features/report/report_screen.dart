@@ -91,11 +91,15 @@ class _ReportScreenState extends ConsumerState<ReportScreen> {
             const SizedBox(height: Tokens.sp4),
             _kcalCard(data),
           ] else ...[
-            // 云端返回前不给骨架（H5 同：renderWeekReport 未被调用）。
-            // 注意：不放无限动画的 loading 指示器——它会持续排帧，
-            // 测试 pumpAndSettle 期间时钟被推着走，会叠上 Riverpod 3
-            // 默认失败退避重试（200ms 起）导致错误态取数次数不稳定。
-            const SizedBox.shrink(),
+            // 加载态渲染静态卡框骨架，对齐 index.html:158-161：.card 框与
+            // "每日热量 · 对比目标"标题是静态 HTML，数据回来前本来就可见，
+            // 只有 #report-avg / #week-chart 两处 innerHTML 为空。
+            // 与 M2 首页同原理（home_screen.dart:71-74 loading 期渲染
+            // _ringCard(null) 零值卡）。骨架是纯静态 widget，不排持续帧：
+            // Riverpod 3 默认失败退避重试（200ms 起）的计时问题在测试侧用
+            // Duration.zero 定步 pump 消除，不靠牺牲加载期可见性来规避。
+            const SizedBox(height: Tokens.sp4),
+            _kcalSkeletonCard(),
           ],
         ],
       ),
@@ -188,6 +192,30 @@ class _ReportScreenState extends ConsumerState<ReportScreen> {
             todayIndex: weekTodayIndex(DateTime.now()),
             selectedIndex: _selectedBar,
             onBarTap: _onBarTap,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 加载态骨架卡：静态标题行 + 空图表容器（高 140 = .week-chart 固定高，
+  /// screens.css:407）。日均文案位（#report-avg）留空——H5 该 span 数据回来
+  /// 前本为空，骨架不放任何持续动画，避免测试/低端机无谓排帧。
+  Widget _kcalSkeletonCard() {
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: const [
+          Text('每日热量 · 对比目标',
+              style: TextStyle(
+                  fontSize: Tokens.textMd,
+                  fontWeight: FontWeight.w600,
+                  color: Tokens.ink)),
+          SizedBox(height: Tokens.sp5), // .week-chart margin-top --sp-5
+          SizedBox(
+            height: 140,
+            width: double.infinity,
+            key: ValueKey('week-chart-skeleton'),
           ),
         ],
       ),

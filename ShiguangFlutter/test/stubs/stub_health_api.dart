@@ -121,6 +121,30 @@ class StubHealthApi implements HealthApi {
         'rates': {'carb': carb, 'protein': protein, 'fat': fat},
       };
 
+  /// 月报 fixture 形状 → {weeks,kcal,target,days,total,rates,isWeek:false}
+  /// （contract diet-core.json monthReport.responseSample）。与 weekReportMap
+  /// 对称：默认返回即可被 parseMonthReport 解析——此前默认 {} 会在解析期
+  /// 抛类型错，坑下游 T5 用例。
+  static Map<String, dynamic> monthReportMap({
+    List<String> weeks = const ['W1', 'W2', 'W3', 'W4'],
+    List<num> kcal = const [1652, 1723, 0, 1688],
+    num target = 1679,
+    num days = 19,
+    num total = 31956,
+    num carb = 78,
+    num protein = 69,
+    num fat = 73,
+  }) =>
+      {
+        'weeks': weeks,
+        'kcal': kcal,
+        'target': target,
+        'days': days,
+        'total': total,
+        'rates': {'carb': carb, 'protein': protein, 'fat': fat},
+        'isWeek': false,
+      };
+
   @override
   Future<Map<String, dynamic>> getDailySummary(String date) async {
     summaryCalls++;
@@ -170,7 +194,7 @@ class StubHealthApi implements HealthApi {
   Future<Map<String, dynamic>> getMonthReport({int offset = 0}) async {
     monthCalls++;
     if (monthError != null) throw monthError!;
-    return monthReport ?? <String, dynamic>{};
+    return monthReport ?? monthReportMap();
   }
 
   @override

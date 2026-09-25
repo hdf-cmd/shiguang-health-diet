@@ -1,8 +1,10 @@
 // ShiguangFlutter/test/report_screen_test.dart
-// M3 Task 4：报告页骨架 + 周柱状图（入场动画后断言 / 点击互斥气泡 / 错误态重试）。
+// M3 Task 4：报告页骨架 + 周柱状图（加载态静态卡框 / 入场动画后断言 /
+// 点击互斥气泡 / 错误态重试——错误态用定步 pump，见用例内注释）。
 // 全部走 StubHealthApi（override healthApiProvider），零网络。
 // 样本数据 = contract/fixtures/diet-core.json weekReport.responseSample。
 // 几何/交互事实源：js/app.js:788-829、css/screens.css:407-435。
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -12,6 +14,7 @@ import 'package:shiguang_flutter/app/theme.dart';
 import 'package:shiguang_flutter/data/api_client.dart';
 import 'package:shiguang_flutter/domain/report.dart';
 import 'package:shiguang_flutter/features/home/home_controller.dart' show healthApiProvider;
+import 'package:shiguang_flutter/features/report/report_controller.dart';
 import 'package:shiguang_flutter/features/report/report_screen.dart';
 
 import 'stubs/stub_health_api.dart';
@@ -110,12 +113,15 @@ void main() {
 
   testWidgets('今天柱：渐变 primary→primaryDeep + primaryGlow 阴影（screens.css:429-431）',
       (tester) async {
-    await pumpReport(tester, StubHealthApi(weekReport: kWeek));
+    // 确定化构造：把"今天"那天 kcal 改为 1500（≤target，非 over），
+    // over 规则不会覆盖 today 渐变——任何星期几跑都走渐变分支，
+    // 不再用 early-return 静默跳过（此前周五跑会零断言假通过）。
     final todayIdx = weekTodayIndex(DateTime.now());
-    if (kcal[todayIdx] > target) {
-      // over 规则覆盖渐变（CSS 后者胜出），跳过断言避免依赖运行星期
-      return;
-    }
+    final kcalToday = List<int>.from(kcal)..[todayIdx] = 1500;
+    await pumpReport(tester,
+        StubHealthApi(weekReport: StubHealthApi.weekReportMap(
+            days: days, kcal: kcalToday, target: target)));
+
     final deco = tester
         .widget<Container>(find.byKey(ValueKey('week-bar-fill-$todayIdx')))
         .decoration! as BoxDecoration;
@@ -184,9 +190,38 @@ void main() {
         closeTo(expectBarPx(0), 0.5));
   });
 
+  testWidgets('加载态：渲染静态卡框骨架（index.html:158-161 卡框+标题为静态 HTML），不出数据文案',
+      (tester) async {
+    // 用永不完成的 Future 覆盖 provider，钉死 loading 态：
+    // 骨架无排帧动画，pumpAndSettle 只收敛路由转场，不会挂。
+    final pending = Completer<ReportData>();
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        healthApiProvider.overrideWithValue(StubHealthApi()),
+        weekReportProvider.overrideWith((ref) => pending.future),
+      ],
+      child: const MaterialApp(home: ReportScreen()),
+    ));
+    await tester.pumpAndSettle();
+
+    // 卡框 + 静态标题可见（对齐 H5 加载期形态）
+    expect(find.text('每日热量 · 对比目标'), findsOneWidget);
+    expect(find.byKey(const ValueKey('week-chart-skeleton')), findsOneWidget);
+    // 数据位仍为空：日均文案 / 目标线标签 / 柱都不在树里
+    expect(find.text(avgText), findsNothing);
+    expect(find.text('目标 $target'), findsNothing);
+    expect(find.byKey(const ValueKey('week-bar-0')), findsNothing);
+  });
+
   testWidgets('错误态：ApiException.message + 重试；invalidate 后重新取数成功', (tester) async {
     final api = StubHealthApi(weekError: ApiException('登录已过期，请重新登录'));
-    await pumpReport(tester, api);
+    await tester.pumpWidget(harness(api));
+    // 定步 pump（Duration.zero 不推进时钟）替代 pumpAndSettle：
+    // pumpAndSettle 每轮推进 100ms 时钟，会踩中 Riverpod 3 默认失败退避
+    // 重试（200ms 起）令 weekCalls 不定；桩 Future 同轮微任务即完成，
+    // 两帧内必达错误态。
+    await tester.pump(); // 微任务里 getWeekReport 抛 → provider 置错
+    await tester.pump(); // 错误态 rebuild
 
     expect(find.text('登录已过期，请重新登录'), findsOneWidget);
     expect(find.text('重试'), findsOneWidget);
@@ -195,7 +230,9 @@ void main() {
     api.weekError = null;
     api.weekReport = kWeek;
     await tester.tap(find.text('重试'));
-    await tester.pumpAndSettle();
+    await tester.pump(); // invalidate → loading（静态骨架卡）
+    await tester.pump(); // 微任务成功 → 数据态首帧（柱已进树，高自动画）
+    await tester.pump();
 
     expect(find.text('登录已过期，请重新登录'), findsNothing);
     expect(find.text(avgText), findsOneWidget);
