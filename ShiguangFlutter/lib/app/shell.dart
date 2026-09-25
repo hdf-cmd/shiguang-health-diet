@@ -1,10 +1,10 @@
 // ShiguangFlutter/lib/app/shell.dart
 import 'package:flutter/material.dart';
 import '../features/home/home_screen.dart';
+import '../features/profile/profile_screen.dart';
 import '../features/record/record_screen.dart';
-import '../features/profile/profile_placeholder.dart' show PlaceholderScreen;
-// M3-T4：报告 tab 接真实 ReportScreen；报告占位文件已删，profile 占位仍在
-//（同名 PlaceholderScreen，保留 show 显式导出）。
+// M3-T4：报告 tab 接真实 ReportScreen；报告占位文件已删。M4-T4：我的 tab
+// 接真实 ProfileScreen（体重卡+登出），profile_placeholder.dart 随之删除。
 import '../features/report/report_screen.dart';
 import 'theme.dart';
 
@@ -45,7 +45,7 @@ class ShellState extends State<Shell> {
           HomeScreen(),
           RecordScreen(),
           ReportScreen(),
-          PlaceholderScreen('我的（M2 接入）'),
+          ProfileScreen(),
         ],
       ),
       bottomNavigationBar: SafeArea(

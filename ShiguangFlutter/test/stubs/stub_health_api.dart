@@ -27,6 +27,9 @@ class StubHealthApi implements HealthApi {
     this.weightTrendError,
     this.summaryGate,
     this.recordsGate,
+    this.bodyMetrics,
+    this.bodyError,
+    this.logWeightError,
   });
 
   /// 成功返回体（null 时按全零汇总/空记录处理）
@@ -61,6 +64,23 @@ class StubHealthApi implements HealthApi {
   /// （模拟慢网 pending，验证首页加载期骨架与全空态可分辨）
   Completer<void>? summaryGate;
   Completer<void>? recordsGate;
+
+  /* ---------- M4-T4 体重卡：getBodyMetrics / logWeight ---------- */
+
+  /// getBodyMetrics 成功返回体（null → 契约默认档：H5 兜底 55kg）。
+  /// 体重键名 weightKg（contract/fixtures/diet-core.json bodyMetrics；
+  /// Dart 消费点 domain/models.dart BodyMetrics.fromMap 同键）。
+  Map<String, dynamic>? bodyMetrics;
+  ApiException? bodyError;
+  int bodyCalls = 0;
+
+  /// logWeight 收到的 (kg, date)（按调用顺序收集，测试断言契约入参）
+  final List<({num kg, String? date})> weightLogs =
+      <({num kg, String? date})>[];
+  ApiException? logWeightError;
+
+  /// 非空 → logWeight 先 await 它再返回（模拟慢网 pending）
+  Completer<void>? logWeightGate;
 
   /// deleteFoodRecord 收到的 id（按调用顺序收集）
   final List<String> deletedIds = <String>[];
@@ -207,6 +227,22 @@ class StubHealthApi implements HealthApi {
     deletedIds.add(id);
     if (deleteError != null) throw deleteError!;
     return <String, dynamic>{'ok': true};
+  }
+
+  @override
+  Future<Map<String, dynamic>> getBodyMetrics() async {
+    bodyCalls++;
+    if (bodyError != null) throw bodyError!;
+    return bodyMetrics ?? const <String, dynamic>{'weightKg': 55};
+  }
+
+  @override
+  Future<Map<String, dynamic>> logWeight(num weightKg, [String? date]) async {
+    weightLogs.add((kg: weightKg, date: date));
+    if (logWeightGate != null) await logWeightGate!.future;
+    if (logWeightError != null) throw logWeightError!;
+    // 云端回显形状（js/app.js:934 消费 r.weightKg）
+    return <String, dynamic>{'weightKg': weightKg, 'date': date};
   }
 
   @override

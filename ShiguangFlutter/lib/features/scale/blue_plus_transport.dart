@@ -84,11 +84,20 @@ class BluePlusTransport implements ScaleTransport {
 
   // ============================ 扫描+连接 ============================
 
+  /// 扫描代际（M4-T4 死区修复配套）：每次 scanAndConnect 进入即取新号。
+  /// flutter_blue_plus 的扫描是**全局单例**（scanResults 广播给所有在听者，
+  /// stopScan 影响所有扫描），编排层 cancel 后允许立即重来，于是会出现
+  /// "旧 scanAndConnect 的迟到清理撞上新扫描在跑"。代际守卫保证迟到清理
+  /// 不 stopScan 掐断新一代——这是两条并发扫描唯一能互相伤害的通道。
+  int _scanOp = 0;
+
   @override
   Future<TransportSession?> scanAndConnect({
     required String namePrefix,
     required Duration timeout,
+    Future<void>? cancelSignal,
   }) async {
+    final myOp = ++_scanOp;
     // 蓝牙开关检查（ScaleSync.kt:67-75 的三段判断归并为 no-bluetooth）
     final state = await FlutterBluePlus.adapterState.first;
     if (state != BluetoothAdapterState.on) {
@@ -113,28 +122,44 @@ class BluePlusTransport implements ScaleTransport {
       }
     });
 
-    BluetoothDevice? device;
+    BluetoothDevice device;
     try {
       await FlutterBluePlus.startScan(timeout: timeout);
-      device = await found.future
-          .timeout(timeout + const Duration(seconds: 1), onTimeout: () {
-        throw TimeoutException('scan');
-      });
-    } on TimeoutException {
-      await scanSub.cancel();
-      await FlutterBluePlus.stopScan();
-      return null; // 编排层 → scan-timeout
+      // 等扫描结果。超时/协作取消都**包成值**再进 Future.any：若让错误直接
+      // 进竞速，取消先行落地后迟到的 TimeoutException 会变成无人处理的
+      // unhandled error（Future.any 分出胜负后就不再消费其余 future）。
+      final scanWait = found.future //
+          .timeout(timeout + const Duration(seconds: 1),
+              onTimeout: () => throw TimeoutException('scan'))
+          .then<Object?>((d) => _ScanFound(d))
+          .catchError((Object e) => _ScanFailed(e));
+      final raced = await Future.any(<Future<Object?>>[
+        scanWait,
+        if (cancelSignal != null) cancelSignal.then<Object?>((_) => _kAborted),
+      ]);
+      if (identical(raced, _kAborted)) {
+        // 协作收尾（scale_service 契约）：不再连接任何设备；迟到清理
+        // 经代际守卫，若新扫描已开则不碰全局 stopScan。返回 null 不抛。
+        await _endScan(myOp, scanSub);
+        return null;
+      }
+      if (raced is _ScanFailed) {
+        // 原超时 → scan-timeout（null）；其余 → connect-fail
+        await _endScan(myOp, scanSub);
+        final e = raced.error;
+        if (e is TimeoutException) return null; // 编排层 → scan-timeout
+        if (e is TransportException) throw e;
+        throw TransportException('connect-fail', '$e');
+      }
+      device = (raced as _ScanFound).device;
+      await _endScan(myOp, scanSub); // ScaleSync.kt:122 扫到即停扫
     } on TransportException {
-      await scanSub.cancel();
-      await FlutterBluePlus.stopScan();
+      await _endScan(myOp, scanSub);
       rethrow;
     } catch (e) {
-      await scanSub.cancel();
-      await FlutterBluePlus.stopScan();
+      await _endScan(myOp, scanSub);
       throw TransportException('connect-fail', '$e');
     }
-    await scanSub.cancel();
-    await FlutterBluePlus.stopScan(); // ScaleSync.kt:122 扫到即停扫
 
     // I1(b)：本会话独占的资源全部局持有，成功后打包进 _BluePlusSession
     final charSubs = <StreamSubscription<List<int>>>[];
@@ -181,6 +206,21 @@ class BluePlusTransport implements ScaleTransport {
     }
   }
 
+  /// 扫描迟到清理：退订恒做；全局 stopScan 只在**仍是自己这一代**时做
+  /// （已有更新代 scanAndConnect 在跑时，扫描归新调用方管辖，stopScan
+  /// 会掐断新扫描——这正是编排层兜底注释里"真机实现必须协作"的部分）。
+  /// 参数取 covariant 超类型：scanResults 订阅是 `List<ScanResult>` 流，
+  /// 与通知流的 `List<int>` 流元素类型不同，此处只用 cancel()。
+  Future<void> _endScan(int myOp, StreamSubscription<Object?> sub) async {
+    await sub.cancel();
+    if (myOp != _scanOp) return;
+    try {
+      await FlutterBluePlus.stopScan();
+    } catch (_) {
+      // 插件内部 timeout 到点已自停时 stopScan 可能抛：不影响结果
+    }
+  }
+
   Future<void> _teardown(
       BluetoothDevice? device, List<StreamSubscription<List<int>>> subs) async {
     for (final s in subs) {
@@ -195,6 +235,25 @@ class BluePlusTransport implements ScaleTransport {
       // 断开失败不再抛：会话已作废
     }
   }
+}
+
+/// 协作取消竞速哨兵（scanAndConnect 内部）。
+const Object _kAborted = _AbortToken();
+
+class _AbortToken {
+  const _AbortToken();
+}
+
+/// 扫描等待结果包装：把"成功/超时/异常"全部包成**值**参与 Future.any，
+/// 取消胜出后迟到完成只是无人消费的值，不会炸 unhandled error。
+class _ScanFound {
+  const _ScanFound(this.device);
+  final BluetoothDevice device;
+}
+
+class _ScanFailed {
+  const _ScanFailed(this.error);
+  final Object error;
 }
 
 /// 一条已连接会话。**自带** device/写特征/订阅三份资源（I1(b)），close 只

@@ -2,145 +2,15 @@
 // M4-T3 体脂秤编排层单测：FakeTransport 注入，锁死 ScaleSync.kt 移植语义。
 // 权威源：HealthyDiet/.../ScaleSync.kt :57/:81/:106 lockedSent、:83-85 读超时、
 // :85 扫描超时、:91 AFU- 前缀、:129-131 断连、:187-193 握手三帧、:224-237 emit 去重。
+// FakeTransport/liveFrame/settle 已抽到 test/scale_fakes.dart（M4-T4 起
+// profile_screen_test 同用，两处共享）。
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shiguang_flutter/domain/scale_protocol.dart';
 import 'package:shiguang_flutter/features/scale/scale_service.dart';
 
-/// 组一条合法的 0x51 实时体重帧（协议域常量 + frameCrc 复用，避免测试自造校验）
-List<int> liveFrame(double kg, {bool locked = false, int wireType = kWireLive}) {
-  final grams = (kg * 1000).round();
-  var flags = grams & kWeightMask;
-  if (locked) flags |= 1 << 31;
-  final f = List<int>.filled(kScaleFrameLen, 0);
-  f[0] = 0xAF;
-  f[1] = 0x45;
-  f[2] = flags & 0xFF;
-  f[3] = (flags >> 8) & 0xFF;
-  f[4] = (flags >> 16) & 0xFF;
-  f[5] = (flags >> 24) & 0xFF;
-  f[18] = wireType;
-  f[19] = frameCrc(f);
-  return f;
-}
-
-class FakeSession implements TransportSession {
-  FakeSession(this._t);
-  final FakeTransport _t;
-
-  /// close() 已调用（编排层 _finish 归还登记）
-  bool closed = false;
-
-  /// 真机语义里"订阅取消 + GATT 断开"要 await 平台通道：本字段在 close 的
-  /// 异步尾巴落地后才置 true。修复前 BluePlusTransport 把 device/_charSubs/
-  /// _writeChr 挂在 transport 实例字段上，旧会话 close 执行到一半时会误伤
-  /// "此刻字段里的"新会话（评审 I1）；会话状态收进 session 后不再可能。
-  bool transportDisconnected = false;
-  bool writeChannelOpen = true;
-
-  @override
-  Future<void> writeFrame(List<int> f) async {
-    final block = _t.writeBlocker;
-    if (block != null) await block.future; // 模拟握手写慢/在途
-    // 对齐 blue_plus_transport：close 置空写通道后，在途/后续写帧抛
-    // （评审 M2 的竞态入口：cancel→写抛→不得再产出第二终态）
-    if (!writeChannelOpen) throw const TransportException('connect-fail', '已断开');
-    _t.writes.add(List<int>.of(f));
-  }
-
-  @override
-  Future<void> close() async {
-    if (closed) return; // 幂等
-    closed = true;
-    final block = _t.closeBlocker;
-    if (block != null) await block.future;
-    writeChannelOpen = false;
-    transportDisconnected = true;
-  }
-}
-
-class FakeTransport implements ScaleTransport {
-  FakeTransport({
-    this.permissionsGranted = true,
-    this.scanReturnsSession = true,
-    this.scanError,
-    this.gateScans = false,
-  });
-
-  final bool permissionsGranted;
-  final bool scanReturnsSession;
-
-  /// 非空 → scanAndConnect 抛该异常（TransportException 或任意 Error）
-  final Object? scanError;
-
-  /// true = scanAndConnect 不再即时完成：挂在 scanGates 上，由测试调
-  /// completeScanGate "让扫描迟到成功"。真机扫描是秒级等待，即时完成的假
-  /// 实现测不出"cancel 时旧 scanAndConnect 仍在途"的并发窗口（评审 I1）。
-  final bool gateScans;
-
-  final List<List<int>> writes = [];
-  final List<FakeSession> sessions = [];
-  final List<Completer<TransportSession?>> scanGates = [];
-
-  /// 非空 → writeFrame 挂起（模拟在途握手写）
-  Completer<void>? writeBlocker;
-
-  /// 非空 → close() 挂在异步段（模拟 disconnect 未完成）
-  Completer<void>? closeBlocker;
-
-  int scanAndConnectCalls = 0;
-  String? lastScanPrefix;
-  Duration? lastScanTimeout;
-  bool permissionsCalled = false;
-  bool notificationsSubscribed = false;
-
-  final StreamController<List<int>> _notifications =
-      StreamController<List<int>>.broadcast();
-
-  void emit(List<int> frame) => _notifications.add(frame);
-
-  /// 测试驱动：让第 index 条挂起的扫描"终于成功"，现场创建并返回新会话
-  FakeSession completeScanGate(int index) {
-    final s = FakeSession(this);
-    sessions.add(s);
-    scanGates[index].complete(s);
-    return s;
-  }
-
-  @override
-  Stream<List<int>> notifications() {
-    notificationsSubscribed = true;
-    return _notifications.stream;
-  }
-
-  @override
-  Future<bool> ensurePermissions() async {
-    permissionsCalled = true;
-    return permissionsGranted;
-  }
-
-  @override
-  Future<TransportSession?> scanAndConnect(
-      {required String namePrefix, required Duration timeout}) async {
-    scanAndConnectCalls++;
-    lastScanPrefix = namePrefix;
-    lastScanTimeout = timeout;
-    if (scanError != null) throw scanError!;
-    if (!scanReturnsSession) return null;
-    if (gateScans) {
-      final gate = Completer<TransportSession?>();
-      scanGates.add(gate);
-      return gate.future; // 会话由 completeScanGate 现场创建后才交还
-    }
-    final s = FakeSession(this);
-    sessions.add(s);
-    return s;
-  }
-}
-
-/// 让 start() 里的权限/连接等 microtask 段跑完
-Future<void> settle() => Future<void>.delayed(const Duration(milliseconds: 5));
+import 'scale_fakes.dart';
 
 void main() {
   // 测试用毫秒级超时（构造参数可注入是硬要求）
@@ -349,8 +219,8 @@ void main() {
       expect(t.scanAndConnectCalls, 1);
     });
 
-    test('I1 复现：cancel 时旧 scanAndConnect 在途 → 不得放行第二条会话；'
-        '迟到会话归还与 close 异步尾巴均不得影响新会话', () async {
+    test('I1+T4：cancel 时旧扫描协作终结（不建会话/不掐新扫描），'
+        '重试立刻发起第二条扫描；迟到 close 异步尾巴不串台', () async {
       final t = FakeTransport(gateScans: true);
       final svc = build(t);
       final readings = <ScaleReading>[];
@@ -359,36 +229,31 @@ void main() {
       final f1 = svc.start();
       await settle();
       expect(t.scanGates.length, 1);
+      expect(t.lastCancelSignal, isNotNull); // 编排层必须把取消信号注入扫描
 
-      await svc.cancel(); // 旧 _run 此刻仍卡在 scanAndConnect（真机秒级窗口）
-      final f2 = svc.start();
+      await svc.cancel();
+      expect((await f1).status, 'cancelled'); // 修复后无需等扫描自超时立即落地
       await settle();
-      // 修复前：_finish 提前清 _inflight → 这里会并发发起第二条扫描（交叉断连根因）
-      expect(t.scanAndConnectCalls, 1);
-      expect(identical(f1, f2), isTrue); // 重入保护未解除：返回同一进行中 Future
+      expect(t.scanAborts, 1); // 旧扫描协作终结：不产生会话、不 close
+      expect(t.sessions, isEmpty); // 无 GATT 可断 → 无从交叉断连
 
-      final s1 = t.completeScanGate(0); // 迟到的扫描"成功"→ 必须立即归还、不改终态
-      final o1 = await f1;
-      expect(o1.status, 'cancelled');
-      expect(s1.closed, isTrue);
-
-      final f3 = svc.start(); // 旧 _run 落地后，重来才真正发起第二条扫描
+      final f2 = svc.start(); // 死区已除：不等第一条扫描 ~31s 自超时
       await settle();
       expect(t.scanAndConnectCalls, 2);
-      final s2 = t.completeScanGate(1);
+      final s2 = t.completeScanGate(1); // gate[0] 已作废永不消费
       await settle();
-      expect(s2.transportDisconnected, isFalse); // 旧会话归还没碰新会话
+      expect(s2.transportDisconnected, isFalse); // 旧扫描归还没碰新会话
       expect(t.writes.length, 3); // 新会话握手三帧正常写出
 
       // 新会话收尾：close 挂异步尾巴（真机 disconnect 未完成）期间再开一条
       t.closeBlocker = Completer<void>();
       t.emit(liveFrame(66.66, locked: true));
-      final o3 = await f3;
-      expect(o3.status, 'ok');
-      expect(o3.kg, 66.66);
+      final o2 = await f2;
+      expect(o2.status, 'ok');
+      expect(o2.kg, 66.66);
       expect(readings.map((r) => r.kg).toList(), [66.66]);
 
-      final f4 = svc.start();
+      final f3 = svc.start();
       await settle();
       expect(t.scanAndConnectCalls, 3);
       final s3 = t.completeScanGate(2);
@@ -398,10 +263,38 @@ void main() {
       await settle();
       expect(s2.transportDisconnected, isTrue);
       t.emit(liveFrame(70.0, locked: true));
-      final o4 = await f4;
-      expect(o4.status, 'ok');
-      expect(o4.kg, 70.0);
+      final o3 = await f3;
+      expect(o3.status, 'ok');
+      expect(o3.kg, 70.0);
       expect(readings.map((r) => r.kg).toList(), [66.66, 70.0]);
+    });
+
+    test('T4 遗留死区：扫描期 cancel 应立即落地，重试立刻发起第二次扫描',
+        () async {
+      // 现状（修复前）：cancel() 只落 pending，_run 仍卡在 scanAndConnect，
+      // _inflight 不解约 ~31s；期间 start() 返回同一个已 cancelled 的
+      // Future——"重试"按钮没反应。本用例钉死修法：cancel 后 f1 立即落地，
+      // 再 start 立刻走到第二次 scanAndConnect。
+      final t = FakeTransport(gateScans: true);
+      final svc = build(t);
+
+      final f1 = svc.start();
+      await settle();
+      expect(t.scanGates.length, 1);
+
+      await svc.cancel();
+      // 修复前 f1 不会在 300ms 内落地（gate 永不完成）→ onTimeout 给出
+      // 可断言的哨兵状态，让 RED 是"断言失败"而不是 30s 用例超时。
+      final o1 = await f1.timeout(
+        const Duration(milliseconds: 300),
+        onTimeout: () => const ScaleOutcome('__HUNG__'),
+      );
+      expect(o1.status, 'cancelled');
+
+      final f2 = svc.start();
+      await settle();
+      expect(t.scanAndConnectCalls, 2); // 修复前恒 1（重入返回同一 _inflight）
+      expect(identical(f1, f2), isFalse); // 修复前恒 true
     });
 
     test('M2：cancel 与在途握手写异常竞态 → start 与 cancel 两 waiter 同终态',

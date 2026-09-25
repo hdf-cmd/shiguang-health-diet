@@ -54,9 +54,17 @@ abstract class ScaleTransport {
   /// 按名称前缀扫描并连接、发现服务、订阅通知。
   /// 返回 null = 超时没扫到（scan-timeout）；抛 [TransportException] = 蓝牙
   /// 不可用/连接失败；返回会话 = 成功。
+  ///
+  /// [cancelSignal]（M4-T4 协作取消）：非空且先行完成 = 编排层已终止本次
+  /// 会话。实现**必须**协作收尾：不再连接任何设备、不再触碰全局扫描
+  /// （若新一代 scanAndConnect 已开始，迟到清理不得 stopScan 掐断它），
+  /// 以 null 正常返回（不抛）。做不到也无碍正确性——编排层对迟到完成
+  /// 有兜底（丢弃/关闭晚到会话），但真机实现若不 honor cancelSignal，
+  /// cancel→立即重来会出现两条并发扫描互相 stopScan 的串台。
   Future<TransportSession?> scanAndConnect({
     required String namePrefix,
     required Duration timeout,
+    Future<void>? cancelSignal,
   });
 
   /// 运行时权限（Android 12+ 蓝牙扫描/连接；≤30 定位）。true = 已齐。
@@ -125,9 +133,11 @@ class ScaleService {
 
   /// 发起一次同步。会话进行中再调 → 直接返回进行中的同一个 Future
   /// （不并发两条会话；Kotlin 是 start 前置 stop，这里用重入等价锁定）。
-  /// 注意（I1(a)）：cancel() 返回后旧 _run 的迟到 await（scanAndConnect 等）
-  /// 可能仍在收尾，该窗口内 start() 返回的仍是本次 cancelled 的同一个
-  /// Future——重入保护延迟到 _run 真正落地才解除，杜绝双会话交叉。
+  /// M4-T4 死区已除：cancel()/超时落地后 _run 会尽快收尾——扫描阶段经
+  /// [ScaleTransport.scanAndConnect] 的 cancelSignal 协作终结（不等真机
+  /// ~31s 扫描自超时），握手/读数阶段本就只 await pending.future。
+  /// _inflight 仍延后至 _run 全部 await 落地才解除，双会话交叉断连防护
+  /// 不变（见 _run 的 I1(a) 注释与新用例）。
   Future<ScaleOutcome> start() {
     final inflight = _inflight;
     if (inflight != null) return inflight;
@@ -172,10 +182,31 @@ class ScaleService {
       }
       if (pending.isCompleted) return await pending.future; // 等待期间已被 cancel/超时终止
 
+      // M4-T4 死区修复：扫描阶段与 pending（cancel()/超时）竞速。
+      // cancelSignal 交给 transport 协作终结（不连接、不掐新扫描）；
+      // 编排层不再等在途 scanAndConnect 落地即返回 cancelled，_inflight
+      // 随之解除——"重试"按钮立即生效。真机串台防护见
+      // blue_plus_transport.dart 的 _scanOp 代际守卫；FakeTransport 用
+      // scanAborts 记录协作收尾。
+      final scanFuture = _transport.scanAndConnect(
+        namePrefix: 'AFU-',
+        timeout: scanTimeout,
+        cancelSignal: pending.future,
+      );
       TransportSession? session;
       try {
-        session = await _transport.scanAndConnect(
-            namePrefix: 'AFU-', timeout: scanTimeout);
+        // Future.any 同时传播 scanFuture 的异常（下方 catch 归并原终态映射）
+        await Future.any(<Future<Object?>>[scanFuture, pending.future]);
+        if (pending.isCompleted) {
+          // 会话已终止而扫描可能仍在途：迟到产出的会话（真机上仅当扫描
+          // 恰在信号落地前已进入连接阶段才会出现）兜底归还，并吞掉迟到
+          // 异常防 unhandled error。此后 session 恒为 null，不再握手。
+          unawaited(scanFuture
+              .then((lateSession) => lateSession?.close())
+              .catchError((Object _) {}));
+          return await pending.future;
+        }
+        session = await scanFuture;
       } on TransportException catch (e) {
         // :67-71 蓝牙不可用；:130 连接断开/失败
         return await _terminate(

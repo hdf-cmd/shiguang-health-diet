@@ -15,12 +15,17 @@ void main() {
         child: const MaterialApp(home: Shell()),
       );
 
-  testWidgets('默认首页 tab；点"我的"切到档案占位屏', (tester) async {
+  testWidgets('默认首页 tab；点"我的"切到真实档案页（M4-T4 体重卡替换占位屏）',
+      (tester) async {
     await tester.pumpWidget(harness());
     expect(find.text('今日盘子'), findsOneWidget);
-    await tester.tap(find.text('我的'));
+    await tester.tap(find.text('我的').first);
     await tester.pumpAndSettle();
-    expect(find.text('我的（M2 接入）'), findsOneWidget);
+    // M1 占位 PlaceholderScreen('我的（M2 接入）') 已被 ProfileScreen 替换：
+    // 体重卡入口要素在场（细粒度行为在 test/profile_screen_test.dart 钉）
+    expect(find.text('我的（M2 接入）'), findsNothing);
+    expect(find.text('当前体重'), findsOneWidget);
+    expect(find.text('退出登录'), findsOneWidget);
   });
 
   // M1 遗留核销：ShellState 必须释放 PageController，否则泄漏。
