@@ -1,6 +1,7 @@
 // ShiguangFlutter/lib/features/profile/profile_screen.dart
-// M4 Task 4：「我的」页体——体重卡（当前值/手动 ±0.5/秤同步秒存）+ 退出登录。
-// 行为权威源 H5（提醒开关区留 T7，本页不含）：
+// M4 Task 4/7：「我的」页体——体重卡（当前值/手动 ±0.5/秤同步秒存）
+// + 消息提醒卡（T7：总开关/测试餐点/测试喝水）+ 退出登录。
+// 行为权威源 H5：
 // - index.html:459-482 记体重区：label「今日体重」、stepper −/＋（aria ±0.5kg）、
 //   保存、hint「点数字可直接输入…」、秤按钮「⚖️ 从体脂秤同步（光脚站上秤）」——文案逐字。
 // - js/app.js:910 弹层初始值 = 当前体重 || 55；:927-929 bumpBodyVal ±0.5、
@@ -28,6 +29,7 @@ import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
 import '../../domain/dates.dart' show todayIso;
 import '../home/home_controller.dart' show healthApiProvider;
+import '../notifications/reminder_scheduler.dart';
 import '../scale/scale_service.dart';
 
 /// 当前体重（body-metrics.weightKg；键名对齐 contract/fixtures/diet-core.json
@@ -86,6 +88,61 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   ScaleService? _scaleService; // dispose 时 cancel 用（不在 dispose 里读 ref）
 
   static const _kScanning = '正在寻找体脂秤…（请光脚站上秤）'; // ScaleSync.kt:98
+
+  // ---- T7 消息提醒卡 ----
+  /// 开关状态；null = enabled() 在途（初值经异步读偏好，build 里不 await）。
+  bool? _remindOn;
+
+  @override
+  void initState() {
+    super.initState();
+    // H5 renderRemindSwitch（app.js:1036-1042）等价：进页读一次开关初值。
+    // 读取失败静默按「关」渲染——对齐 Notify.kt:92-93 getBoolean(KEY_ON,false)
+    // 的默认关语义，且 H5 初值渲染本就无 toast 分支。
+    ref.read(reminderSchedulerProvider).enabled().then((v) {
+      if (mounted) setState(() => _remindOn = v);
+    }).catchError((Object _) {
+      if (mounted) setState(() => _remindOn = false);
+    });
+  }
+
+  /// 开关切换（app.js:1043-1049：先翻 UI 再落盘）。setEnabled 内部已联动
+  /// sync 排程/撤销（T6 reminder_scheduler.dart:179-183），UI 不再补 sync；
+  /// 失败回弹到切换前的值并 toast。
+  Future<void> _setReminders(bool on) async {
+    final prev = _remindOn;
+    setState(() => _remindOn = on); // renderRemindSwitch 的立即翻转
+    try {
+      await ref.read(reminderSchedulerProvider).setEnabled(on);
+      _toast(on ? '提醒已开启：每天定点弹系统通知' : '提醒已关闭'); // app.js:1048 逐字
+    } catch (_) {
+      if (mounted) setState(() => _remindOn = prev);
+      _toast('提醒开关设置失败'); // H5 桥为 fire-and-forget 无失败分支，文案自拟（报告登记）
+    }
+  }
+
+  /// 测试餐点提醒（app.js:1050-1053：testNotify → toast）。
+  Future<void> _testMealReminder() async {
+    try {
+      await ref.read(reminderSchedulerProvider).testMeal();
+      _toast('测试通知已发，看通知栏'); // app.js:1051 逐字
+    } catch (_) {
+      _toast('测试通知发送失败'); // 自拟，同上
+    }
+  }
+
+  /// 测试喝水提醒（app.js:1054-1059）。H5 toast「已发出：看状态栏胶囊 / 通知
+  /// 栏」中的灵动岛胶囊为 Android 原生壳专属，Flutter M4 无该形态，去半句留
+  /// 「看通知栏」；H5 的「开关未开则拒绝」分支对应 Kotlin 常驻卡缺失，
+  /// T6 testWater 与开关无关（直接 show 真实文案），故不搬该门禁。
+  Future<void> _testWaterReminder() async {
+    try {
+      await ref.read(reminderSchedulerProvider).testWater();
+      _toast('已发出：看通知栏'); // app.js:1058 裁剪版（见上）
+    } catch (_) {
+      _toast('喝水提醒发送失败'); // 自拟，同上
+    }
+  }
 
   @override
   void dispose() {
@@ -206,6 +263,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     color: Tokens.ink)),
             const SizedBox(height: Tokens.sp3),
             _weightCard(weight),
+            const SizedBox(height: Tokens.sp3),
+            _remindCard(),
             const SizedBox(height: Tokens.sp3),
             // 退出登录（index.html:456「退出登录」，danger 色）
             TextButton(
@@ -328,6 +387,65 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       return;
     }
     _saveWeight(w);
+  }
+
+  /// 消息提醒卡（index.html:227-237 remind-card 同构：标题+副文案行配右侧
+  /// 开关，下接两枚通栏 soft 按钮）。文案逐字抄 H5；开关 aria-label「消息
+  /// 提醒」→ Semantics。初值在途时开关禁用，防「未知态」下误翻。
+  Widget _remindCard() {
+    return Container(
+      padding: const EdgeInsets.all(Tokens.sp4),
+      decoration: BoxDecoration(
+        color: Tokens.surface,
+        borderRadius: BorderRadius.circular(Tokens.radiusLg),
+        boxShadow: Tokens.shadowCard,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('消息提醒 · 系统通知', // index.html:230 逐字
+                        style: TextStyle(
+                            fontSize: Tokens.textMd,
+                            fontWeight: FontWeight.w700,
+                            color: Tokens.ink)),
+                    const SizedBox(height: Tokens.sp1),
+                    const Text(
+                        '三餐定点 8:00/12:00/18:30 + 喝水每天 8 次随机（8:00–24:00），横幅弹出',
+                        // index.html:231 逐字
+                        style:
+                            TextStyle(fontSize: Tokens.textXs, color: Tokens.ink3)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: Tokens.sp2),
+              Semantics(
+                label: '消息提醒', // index.html:233 aria-label 逐字
+                child: Switch(
+                  value: _remindOn ?? false,
+                  onChanged: _remindOn == null ? null : _setReminders,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: Tokens.sp3),
+          FilledButton.tonal( // index.html:235 逐字
+            onPressed: _testMealReminder,
+            child: const Text('发一条测试通知'),
+          ),
+          const SizedBox(height: Tokens.sp3),
+          FilledButton.tonal( // index.html:236 逐字
+            onPressed: _testWaterReminder,
+            child: const Text('发一条喝水到点提醒（测试）'),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _stepBtn(String label, VoidCallback onTap, String hint) {

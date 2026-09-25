@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shiguang_flutter/app/shell.dart';
 import 'package:shiguang_flutter/features/home/home_controller.dart' show healthApiProvider;
 
+import 'harness.dart';
 import 'stubs/stub_health_api.dart';
 
 void main() {
@@ -17,6 +18,9 @@ void main() {
 
   testWidgets('默认首页 tab；点"我的"切到真实档案页（M4-T4 体重卡替换占位屏）',
       (tester) async {
+    // T7 在体重卡下方追加「消息提醒」卡，页体变高——不撑大视口的话
+    // 页尾「退出登录」落在 ListView 默认 800 视口缓存区外不被 build。
+    await useBigSurface(tester);
     await tester.pumpWidget(harness());
     expect(find.text('今日盘子'), findsOneWidget);
     await tester.tap(find.text('我的').first);
