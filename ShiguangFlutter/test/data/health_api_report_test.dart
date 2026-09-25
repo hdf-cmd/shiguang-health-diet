@@ -3,6 +3,7 @@
 // 零网络：注入记录 adapter，断言 HealthApi 发出的 envelope
 // {path, method:'GET', params, body:{}} 与契约（contract/fixtures/diet-core.json
 // 的 weekReport/monthReport/weightTrend 三条）一致；响应体原样透传。
+// M4-T1：RecordingAdapter 收敛到 test/harness.dart（与 contract_test 共用一份）。
 import 'dart:convert';
 import 'dart:io';
 
@@ -12,32 +13,10 @@ import 'package:shiguang_flutter/data/api_client.dart';
 import 'package:shiguang_flutter/data/health_api.dart';
 import 'package:shiguang_flutter/data/token_store.dart';
 
-/// 记录 envelope、回放指定响应 JSON 的 adapter
-class _RecordingAdapter implements HttpClientAdapter {
-  _RecordingAdapter(this.responseText);
-
-  /// 可换的回放体（不同路由测试在调用前覆写）
-  String responseText;
-  final List<Map<String, dynamic>> envelopes = [];
-
-  @override
-  Future<ResponseBody> fetch(RequestOptions options,
-      Stream<List<int>>? requestStream, Future<void>? cancelFuture) async {
-    final raw = requestStream == null
-        ? '{}'
-        : utf8.decode(await requestStream.expand((c) => c).toList());
-    envelopes.add(jsonDecode(raw) as Map<String, dynamic>);
-    return ResponseBody.fromString(responseText, 200, headers: {
-      'content-type': ['application/json; charset=utf-8'],
-    });
-  }
-
-  @override
-  void close({bool force = false}) {}
-}
+import '../harness.dart';
 
 void main() {
-  late _RecordingAdapter adapter;
+  late RecordingAdapter adapter;
   late HealthApi api;
 
   /// 回放样本取自 H5 采集口径：fixture 里三条只读路由的 responseSample
@@ -56,7 +35,7 @@ void main() {
     fixtureMonth = byRoute('monthReport');
     fixtureTrend = byRoute('weightTrend');
 
-    adapter = _RecordingAdapter(jsonEncode(fixtureWeek));
+    adapter = RecordingAdapter(responseText: jsonEncode(fixtureWeek));
     final dio = Dio()..httpClientAdapter = adapter;
     final store = InMemoryTokenStore();
     store.write(TokenData({

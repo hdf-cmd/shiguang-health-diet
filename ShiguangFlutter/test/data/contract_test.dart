@@ -7,6 +7,8 @@
 //   ② 只读路由的 responseSample 逐段 containsKey 覆盖 fixture.responseFields
 //      （点路径导航；responseShape=array 时作用于首元素）。
 // flutter test 的工作目录是 ShiguangFlutter/，故 fixture 用 ../contract/ 相对路径。
+// M4-T1：RecordingAdapter 收敛到 test/harness.dart（恒 200 + {} 即默认参数；
+// 契约流其余分支由 api_client_test.dart 覆盖，这里只关心 HealthApi 发了什么）。
 import 'dart:convert';
 import 'dart:io';
 
@@ -16,26 +18,7 @@ import 'package:shiguang_flutter/data/api_client.dart';
 import 'package:shiguang_flutter/data/health_api.dart';
 import 'package:shiguang_flutter/data/token_store.dart';
 
-/// 记录 envelope 的 adapter：恒 200 + {}（契约流其余分支由 api_client_test.dart 覆盖，
-/// 这里只关心 HealthApi 发出了什么 envelope）
-class _RecordingAdapter implements HttpClientAdapter {
-  final List<Map<String, dynamic>> envelopes = [];
-
-  @override
-  Future<ResponseBody> fetch(RequestOptions options,
-      Stream<List<int>>? requestStream, Future<void>? cancelFuture) async {
-    final raw = requestStream == null
-        ? '{}'
-        : utf8.decode((await requestStream.expand((c) => c).toList()));
-    envelopes.add(jsonDecode(raw) as Map<String, dynamic>);
-    return ResponseBody.fromString('{}', 200, headers: {
-      'content-type': ['application/json; charset=utf-8'],
-    });
-  }
-
-  @override
-  void close({bool force = false}) {}
-}
+import '../harness.dart';
 
 /// fixture 的一条路由契约
 class _Route {
@@ -84,11 +67,11 @@ List<_Route> _loadRoutes() {
 void main() {
   final routes = _loadRoutes();
 
-  late _RecordingAdapter adapter;
+  late RecordingAdapter adapter;
   late HealthApi api;
 
   setUp(() {
-    adapter = _RecordingAdapter();
+    adapter = RecordingAdapter();
     final dio = Dio()..httpClientAdapter = adapter;
     // 恒有登录态：Bearer 选择分支由 api_client_test.dart 覆盖
     final store = InMemoryTokenStore();

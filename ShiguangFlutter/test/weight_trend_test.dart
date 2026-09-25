@@ -17,6 +17,7 @@ import 'package:shiguang_flutter/features/report/report_screen.dart';
 import 'package:shiguang_flutter/features/report/weight_trend.dart';
 
 import 'stubs/stub_health_api.dart';
+import 'harness.dart';
 
 Widget chartHarness(List<double> points, List<String> labels) => MaterialApp(
       home: Scaffold(
@@ -217,8 +218,8 @@ void main() {
 
   Future<void> pumpReport(WidgetTester tester, StubHealthApi api) async {
     // 拉长视口：体重卡是页尾第 5 张卡，默认 600 高视口会落在缓存区外
-    await tester.binding.setSurfaceSize(const Size(500, 1600));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
+    // （视口样板 + addTearDown 复位收敛在 test/harness.dart 的 useBigSurface）
+    await useBigSurface(tester);
     await tester.pumpWidget(reportHarness(api));
     await tester.pumpAndSettle(); // 周柱 700ms 入场动画收敛
   }
@@ -245,9 +246,11 @@ void main() {
 
   testWidgets('体重卡错误态：后端 message + 重试，重试重新取数', (tester) async {
     final api = StubHealthApi(weightTrendError: ApiException('趋势加载失败'));
-    // 定步 pump 不推进时钟 → 不踩 Riverpod 3 失败退避重试（同 T4/T5 错误态用例）
-    await tester.binding.setSurfaceSize(const Size(500, 1600));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
+    // 定步 pump 不推进时钟 → 不踩 Riverpod 3 失败退避重试（同 T4/T5 错误态用例）。
+    // 注意：本用例的容器是 reportHarness 里的 ProviderScope，**不走**
+    // buildRootContainer，所以 M4-T1 的 retry: (_, _) => null 对它无效——
+    // 定步 pump 仍是必需，别当冗余删掉。
+    await useBigSurface(tester);
     await tester.pumpWidget(reportHarness(api));
     await tester.pump();
     await tester.pump();
@@ -303,8 +306,7 @@ void main() {
 
   testWidgets('周报错误态下体重卡仍在（index.html:170 静态卡框）', (tester) async {
     final api = StubHealthApi(weekError: ApiException('周报加载失败'));
-    await tester.binding.setSurfaceSize(const Size(500, 1600));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await useBigSurface(tester);
     await tester.pumpWidget(reportHarness(api));
     await tester.pump();
     await tester.pump();

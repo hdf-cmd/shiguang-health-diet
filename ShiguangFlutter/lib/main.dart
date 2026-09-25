@@ -2,47 +2,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app/auth_state.dart';
+import 'app/root_container.dart';
 import 'app/shell.dart';
 import 'app/theme.dart';
-import 'data/api_client.dart';
-import 'data/auth_api.dart';
-import 'data/health_api.dart';
-import 'data/token_store.dart';
 import 'features/auth/login_screen.dart';
-import 'features/home/home_controller.dart' show healthApiProvider;
-import 'features/record/food_freq.dart';
 
 void main() {
-  // 组合根：真实依赖只在这里拼装一次（SecureTokenStore → ApiClient → AuthApi/HealthApi），
-  // 经 ProviderContainer.overrides 注入；不造全局单例，测试在各自 scope
-  // 里 override 成桩（见 test/auth_flow_test.dart）。
-  // I1 断环：回调引用 container，container 的 overrides 又引用 apiClient，
-  // 用 late final 先声明 container、构造 ApiClient 时只捕获其闭包、随后回填。
-  late final ProviderContainer container;
-  final tokenStore = SecureTokenStore();
-  final apiClient = ApiClient(
-    tokenStore: tokenStore,
-    // 401 续期失败清 token → 门控直接置 anon 回登录页（forceAnon 幂等，
-    // 并发过期请求各触发一次无碍）
-    onSessionExpired: () =>
-        container.read(authStateProvider.notifier).forceAnon(),
-  );
-  final authApi = AuthApi(apiClient, tokenStore);
-  // 同构锚（终审 Minor-5）：这段 container 拼装与 test/auth_expiry_test.dart
-  // 的 `_expiryContainer` 是**手抄同构**（同一 late-final 断环 + 四个 override）。
-  // 改此处（增删 override、换回调签名）必同步改那里，否则会话过期用例验证的
-  // 就不是生产组合根。M4 计划把 buildRootContainer 工厂化根治，本注释是过渡保险。
-  container = ProviderContainer(
-    overrides: [
-      tokenStoreProvider.overrideWithValue(tokenStore),
-      apiClientProvider.overrideWithValue(apiClient),
-      authApiProvider.overrideWithValue(authApi),
-      healthApiProvider.overrideWithValue(HealthApi(apiClient)),
-      foodFreqStoreProvider.overrideWithValue(PrefsFoodFreqStore()),
-    ],
-  );
+  // 组合根：真实依赖的拼装收在 app/root_container.dart 的工厂里（M4-T1）。
+  // 不传参 = 生产链路（SecureTokenStore → ApiClient → AuthApi/HealthApi +
+  // PrefsFoodFreqStore + 过期回调接 forceAnon）；测试注入桩后调同一个工厂，
+  // 于是端到端用例验的就是生产装配本身（M3「手抄同构」地债已清）。
   runApp(UncontrolledProviderScope(
-    container: container,
+    container: buildRootContainer(),
     child: const ShiguangApp(),
   ));
 }
