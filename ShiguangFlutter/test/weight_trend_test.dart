@@ -267,22 +267,37 @@ void main() {
     expect(api.trendCalls, 2);
   });
 
-  testWidgets('体重卡区间联动：切月不重拉、切回周重拉（H5 app.js:260-266,269-274,280 两向锁）',
+  testWidgets('报告区间联动：切月不重拉趋势/周报、切回周并发重取、同区间再点"本周"仍重取'
+      '（H5 app.js:260-266,269-274,276-281 两向锁；终审 Important-2）',
       (tester) async {
     final api = StubHealthApi();
     await pumpReport(tester, api);
     expect(api.trendCalls, 1);
-    // 点"月" = loadMonthReport（app.js:269-274）：只换柱状图，不碰趋势
+    expect(api.weekCalls, 1);
+    // 点"月" = loadMonthReport（app.js:269-274）：只换柱状图数据源，
+    // 既不碰趋势也不重取周报
     await tester.tap(find.text('月'));
     await tester.pumpAndSettle();
     expect(api.trendCalls, 1);
+    expect(api.weekCalls, 1);
+    expect(api.monthCalls, 1);
     expect(find.text('体重趋势'), findsOneWidget);
     expect(find.text('当前 66.4 kg · 本周 -0.80 kg'), findsOneWidget);
     // 点"本周" = loadReportPage（app.js:260-266,280）：周报与趋势并发重取
-    // （T8 缓办 B：Flutter 此前切回不重取，与 H5 不一致）
+    // （T8 缓办 B：Flutter 此前切回不重取趋势，与 H5 不一致）
     await tester.tap(find.text('本周'));
     await tester.pumpAndSettle();
     expect(api.trendCalls, 2);
+    expect(api.weekCalls, 2);
+    expect(find.text('当前 66.4 kg · 本周 -0.80 kg'), findsOneWidget);
+    // 同区间重复点"本周"：H5 的 click 监听（app.js:276-281）没有
+    // "已选中就不重发"判断 → 每次点击都重新并发取周报+趋势
+    // （终审 Important-2：此前周报靠 autoDispose 重挂顺带重取，同区间再点
+    // 不发请求，与已 invalidate 的趋势口径相反）
+    await tester.tap(find.text('本周'));
+    await tester.pumpAndSettle();
+    expect(api.trendCalls, 3);
+    expect(api.weekCalls, 3);
     expect(find.text('当前 66.4 kg · 本周 -0.80 kg'), findsOneWidget);
   });
 

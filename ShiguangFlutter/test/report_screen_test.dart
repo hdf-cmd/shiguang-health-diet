@@ -70,6 +70,24 @@ void main() {
       if (i == todayIdx) continue;
       expect(find.text(days[i]), findsOneWidget);
     }
+
+    // 终审 Important-1：轴线落在**日期标签之下**（H5 .week-chart 的
+    // border-bottom 在 140 容器最底沿，而 .lbl 在 .col 内部，app.js:796-800
+    // → 浏览器里日期标签盖在轴线上方），不是柱区与标签之间。
+    final axisTop =
+        tester.getRect(find.byKey(const ValueKey('week-chart-axis'))).top;
+    final barBottom = tester
+        .getRect(find.byKey(const ValueKey('week-bar-fill-0')))
+        .bottom;
+    expect(axisTop, greaterThan(barBottom)); // 轴线在柱区之下
+    for (var i = 0; i < 7; i++) {
+      expect(
+          tester
+              .getRect(find.text(i == todayIdx ? '今天' : days[i]))
+              .bottom,
+          lessThanOrEqualTo(axisTop),
+          reason: '轴线应在标签 $i 之下');
+    }
   });
 
   testWidgets('几何与配色：0 kcal 柱 min 4% 高、over=warnSoft、正常=primarySoft（app.js:797-798 / screens.css:414-433）',
@@ -209,6 +227,17 @@ void main() {
     // 卡框 + 静态标题可见（对齐 H5 加载期形态）
     expect(find.text('每日热量 · 对比目标'), findsOneWidget);
     expect(find.byKey(const ValueKey('week-chart-skeleton')), findsOneWidget);
+    // 终审 Important-1 延伸 + T8 缓办（骨架线无 key 无断言）：加载期
+    // .week-chart 的 border-bottom 本就可见，且落点同样在标签占位之后
+    expect(find.byKey(const ValueKey('week-chart-axis-skeleton')),
+        findsOneWidget);
+    expect(
+        tester
+            .getRect(find.byKey(const ValueKey('week-chart-axis-skeleton')))
+            .top,
+        greaterThanOrEqualTo(
+            tester.getRect(find.byKey(const ValueKey('week-chart-skeleton'))).bottom -
+                0.5));
     // 数据位仍为空：日均文案 / 目标线标签 / 柱都不在树里
     expect(find.text(avgText), findsNothing);
     expect(find.text('目标 $target'), findsNothing);

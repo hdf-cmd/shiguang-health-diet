@@ -27,6 +27,10 @@ void main() {
         container.read(authStateProvider.notifier).forceAnon(),
   );
   final authApi = AuthApi(apiClient, tokenStore);
+  // 同构锚（终审 Minor-5）：这段 container 拼装与 test/auth_expiry_test.dart
+  // 的 `_expiryContainer` 是**手抄同构**（同一 late-final 断环 + 四个 override）。
+  // 改此处（增删 override、换回调签名）必同步改那里，否则会话过期用例验证的
+  // 就不是生产组合根。M4 计划把 buildRootContainer 工厂化根治，本注释是过渡保险。
   container = ProviderContainer(
     overrides: [
       tokenStoreProvider.overrideWithValue(tokenStore),

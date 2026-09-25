@@ -79,8 +79,15 @@ class WeekBarChart extends StatelessWidget {
             ],
           ),
         ),
+        // H5 .col 内部 lbl 与柱同列（gap 6）；Flutter 侧标签行在 140 轴下方，
+        // 保证柱高%与目标线%共用同一 140 基准（浏览器里 flex-shrink 会压柱，
+        // 该拆法即 H5 意图的无挤压等价形）。
+        const SizedBox(height: _barGap),
+        Row(children: labelChildren),
         // .week-chart border-bottom:1px solid --hairline（screens.css:407
-        // 图表轴线；T8 缓办 D①）——画在 140 柱区底沿即柱脚基线，标签行在下方。
+        // 图表轴线；终审 Important-1）——border-bottom 画在 140 容器**最底沿**，
+        // 而 .lbl 在 .col 内部（app.js:796-800）→ 浏览器里轴线在日期标签**之下**。
+        // 故这条线排在标签行之后，不是柱区与标签之间。
         const SizedBox(
           width: double.infinity,
           height: 1,
@@ -89,11 +96,6 @@ class WeekBarChart extends StatelessWidget {
             color: Tokens.hairline,
           ),
         ),
-        // H5 .col 内部 lbl 与柱同列（gap 6）；Flutter 侧标签行在 140 轴下方，
-        // 保证柱高%与目标线%共用同一 140 基准（浏览器里 flex-shrink 会压柱，
-        // 该拆法即 H5 意图的无挤压等价形）。
-        const SizedBox(height: _barGap),
-        Row(children: labelChildren),
       ],
     );
   }

@@ -157,8 +157,13 @@ class _ReportScreenState extends ConsumerState<ReportScreen> {
                 onTap: () {
                   // T8 缓办 B：app.js:276-281 点"周"走 loadReportPage
                   // （app.js:260-266），周报与 weight-trend **并发重取**；
-                  // 周报靠 autoDispose 重挂即重取，趋势被持续 watch → 须显式
-                  // invalidate 才对齐 H5。点"月"走 loadMonthReport 不碰趋势。
+                  // 点"月"走 loadMonthReport 不碰趋势。
+                  // 终审 Important-2（口径自洽）：此前只 invalidate 趋势、周报
+                  // 靠"切区间 autoDispose 重挂"顺带重取，于是**同区间重复点
+                  // "本周"**（已是 week，range 不变）不发请求，与 H5 每次点击
+                  // 都重发（app.js:280 无"已选中不重发"判断）相反 → 周报显式
+                  // invalidate，两条数据源同一口径。
+                  ref.invalidate(weekReportProvider);
                   ref.invalidate(weightTrendProvider);
                   ref.read(reportRangeProvider.notifier).state =
                       ReportRange.week;
@@ -432,11 +437,18 @@ class _ReportScreenState extends ConsumerState<ReportScreen> {
           ),
           // index.html:160 #week-chart 是静态 div：H5 加载期其
           // border-bottom:1px --hairline（screens.css:407）本就可见——
-          // 底线随骨架一起画（T8 缓办 D① 延伸）。
+          // 底线随骨架一起画（T8 缓办 D① 延伸）。终审 Important-1：
+          // border-bottom 在 .week-chart 容器最底沿，而日期标签 .lbl 在
+          // .col 内部（app.js:796-800）→ 轴线在标签之下；上面 140 占位就是
+          // 整个 .week-chart（含标签列），所以这条线本就在标签占位之后，
+          // 与数据态 week_chart.dart 的落点一致。补 key 供加载态用例断言。
           SizedBox(
             width: double.infinity,
             height: 1,
-            child: ColoredBox(color: Tokens.hairline),
+            child: ColoredBox(
+              key: ValueKey('week-chart-axis-skeleton'),
+              color: Tokens.hairline,
+            ),
           ),
         ],
       ),
