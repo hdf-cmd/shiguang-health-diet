@@ -472,6 +472,73 @@ void main() {
     expect(api.lastSearchKeyword, '奶茶');
   });
 
+  /* ---------- M5 终审 F2：搜索框旁常驻入口（≙ index.html:276 #sheet-cf-open） ---------- */
+
+  testWidgets('常驻「＋ 自定义」钮：开弹层即存在（空关键词）→ 点击开表单 '
+      'initialName 空（:1208 无关键词 || 空）→ 名称闸文案照旧（:1238）', (tester) async {
+    await useBigSurface(tester);
+    final api = StubHealthApi(foods: const <dynamic>[]);
+    final container = ProviderContainer(
+      overrides: [healthApiProvider.overrideWithValue(api)],
+      retry: (_, _) => null,
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp(theme: shiguangTheme(), home: const RecordScreen()),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('＋ 记一笔'));
+    await tester.pumpAndSettle();
+    // 常驻钮不依赖空结果态：开弹层（关键词空）即在搜索框行旁
+    expect(find.byKey(const ValueKey('sheet-cf-open')), findsOneWidget);
+    final searchCallsBefore = api.searchCalls;
+
+    // 点击 ≙ js/app.js:1275 openCustomFoodSheet()（无 fromLib）
+    await tester.tap(find.byKey(const ValueKey('sheet-cf-open')));
+    await tester.pumpAndSettle();
+    expect(find.text('自定义食物'), findsOneWidget); // 表单已开（标题 :509）
+    expect(nameText(tester), ''); // 无关键词 → initialName 为空
+    // 双保存钮齐全（fromLib 缺席 ≙ :1220-1221 不隐藏「仅入库」）
+    expect(find.byKey(cfSaveAddKey), findsOneWidget);
+    expect(find.byKey(cfSaveOnlyKey), findsOneWidget);
+
+    // 名称闸文案照旧：空名点保存 → :1238 逐字，零请求、不重查
+    await tapKey(tester, cfSaveOnlyKey);
+    await tester.pumpAndSettle();
+    expect(find.text('请填写食物名称'), findsOneWidget);
+    expect(api.customFoodBodies, isEmpty);
+    expect(api.searchCalls, searchCallsBefore);
+  });
+
+  testWidgets('常驻「＋ 自定义」钮：已输入关键词时点击 → 名称预填当时关键词',
+      (tester) async {
+    await useBigSurface(tester);
+    final api = StubHealthApi(foods: const <dynamic>[]);
+    final container = ProviderContainer(
+      overrides: [healthApiProvider.overrideWithValue(api)],
+      retry: (_, _) => null,
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp(theme: shiguangTheme(), home: const RecordScreen()),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('＋ 记一笔'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, '搜索食物库'), '奶茶');
+    await tester.pump(const Duration(milliseconds: 250)); // H5 200ms 防抖
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('sheet-cf-open')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('sheet-cf-open')));
+    await tester.pumpAndSettle();
+    expect(find.text('自定义食物'), findsOneWidget);
+    expect(nameText(tester), '奶茶'); // ≙ :1208 sheetKeyword || ''
+  });
+
   /* ---------- 保存防重（H5 单发按钮语义的 Flutter 等价闸） ---------- */
 
   testWidgets('入库在途连点保存 → addCustomFood 只发一次', (tester) async {

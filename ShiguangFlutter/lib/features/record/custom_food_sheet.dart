@@ -331,7 +331,10 @@ class _CustomFoodSheetState extends ConsumerState<_CustomFoodSheet> {
       }
       if (mounted) Navigator.of(context).pop(); // :1242 入库成功即关（先于记入，
       // 使「记入失败」不再提供重复入库的重入口——与 H5 close-then-add 同形）
-      widget.onSaved(); // :1251 fillSheetResults 重查语义
+      // onSaved ≙ H5 :1251 fillSheetResults 重查（差异登记，M5 终审 F3：
+      // H5 仅「仅入库」分支重查，「保存并记入」分支 closeSheet 回当日视图
+      // 不重查；Flutter 两分支统一回调＝良性增强——记入后列表同步可见）。
+      widget.onSaved();
       if (andAdd) {
         // :1244 记录 body 十字键；addRecord 内部 invalidate 当日
         // records+summary（≙ :1246-1247 refreshToday+loadRecordPage）+ 常吃续算。
@@ -622,8 +625,10 @@ class _CustomFoodSheetState extends ConsumerState<_CustomFoodSheet> {
 /// M5-T8 结转 A②（探针实证后换，test/custom_food_sheet_test.dart
 /// 「数字框字符类格式器」用例）：原 `^[0-9]*\.?[0-9]*$` 整串锚定在
 /// FilteringTextInputFormatter.allow 的「逐段提取匹配」语义下失效——
-/// '12.3.4'/'1e9'/'-5' 整串不匹配被**整体清空**（丢已输合法内容），
-/// '.5.' 反而被剪成 '5.'（放行非法多小数点）。字符类式逐字符过滤：
+/// '12.3.4'/'1e9'/'-5'/'.5.' 整串不匹配一律被**整体清空**（丢已输合法
+/// 内容；M5 终审 F1 勘误：旧表述称 '.5.' 被剪成 '5.' 放行非法多小数点，
+/// 复跑旧正则证实 allMatches 无匹配→join 为空串，'.5.' 亦整体清空）。
+/// 字符类式逐字符过滤：
 /// 合法字符保留、非法字符剔除。多小数点（'1.2.3'）不再被格式器拦下，
 /// 由 jsFormNum 解析失败归 0 + 保存闸（热量<=0 拒）兜底，与 H5
 /// `Number(v)||0` 语义同形（H5 的 type=number 非法值同样到不了业务层）。

@@ -8,9 +8,12 @@
 // 「已添加 X · 可继续添加」（676）、body 字段（678-682）、
 // 点击后按钮 disabled 防连点直到请求结束（677/693 → pending 期禁用 +「请稍候…」，
 // 文案同 H5 提交态 js/app.js:1902）。
-// 与 H5 差异：弹层内餐次分段移到记录页顶部（简报）。「＋ 自定义食物」空结果
-// 入口 M5-T7 已接线（cf-open，js/app.js:645-646/657-658）；H5 记一笔弹层头部
-// 的常驻「＋ 自定义」钮（index.html:276 #sheet-cf-open）简报范围外未接，登记报告。
+// 与 H5 差异：弹层内餐次分段移到记录页顶部（简报）。自定义食物两处入口均已
+// 接线（spec D1「空结果处 + 搜索框旁，H5 同位」）：空结果「＋ 自定义食物」
+// （cf-open，js/app.js:645-646/657-658，M5-T7）+ 搜索框旁常驻「＋ 自定义」
+// （≙ index.html:276 #sheet-cf-open；点击 ≙ js/app.js:1275
+// openCustomFoodSheet() 无 fromLib：initialName=当时关键词 :1208、无关键词
+// 为空，meal=当前餐次，双保存钮齐全；M5 终审 F2 补漏）。
 
 import 'dart:async';
 
@@ -141,6 +144,12 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
     }
   }
 
+  /// ≙ :1251 fillSheetResults(state.sheetKeyword)：以当时关键词重查
+  /// （invalidate 同键 family）。cf-open 空结果入口与常驻 sheet-cf-open
+  /// 共用。差异登记见 custom_food_sheet.dart onSaved 调用处注释。
+  void _requeryResults() =>
+      ref.invalidate(searchProvider((keyword: _keyword, meal: widget.meal)));
+
   @override
   Widget build(BuildContext context) {
     final query = (keyword: _keyword, meal: widget.meal);
@@ -175,11 +184,39 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
                 ],
               ),
               const SizedBox(height: Tokens.sp2),
-              TextField(
-                controller: _input,
-                onChanged: _onChanged,
-                decoration: const InputDecoration(hintText: '搜索食物库'),
-                textInputAction: TextInputAction.search,
+              // 搜索框行 + 常驻「＋ 自定义」钮（≙ index.html:276
+              // #sheet-cf-open，文案逐字；点击 ≙ js/app.js:1275
+              // openCustomFoodSheet()：initialName=当时关键词（:1208，无关键
+              // 词为空）、meal=当前餐次、date=弹层入参（结转 A①同源）。
+              // 布局：输入框 Expanded 收弹性、钮取固有紧凑 outlined 样式，
+              // 防挤掉输入框（theme minimumSize 已收口 Size(0,52) 有限值）。
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _input,
+                      onChanged: _onChanged,
+                      decoration:
+                          const InputDecoration(hintText: '搜索食物库'),
+                      textInputAction: TextInputAction.search,
+                    ),
+                  ),
+                  const SizedBox(width: Tokens.sp2),
+                  OutlinedButton(
+                    key: const ValueKey('sheet-cf-open'),
+                    onPressed: () => openCustomFoodSheet(
+                      context,
+                      date: widget.date,
+                      meal: widget.meal,
+                      initialName: _keyword,
+                      onSaved: _requeryResults,
+                    ),
+                    child: const Text('＋ 自定义', // index.html:276 逐字
+                        style: TextStyle(
+                            fontSize: Tokens.textSm,
+                            color: Tokens.primaryDeep)),
+                  ),
+                ],
               ),
               const SizedBox(height: Tokens.sp3),
               Expanded(
@@ -229,7 +266,8 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
                               // 空结果入口（js/app.js:645-646 #cf-open）：开
                               // 自定义食物表单，初始名=当时关键词（:1208）；
                               // onSaved ≙ :1251 fillSheetResults(sheetKeyword)
-                              // = 以当前关键词重查（invalidate 同键 family）。
+                              // 重查（_requeryResults；H5 仅入库分支重查，
+                              // Flutter 两分支统一，差异登记见该处注释）。
                               // date=弹层入参日期（M5-T8 结转 A①：记入日与
                               // 本弹层其他记入同源，消跨午夜 todayIso 双轨）。
                               OutlinedButton(
@@ -239,11 +277,7 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
                                   date: widget.date,
                                   meal: widget.meal,
                                   initialName: _keyword,
-                                  onSaved: () => ref.invalidate(
-                                      searchProvider((
-                                        keyword: _keyword,
-                                        meal: widget.meal,
-                                      ))),
+                                  onSaved: _requeryResults,
                                 ),
                                 child: const Text('＋ 自定义食物', // :646 逐字
                                     style: TextStyle(
