@@ -34,6 +34,7 @@ import '../common/food_thumb.dart';
 import '../home/home_controller.dart' show healthApiProvider;
 import '../notifications/reminder_scheduler.dart';
 import '../scale/scale_service.dart';
+import 'body_profile_card.dart' show BodyProfileCard;
 import 'profile_edit_sheet.dart'
     show avatarDataOf, avatarInitial, openProfileEditSheet;
 import 'profile_providers.dart' show profileProvider;
@@ -213,6 +214,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       final shown = rw is num ? _jsNum(rw) : _jsNum(w);
       _toast('已记录 $shown kg · 趋势已更新'); // app.js:944 逐字
       ref.invalidate(profileWeightProvider); // 卡上当前体重跟着更新（renderBodyCard 等价）
+      ref.invalidate(profileProvider); // M5-T6 计划 Step 2：身体卡/资料卡体重同步
     } on ApiException catch (e) {
       _toast('保存失败：${e.message}'); // app.js:946
     } catch (_) {
@@ -284,6 +286,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             _profileHead(), // M5-T5：资料卡（T6 身体卡接线次序：本行之后是体重卡）
             const SizedBox(height: Tokens.sp3),
             _weightCard(weight),
+            const SizedBox(height: Tokens.sp3),
+            const BodyProfileCard(), // M5-T6：身体参数卡（次序=资料头→体重卡→本卡→提醒卡）
             const SizedBox(height: Tokens.sp3),
             _remindCard(),
             const SizedBox(height: Tokens.sp3),

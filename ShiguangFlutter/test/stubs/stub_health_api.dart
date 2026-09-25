@@ -76,11 +76,21 @@ class StubHealthApi implements HealthApi {
   ApiException? profileError;
   int profileCalls = 0;
 
-  /// updateProfile 收到的 data（按调用顺序收集；成功时浅合并进 [profile]，
-  /// ≙ 云端语义 js/api.js:277「部分字段浅合并进用户文档」——供重取断言）
+  /// updateProfile 收到的 data（按调用顺序收集；成功时按云端语义并入，
+  /// ≙ api-diet index.js:213-232：nickname/signature 写顶层，身体六字段写
+  /// 文档顶层后经 profileToClient(:132-149) 以 p.body 嵌套返回——桩直接把
+  /// body 键并进 p['body']；客户端裸 bmi 键不收，仅 h/w 双在时重算（:222-224 同款）
   final List<Map<String, dynamic>> profileUpdateBodies =
       <Map<String, dynamic>>[];
   ApiException? profileUpdateError;
+
+  /* ---------- M5-T6 身体卡：setGoal（PUT /user/goal） ---------- */
+
+  /// setGoal 收到的 {dailyKcal,targetWeight}（按调用顺序收集）/ 次数 / 注错。
+  /// 成功时写回 p['goal']，供「重取回真值」断言（≙ api-diet :246-252）。
+  final List<Map<String, dynamic>> goalBodies = <Map<String, dynamic>>[];
+  int goalCalls = 0;
+  ApiException? setGoalError;
 
   /// updateAvatar 最近一次收到的 dataURL / 调用次数 / 注错
   String? lastAvatarData;
@@ -283,8 +293,49 @@ class StubHealthApi implements HealthApi {
     profileUpdateBodies.add(Map<String, dynamic>.from(data));
     if (profileUpdateError != null) throw profileUpdateError!;
     final p = profile ??= profileMap();
-    p.addAll(data); // 云端浅合并（js/api.js:277 注释面）
+    // 云端语义（api-diet index.js:213-232）：身体六字段族并进 body 嵌套返回面，
+    // 其余键（nickname/signature）写顶层；客户端裸 bmi 不收，h/w 双在才重算。
+    const bodyKeys = {
+      'heightCm', 'weightKg', 'age', 'gender', 'activity', 'deficit',
+    };
+    final bodyPatch = <String, dynamic>{
+      for (final e in data.entries)
+        if (bodyKeys.contains(e.key)) e.key: e.value,
+    };
+    if (bodyPatch.containsKey('heightCm') && bodyPatch.containsKey('weightKg')) {
+      final h = (bodyPatch['heightCm']! as num) / 100;
+      final w = bodyPatch['weightKg']! as num;
+      bodyPatch['bmi'] =
+          double.parse((w / (h * h)).toStringAsFixed(1)); // ≙ +(W/pow(H/100,2)).toFixed(1)
+    }
+    p.addAll(<String, dynamic>{
+      for (final e in data.entries)
+        if (!bodyKeys.contains(e.key) && e.key != 'bmi') e.key: e.value,
+    });
+    if (bodyPatch.isNotEmpty) {
+      final b = Map<String, dynamic>.of(
+          (p['body'] as Map?)?.cast<String, dynamic>() ?? const <String, dynamic>{});
+      b.addAll(bodyPatch);
+      p['body'] = b;
+    }
     return <String, dynamic>{'ok': true, ...p};
+  }
+
+  @override
+  Future<Map<String, dynamic>> setGoal(num dailyKcal, num targetWeight) async {
+    goalCalls++;
+    goalBodies.add(<String, dynamic>{
+      'dailyKcal': dailyKcal,
+      'targetWeight': targetWeight,
+    });
+    if (setGoalError != null) throw setGoalError!;
+    final p = profile ??= profileMap();
+    final g = Map<String, dynamic>.of(
+        (p['goal'] as Map?)?.cast<String, dynamic>() ?? const <String, dynamic>{});
+    g['dailyKcal'] = dailyKcal;
+    g['targetWeight'] = targetWeight;
+    p['goal'] = g; // ≙ api-diet :246-252 云端 goal 列写回
+    return <String, dynamic>{'ok': true};
   }
 
   @override
