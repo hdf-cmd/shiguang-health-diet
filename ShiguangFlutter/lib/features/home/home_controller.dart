@@ -41,6 +41,39 @@ final recordsProvider = FutureProvider.autoDispose
       .toList(growable: false);
 });
 
+/* ---------- M7-T3 水卡乐观态 per-date 化（M6 遗留「跨日遮蔽」债根治） ---------- */
+
+/// 某日喝水乐观杯数（null=无本地态，显示跟 [summaryProvider]）。
+/// 旧形态是 WaterCard 的单值 widget 字段 `_waterOverride`：切日期/他处
+/// invalidate 后仍以旧日乐观值遮蔽新日 summary 真值。H5 无此债——乐观写
+/// 直改 state.summary.water 本体（app.js:438/457 实读），切日期即
+/// loadSummary 整体重写（:222 实读）；Flutter 侧 summary 是不可直写的
+/// family 缓存，故乐观值独立成壳，并按 date 隔离（根治点=per-date key）。
+/// keepAlive（非 autoDispose）：切走再回同日，回包前写入的态仍在
+/// （water_card_test ⑤ 钉；同日真值同步由回包/回滚路径负责）。
+/// 登出/换号整族失效见 auth_state._invalidateAccountScopedCaches。
+final waterOverrideProvider =
+    NotifierProvider.family<WaterOverride, int?, String>(
+  WaterOverride.new,
+);
+
+class WaterOverride extends Notifier<int?> {
+  WaterOverride(this.date);
+
+  /// family 实参（≙ 水卡当前页 date，语境=plateDateProvider）
+  final String date;
+
+  @override
+  int? build() => null;
+
+  /// 乐观写（≙ 旧 setState(_waterOverride = prev ± 1)）：base 为点击时
+  /// 显示杯数（override ?? summary 杯数），≙ H5 `prev`（app.js:437/456）。
+  void bump(int base, int delta) => state = base + delta;
+
+  /// 回包跟值 / 失败回滚（≙ app.js:444/447、462/465 对 state 的直写）。
+  void apply(int cups) => state = cups;
+}
+
 /* ---------- M7-T1 首页日期状态机（≙ H5 state.date + renderPlateDate/shiftDate） ---------- */
 
 /// 首页/记录页共享日期（≙ H5 state.date，app.js:215-224）。初值=今天；

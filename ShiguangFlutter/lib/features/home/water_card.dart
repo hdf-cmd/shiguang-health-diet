@@ -1,5 +1,5 @@
 // ShiguangFlutter/lib/features/home/water_card.dart
-// 首页喝水卡（M6-T4 喝水闭环）。行为权威源 js/app.js:409-467 +
+// 首页喝水卡（M6-T4 喝水闭环）。行为权威源 js/app.js:409-469 +
 // index.html:111-131（water-widget DOM），文案逐字；版式 R4 自主（对齐首页
 // 既有卡样式，色值取 H5 screens.css:303-392 water 族：fill 渐变
 // #8FBCD4→nut-fat、杯描边 nut-fat、刻度 --surface）。
@@ -7,11 +7,14 @@
 // 目标=waterGoalMlOf(profileProvider)（M6-T7 F3/F4 收敛：≙ app.js:1948
 // `goal.waterMl || 1600` falsy 支——waterMl=0 也落 1600，顶格闸不误恒触发；
 // 缺省/在途同 1600 档，≙ state.js:13 初值）。
-// 乐观更新 ≙ app.js:438-448/455-465 同构：本地 _waterOverride（null=跟
-// provider）→ 成功跟回包 water → 失败回滚 + toast「同步失败：{msg}」。
+// 乐观更新 ≙ app.js:438-449/457-467 同构：per-date 本地态
+// waterOverrideProvider(date)（null=跟 provider；M7-T3 自 widget 单值字段
+// _waterOverride 搬出，根治「切日期后旧日乐观值遮蔽新日 summary 真值」债；
+// 函数体仅状态搬家，显示与 toast 文案零变更）→ 成功跟回包 water →
+// 失败回滚 + toast「同步失败：{msg}」。
 // 不移植登记（R4/M4 降级面，详见 task-4-report 差异表）：
-// - buzz(6) 振动（app.js:439,68 navigator.vibrate）：Flutter 未引 haptics；
-// - SGNative.updateWaterProgress 常驻通知/灵动岛同步（app.js:426-429）：
+// - buzz(6) 振动（app.js:440,68 navigator.vibrate）：Flutter 未引 haptics；
+// - SGNative.updateWaterProgress 常驻通知/灵动岛同步（app.js:427-428）：
 //   Android 原生壳专属，M4 已定降级面不移植；
 // - animateNum 数字滚动（app.js:417 anime.js）与 fill/level 0.5s 过渡：
 //   Flutter 直显终值（无隐式动画，避免 pumpAndSettle 语义纠缠）。
@@ -25,7 +28,8 @@ import '../../domain/dates.dart' show dateLabelOf, todayIso;
 import '../../domain/js_compat.dart' show jsOr;
 import '../profile/profile_providers.dart' show profileProvider, waterGoalMlOf;
 import 'goal_sheet.dart' show openGoalSheet;
-import 'home_controller.dart' show healthApiProvider, summaryProvider;
+import 'home_controller.dart'
+    show healthApiProvider, summaryProvider, waterOverrideProvider, WaterOverride;
 
 @visibleForTesting
 const waterTitleKey = Key('water-title'); // index.html:113 #water-title
@@ -73,9 +77,11 @@ class WaterCard extends ConsumerStatefulWidget {
 }
 
 class _WaterCardState extends ConsumerState<WaterCard> {
-  /// 乐观态杯数：null=跟 provider；非 null=本地先行值/回包值
-  /// （≙ H5 直接改写 state.summary.water，app.js:438-448/455-465 同构）
-  int? _waterOverride;
+  /// per-date 乐观态写入口（≙ 旧 setState(_waterOverride = …)；M7-T3 起
+  /// 状态搬进 waterOverrideProvider(widget.date)，重渲染由 build 的 watch
+  /// 自动触发，不再走 setState）。
+  WaterOverride _override() =>
+      ref.read(waterOverrideProvider(widget.date).notifier);
 
   void _toast(String msg) {
     if (!mounted) return;
@@ -84,52 +90,52 @@ class _WaterCardState extends ConsumerState<WaterCard> {
       ..showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  /// ≙ app.js:448/465 `e.message || '网络异常'`（ApiException 露后端 message）
+  /// ≙ app.js:449/467 `e.message || '网络异常'`（ApiException 露后端 message）
   static String _errText(Object e) =>
       e is ApiException ? jsOr(e.message, '网络异常') : '网络异常';
       // ≙ e.message || '网络异常'（终审 Minor-1 与 exercise 族统一口径）
 
-  /// 喝一杯（≙ drinkOneCup，app.js:432-449）
+  /// 喝一杯（≙ drinkOneCup，app.js:432-451）
   Future<void> _drink(int n, int goal) async {
     if (n * waterCupMl >= goal) {
       _toast('目标 ${goal}ml 已达成，明天继续'); // :434 逐字
       return; // :435 零请求（H5 直接 return）
     }
     final prev = n;
-    setState(() => _waterOverride = prev + 1); // :439 乐观
-    // :440 renderWater → :441 toast（乐观值口径，先于回包）
+    _override().bump(prev, 1); // :438 乐观
+    // :439 renderWater → :441 toast（乐观值口径，先于回包）
     _toast('+${waterCupMl}ml · 已喝 ${(prev + 1) * waterCupMl}ml');
     try {
       final res = await ref
           .read(healthApiProvider)
-          .addWater(1, widget.date); // :442-443
-      final water = (res['water'] as num?)?.round(); // 云回包恒含 water（:447 截断回显）
+          .addWater(1, widget.date); // :443
+      final water = (res['water'] as num?)?.round(); // 云回包恒含 water（:444 截断回显）
       if (!mounted) return;
-      setState(() => _waterOverride = water ?? prev + 1); // :444-445 跟回包
+      _override().apply(water ?? prev + 1); // :444 跟回包
     } catch (e) {
       if (!mounted) return;
-      setState(() => _waterOverride = prev); // :446-447 回滚
-      _toast('同步失败：${_errText(e)}'); // :448
+      _override().apply(prev); // :447 回滚
+      _toast('同步失败：${_errText(e)}'); // :449
     }
   }
 
-  /// 撤销上一杯（≙ #water-undo click，app.js:452-467）
+  /// 撤销上一杯（≙ #water-undo click，app.js:454-469）
   Future<void> _undo(int n) async {
-    if (n <= 0) return; // :453（按钮隐藏态本不可点，双保险同 H5）
+    if (n <= 0) return; // :455（按钮隐藏态本不可点，双保险同 H5）
     final prev = n;
-    setState(() => _waterOverride = prev - 1); // :455-456 乐观
-    _toast('已退回一杯 · 剩 ${(prev - 1) * waterCupMl}ml'); // :458 乐观值口径
+    _override().bump(prev, -1); // :457 乐观
+    _toast('已退回一杯 · 剩 ${(prev - 1) * waterCupMl}ml'); // :459 乐观值口径
     try {
       final res = await ref
           .read(healthApiProvider)
-          .addWater(-1, widget.date); // :460
+          .addWater(-1, widget.date); // :461
       final water = (res['water'] as num?)?.round();
       if (!mounted) return;
-      setState(() => _waterOverride = water ?? prev - 1); // :461-462 跟回包
+      _override().apply(water ?? prev - 1); // :462 跟回包
     } catch (e) {
       if (!mounted) return;
-      setState(() => _waterOverride = prev); // :463-464 回滚
-      _toast('同步失败：${_errText(e)}'); // :465
+      _override().apply(prev); // :465 回滚
+      _toast('同步失败：${_errText(e)}'); // :467
     }
   }
 
@@ -138,7 +144,8 @@ class _WaterCardState extends ConsumerState<WaterCard> {
     final summary = ref.watch(summaryProvider(widget.date));
     final goal = waterGoalMlOf(ref.watch(profileProvider));
     final loading = !summary.hasValue;
-    final n = _waterOverride ?? summary.value?.water.round() ?? 0;
+    final n = ref.watch(waterOverrideProvider(widget.date)) ??
+        summary.value?.water.round() ?? 0;
     final ml = n * waterCupMl; // :414
     final reached = ml >= goal; // :415
     final pct = (ml / goal * 100).clamp(0.0, 100.0); // :416 Math.min(100,·)
@@ -288,8 +295,8 @@ class _WaterCardState extends ConsumerState<WaterCard> {
                   loading
                       ? '加载中'
                       : (reached
-                            ? '目标已达成 🎉' // :423 reached 支逐字
-                            : '已喝 $n 杯 · 每杯 ${waterCupMl}ml'), // :423 未达支逐字
+                            ? '目标已达成 🎉' // :424 reached 支逐字
+                            : '已喝 $n 杯 · 每杯 ${waterCupMl}ml'), // :424 未达支逐字
                   style: const TextStyle(
                     fontSize: Tokens.textSm,
                     color: Tokens.ink3,
@@ -300,7 +307,7 @@ class _WaterCardState extends ConsumerState<WaterCard> {
                 key: waterUndoKey,
                 visible:
                     !loading &&
-                    n > 0, // :424 visibility:hidden 保位 ≙ maintainSize
+                    n > 0, // :425 visibility:hidden 保位 ≙ maintainSize
                 maintainSize: true,
                 maintainAnimation: true,
                 maintainState: true,
@@ -341,7 +348,8 @@ class _WaterCardState extends ConsumerState<WaterCard> {
         key: waterCupKey,
         onTap: () {
           final summary = ref.read(summaryProvider(widget.date));
-          final n = _waterOverride ?? summary.value?.water.round() ?? 0;
+          final n = ref.read(waterOverrideProvider(widget.date)) ??
+              summary.value?.water.round() ?? 0;
           _drink(n, waterGoalMlOf(ref.read(profileProvider)));
         },
         child: SizedBox(

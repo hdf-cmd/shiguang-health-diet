@@ -40,11 +40,17 @@ class StubHealthApi implements HealthApi {
     this.setWaterGoalError,
     this.waterCupsByDate,
     this.addWaterError,
+    this.summaryByDate,
   });
 
   /// 成功返回体（null 时按全零汇总/空记录处理）
   Map<String, dynamic>? summary;
   List<dynamic>? records;
+
+  /// M7-T3：非空时优先按请求 date 取该日汇总（缺日期落 [summary] 再落默认档）。
+  /// 跨日用例需要「今天/昨天 summary 不同值」才能证水卡显的是当日真值
+  /// （同法 exercisesByDate）。
+  Map<String, Map<String, dynamic>>? summaryByDate;
 
   /// 非空 → 对应方法抛该异常（可在测试中途清空，模拟"重试后成功"）
   ApiException? summaryError;
@@ -316,7 +322,8 @@ class StubHealthApi implements HealthApi {
     summaryDates.add(date);
     if (summaryError != null) throw summaryError!;
     if (summaryGate != null) await summaryGate!.future;
-    return summary ?? summaryMap();
+    // M7-T3：summaryByDate 优先（跨日用例按 date 给不同真值），否则回退单值档
+    return summaryByDate?[date] ?? summary ?? summaryMap();
   }
 
   @override
@@ -571,11 +578,13 @@ class StubHealthApi implements HealthApi {
     if (waterGate != null) await waterGate!.future;
     // 云语义（api-diet index.js:436-447）：date 缺省=云 today()（UTC 日，同真
     // HealthApi._todayUtc 口径）；cups=当日旧值+delta 截断 [0,15] 写回并回显。
-    // 旧值取 summary.water（测试注 seed），≙ 云读 sg_water 当日文档。
+    // 旧值取 summary.water（测试注 seed），≙ 云读 sg_water 当日文档；
+    // M7-T3：summaryByDate 在场时先取该日 seed（与 getDailySummary 同档）。
     final key =
         date ?? DateTime.now().toUtc().toIso8601String().substring(0, 10);
-    final current =
-        waterCupsByDate?[key] ?? ((summary?['water'] as num?) ?? 0).round();
+    final current = waterCupsByDate?[key] ??
+        ((summaryByDate?[key]?['water'] ?? summary?['water']) as num? ?? 0)
+            .round();
     final cups = (current + delta).clamp(0, 15);
     (waterCupsByDate ??= <String, int>{})[key] = cups;
     return <String, dynamic>{'water': cups};

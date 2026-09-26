@@ -18,7 +18,7 @@ import 'package:shiguang_flutter/domain/dates.dart' show todayIso;
 import 'package:shiguang_flutter/features/exercise/exercise_controller.dart'
     show exerciseKcalProvider, exercisesProvider;
 import 'package:shiguang_flutter/features/home/home_controller.dart'
-    show summaryProvider;
+    show summaryProvider, waterOverrideProvider;
 import 'package:shiguang_flutter/features/profile/profile_screen.dart'
     show profileWeightProvider;
 import 'package:shiguang_flutter/features/record/food_freq.dart'
@@ -93,7 +93,7 @@ void main() {
       '[{"id":"x1","key":"run","name":"跑步","emoji":"🏃","amount":1,"unit":"min","kcal":100}]';
   const kExB = '[]';
 
-  test('登出→换号重登：profileWeight/summary/weekReport/exercises/foodFreq 全部失效，重读发新请求拿新账号值',
+  test('登出→换号重登：profileWeight/summary/weekReport/exercises/waterOverride/foodFreq 全部失效，重读发新请求拿新账号值',
       () async {
     final store = await signedInStore();
     final freqStore = _MemFreqStore();
@@ -128,6 +128,9 @@ void main() {
     addTearDown(exSub.close);
     expect(await container.read(exercisesProvider(date).future), hasLength(1));
     expect(container.read(exerciseKcalProvider(date)), 100);
+    // M7-T3：水卡 per-date 乐观杯数（keepAlive family）同属账号级内存态
+    container.read(waterOverrideProvider(date).notifier).apply(5);
+    expect(container.read(waterOverrideProvider(date)), 5);
     await container.read(foodFreqProvider.notifier).record('苹果');
     expect(container.read(foodFreqProvider), {'苹果': 1});
     expect(adapter.countOf('/user/body-metrics'), 1);
@@ -166,6 +169,8 @@ void main() {
     expect(adapter.countOf('/diet/exercises'), greaterThan(1));
     // 常吃计数：provider 回空（内存态随登出清空；prefs 面按终审处方不动）
     expect(container.read(foodFreqProvider), isEmpty);
+    // M7-T3：水卡乐观杯数随登出/换号归 null（显示回新账号 summary 真值）
+    expect(container.read(waterOverrideProvider(date)), isNull);
   });
 
   test('会话过期→直接换号登录（不经过 signOut）：submit 成功后同样不带 A 残留',

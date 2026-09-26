@@ -13,7 +13,8 @@ import '../data/token_store.dart';
 // app→features 的单向依赖本就存在（root_container.dart 同层同法拼装），
 // home_controller ↔ auth_state 的文件级环 Dart 合法且此前已成立。
 import '../features/exercise/exercise_controller.dart' show exercisesProvider;
-import '../features/home/home_controller.dart' show recordsProvider, summaryProvider;
+import '../features/home/home_controller.dart'
+    show recordsProvider, summaryProvider, waterOverrideProvider;
 import '../features/profile/profile_providers.dart' show profileProvider;
 import '../features/profile/profile_screen.dart' show profileWeightProvider;
 import '../features/record/food_freq.dart' show foodFreqProvider;
@@ -66,6 +67,9 @@ class AuthNotifier extends Notifier<AuthStatus> {
       ..invalidate(profileWeightProvider)
       ..invalidate(summaryProvider) // family：整族失效
       ..invalidate(recordsProvider) // family：整族失效
+      ..invalidate(waterOverrideProvider) // M7-T3：水卡 per-date 乐观杯数
+      // （keepAlive family）整族失效——组合根 container 终身存活，上一账号
+      // 未落 summary 缓存的本地杯数不得带进新账号（account_switch 钉）
       ..invalidate(exercisesProvider) // M6-T3/M7-T2：运动记录 family（Notifier
       // +autoDispose）整族失效；在体监听（Shell 未卸）即刻重取新账号真值
       ..invalidate(weekReportProvider)

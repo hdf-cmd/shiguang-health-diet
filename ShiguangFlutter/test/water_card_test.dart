@@ -17,6 +17,9 @@
 //   （:480 逐字）；保存 setWaterGoal → 关层 → toast「喝水目标已设为 {回包}ml」；
 //   200 步进/失焦归一在 UI 层（app.js:1653-1654），云端只做 [800,3000] 截断。
 // - profileProvider invalidate：保存后 goal 行与「我的」页联动（上游事实）。
+// M7-T3：水卡本地乐观态由 widget 单值字段 _waterOverride 搬进
+// waterOverrideProvider.family(date)——⑤跨日钉证 per-date 隔离（修复前红：
+// 单值态切昨天仍遮蔽真值）。
 // 桩云语义锁（评审遗留修正）：setWaterGoal(0) → Number(x)||1600 → 1600（非截断 800）。
 import 'dart:async';
 
@@ -25,9 +28,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shiguang_flutter/app/theme.dart' show shiguangTheme;
 import 'package:shiguang_flutter/data/api_client.dart' show ApiException;
-import 'package:shiguang_flutter/domain/dates.dart' show todayIso;
+import 'package:shiguang_flutter/domain/dates.dart' show localIso, todayIso;
 import 'package:shiguang_flutter/features/home/home_controller.dart'
-    show healthApiProvider;
+    show healthApiProvider, plateDateProvider, waterOverrideProvider;
 import 'package:shiguang_flutter/features/home/water_card.dart'
     show
         WaterCard,
@@ -385,6 +388,94 @@ void main() {
         '1800',
       );
       expect(find.text('最大 3000ml'), findsNothing); // 非顶格无 toast
+    },
+  );
+
+  /* ---------- M7-T3 ⑤ 跨日钉：乐观态 per-date 隔离（waterOverrideProvider） ---------- */
+
+  /// 与 domain/dates.dart 同口径的「N 天前」（日历日相减，home_plate_date_test 同法）
+  String isoDaysAgo(int n) {
+    final now = DateTime.now();
+    return localIso(DateTime(now.year, now.month, now.day - n));
+  }
+
+  /// 生产语境挂卡：date 源=plateDateProvider（≙ home_screen :125/:191），
+  /// 用例直改该 provider 模拟 ‹ › 翻日（日期闸语义 T1 已钉，这里只喂 date）。
+  Future<ProviderContainer> pumpCardOnPlateDate(
+    WidgetTester tester,
+    StubHealthApi api,
+  ) async {
+    await useBigSurface(tester);
+    final container = ProviderContainer(
+      overrides: [healthApiProvider.overrideWithValue(api)],
+      retry: (_, _) => null, // 禁默认退避重试（home_plate_date_test 同法）
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: shiguangTheme(),
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: Consumer(
+                builder: (context, ref, _) =>
+                    WaterCard(date: ref.watch(plateDateProvider)),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    return container;
+  }
+
+  testWidgets(
+    '⑤跨日：今天喝一杯(override=1)→‹切昨天显昨天 summary(无 override 泄漏)→›回今天 override 态仍在',
+    (tester) async {
+      final today = todayIso();
+      final y = isoDaysAgo(1);
+      final api = StubHealthApi(
+        profile: StubHealthApi.profileMap(), // goal.waterMl=1600
+        // 两日真值不同：今天 0 杯、昨天 2 杯（旧 bug 形态：单值 override
+        // 切日后仍遮蔽，昨天会显今天的 200ml/1 杯）
+        summaryByDate: {
+          today: StubHealthApi.summaryMap(water: 0),
+          y: StubHealthApi.summaryMap(water: 2),
+        },
+      );
+      final container = await pumpCardOnPlateDate(tester, api);
+      expect(tester.widget<Text>(find.byKey(waterMlKey)).data, '0');
+      expect(container.read(waterOverrideProvider(today)), isNull); // 初值=无本地态
+
+      // 喝一杯：addWater(1,今天) 回包 water=1 → 今天 per-date override=1，显 200
+      await tester.tap(find.byKey(waterCupKey));
+      await tester.pumpAndSettle();
+      expect(api.waterBodies, [(delta: 1, date: today)]); // :443 date=当前页 date
+      expect(tester.widget<Text>(find.byKey(waterMlKey)).data, '200');
+      expect(find.text('已喝 1 杯 · 每杯 200ml'), findsOneWidget);
+      expect(container.read(waterOverrideProvider(today)), 1); // 成功回包跟回包值（:444）
+
+      // ‹ 切昨天：水卡显昨天 summary 真值 400（无 override 泄漏）
+      container.read(plateDateProvider.notifier).state = y;
+      await tester.pumpAndSettle();
+      expect(find.text('喝水 · 昨天'), findsOneWidget); // :413 非今日支
+      expect(tester.widget<Text>(find.byKey(waterMlKey)).data, '400');
+      expect(find.text('已喝 2 杯 · 每杯 200ml'), findsOneWidget);
+      expect(container.read(waterOverrideProvider(y)), isNull); // 昨天无本地态
+      expect(container.read(waterOverrideProvider(today)), 1); // 今天的态不被顺带清
+
+      // › 回今天：summary 重取仍是 0 杯（autoDispose 回访重取），
+      // 显示仍跟今天的 per-date override=1（回包/回滚路径负责更新该态）
+      container.read(plateDateProvider.notifier).state = today;
+      await tester.pumpAndSettle();
+      expect(find.text('喝水打卡'), findsOneWidget);
+      expect(tester.widget<Text>(find.byKey(waterMlKey)).data, '200');
+      expect(find.text('已喝 1 杯 · 每杯 200ml'), findsOneWidget);
+      expect(container.read(waterOverrideProvider(today)), 1);
+      // 两日各取各的真值（date 序列：首取今天 → 昨天 → 回访今天重取）
+      expect(api.summaryDates, [today, y, today]);
     },
   );
 }
