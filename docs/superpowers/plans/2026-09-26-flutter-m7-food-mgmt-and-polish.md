@@ -47,7 +47,7 @@ contract/fixtures/diet-core.json          # T4 路由锁条目
 
 ---
 
-### Task T1: 首页日期状态机 + plate-head ‹› + 问候头
+### Task 1: 首页日期状态机 + plate-head ‹› + 问候头
 
 **Files:**
 - Modify: `ShiguangFlutter/lib/features/home/home_controller.dart`（+plateDateProvider）
@@ -92,7 +92,7 @@ home_screen.dart：plate-head 行 = `Row[TextButton('‹'), 胶囊(Text+small), 
 
 ---
 
-### Task T2: 运动 ExercisesNotifier 化 + 乐观 temp 行（R4 差异 #1/#2 退役批）
+### Task 2: 运动 ExercisesNotifier 化 + 乐观 temp 行（R4 差异 #1/#2 退役批）
 
 **Files:**
 - Modify: `ShiguangFlutter/lib/features/exercise/exercise_controller.dart`（重写为 Notifier）
@@ -157,7 +157,7 @@ final exercisesProvider = AsyncNotifierProvider.family<ExercisesNotifier, List<M
 
 ---
 
-### Task T3: 水卡 per-date override（跨日遮蔽债根治）
+### Task 3: 水卡 per-date override（跨日遮蔽债根治）
 
 **Files:**
 - Modify: `home_controller.dart`（+`waterOverrideProvider` family）、`water_card.dart`、`goal_sheet.dart`（invalidate 点）
@@ -174,7 +174,7 @@ final exercisesProvider = AsyncNotifierProvider.family<ExercisesNotifier, List<M
 
 ---
 
-### Task T4: 我的食物库管理弹层
+### Task 4: 我的食物库管理弹层
 
 **Files:**
 - Create: `ShiguangFlutter/lib/features/profile/food_lib_sheet.dart`
@@ -193,7 +193,7 @@ final exercisesProvider = AsyncNotifierProvider.family<ExercisesNotifier, List<M
 
 ---
 
-### Task T5: 目标体重编辑弹层 + setGoal 双 try 收口
+### Task 5: 目标体重编辑弹层 + setGoal 双 try 收口
 
 **Files:**
 - Create: `ShiguangFlutter/lib/features/profile/goal_edit_sheet.dart`
@@ -210,7 +210,7 @@ final exercisesProvider = AsyncNotifierProvider.family<ExercisesNotifier, List<M
 
 ---
 
-### Task T6: 记录页 7 天日期行
+### Task 6: 记录页 7 天日期行
 
 **Files:**
 - Modify: `record_screen.dart`（顶部 chip 行 + 列表 date 源）
@@ -224,7 +224,7 @@ final exercisesProvider = AsyncNotifierProvider.family<ExercisesNotifier, List<M
 
 ---
 
-### Task T7: actualDeficit 近 7 天实际缺口接线
+### Task 7: actualDeficit 近 7 天实际缺口接线
 
 **Files:**
 - Modify: `profile_providers.dart`（+actualDeficitProvider）、`body_profile_card.dart`（代谢卡消费点，删「恒 null 降级」注记）
@@ -240,7 +240,7 @@ final exercisesProvider = AsyncNotifierProvider.family<ExercisesNotifier, List<M
 
 ---
 
-### Task T8: C 卫生批（终审 Minor 清账）
+### Task 8: C 卫生批（终审 Minor 清账）
 
 **Files / 逐项:**
 1. `advice_card.dart`：`?? 55` → falsy 口径 `(w is num && w != 0) ? w : 55`（≙ `||55`，终审 Minor-2 销账）。
@@ -257,7 +257,7 @@ final exercisesProvider = AsyncNotifierProvider.family<ExercisesNotifier, List<M
 
 ---
 
-### Task T9: 收官——2.5.0 四门禁+正式包+目检链+真机验收单
+### Task 9: 收官——2.5.0 四门禁+正式包+目检链+真机验收单
 
 - [ ] **Step 1:** `pubspec.yaml` → `2.5.0+20500`；`npm run check:version` 双验。
 - [ ] **Step 2:** 四门禁：`dart analyze lib test` 0 / `flutter test` 全绿报数 / `node --test "tests/*.test.js"` 全绿（fixture 新增条数计入）/ check:version 过。
