@@ -32,6 +32,12 @@ class StubHealthApi implements HealthApi {
     this.logWeightError,
     this.profile,
     this.profileError,
+    this.exercisesByDate,
+    this.exerciseError,
+    this.addExerciseError,
+    this.deleteExerciseError,
+    this.waterGoal,
+    this.setWaterGoalError,
   });
 
   /// 成功返回体（null 时按全零汇总/空记录处理）
@@ -125,6 +131,32 @@ class StubHealthApi implements HealthApi {
 
   /// 非空 → addCustomFood 先 await 它再返回（模拟慢网，验证保存按钮防重）
   Completer<void>? customFoodGate;
+
+  /* ---------- M6-T1 运动卡：getExercises / addExercise / deleteExercise ---------- */
+
+  /// getExercises 成功返回体：按日期索引的运动记录列表（null/缺日期 → 空数组，
+  /// ≙ 云 index.js:343-351 当日无记录回 []）。单条形状锁自 contract fixture
+  /// routes[exercises].responseFields（云端不回 createdAt，见该条登记注）。
+  Map<String, List<Map<String, dynamic>>>? exercisesByDate;
+  ApiException? exerciseError;
+  int exerciseCalls = 0;
+
+  /// addExercise 收到的 record（按调用顺序收集；成功返回体 ≙ 云实返平铺
+  /// {ok,id,uid,date,key,name,emoji,amount,unit,kcal,createdAt}）
+  final List<Map<String, dynamic>> exerciseBodies = <Map<String, dynamic>>[];
+  ApiException? addExerciseError;
+
+  /// deleteExercise 收到的 id（按调用顺序收集）
+  final List<String> deletedExerciseIds = <String>[];
+  ApiException? deleteExerciseError;
+
+  /* ---------- M6-T1 喝水目标：setWaterGoal（PUT /user/water-goal） ---------- */
+
+  /// 成功返回体的水目标 ml（云语义：入参按 [800,3000] 截断后回显；
+  /// 桩同步写回 profile.goal.waterMl ≙ index.js:258 profiles.update）
+  num? waterGoal;
+  final List<num> waterGoalBodies = <num>[];
+  ApiException? setWaterGoalError;
 
   /// deleteFoodRecord 收到的 id（按调用顺序收集）
   final List<String> deletedIds = <String>[];
@@ -397,6 +429,71 @@ class StubHealthApi implements HealthApi {
     trendCalls++;
     if (weightTrendError != null) throw weightTrendError!;
     return weightTrend ?? weightTrendMap();
+  }
+
+  @override
+  Future<List<dynamic>> getExercises(String date) async {
+    exerciseCalls++;
+    if (exerciseError != null) throw exerciseError!;
+    return exercisesByDate?[date] ?? const <dynamic>[];
+  }
+
+  @override
+  Future<Map<String, dynamic>> addExercise(Map<String, dynamic> record) async {
+    exerciseBodies.add(Map<String, dynamic>.from(record));
+    if (addExerciseError != null) throw addExerciseError!;
+    // 云语义（index.js:353-368）：kcal 取整后为 0 → 回 {ok:false,message}
+    // 而非 HTTP 错，由调用层判 ok；有效时回平铺 {ok,id,...doc} 含 createdAt。
+    final kcal = (num.tryParse('${record['kcal']}') ?? 0).round().clamp(0, 1 << 31);
+    if (kcal == 0) {
+      return <String, dynamic>{'ok': false, 'message': '消耗热量无效'};
+    }
+    final date = (record['date'] as String?)?.isNotEmpty == true
+        ? record['date']
+        : DateTime.now().toUtc().toIso8601String().substring(0, 10); // ≙ 云 today()
+    final key = '${record['key'] ?? ''}'; // ≙ String(body.key||'').slice(0,20)
+    final name = '${record['name'] ?? ''}';
+    final emoji = '${record['emoji'] ?? ''}';
+    return <String, dynamic>{
+      'ok': true,
+      'id': 'x_stub_${exerciseBodies.length}',
+      'uid': 'u_test',
+      'date': date,
+      'key': key.length > 20 ? key.substring(0, 20) : key,
+      'name': name.isNotEmpty
+          ? (name.length > 60 ? name.substring(0, 60) : name)
+          : '运动',
+      'emoji': emoji.isNotEmpty ? emoji : '🏃',
+      'amount': record['amount'] is num ? record['amount'] : 0,
+      'unit': record['unit'] == 'km' ? 'km' : 'min',
+      'kcal': kcal,
+      'createdAt': DateTime.now().millisecondsSinceEpoch,
+    };
+  }
+
+  @override
+  Future<Map<String, dynamic>> deleteExercise(String id) async {
+    deletedExerciseIds.add(id);
+    if (deleteExerciseError != null) throw deleteExerciseError!;
+    exercisesByDate?.values
+        .forEach((list) => list.removeWhere((r) => r['id'] == id));
+    return <String, dynamic>{'ok': true};
+  }
+
+  @override
+  Future<Map<String, dynamic>> setWaterGoal(num waterGoalMl) async {
+    waterGoalBodies.add(waterGoalMl);
+    if (setWaterGoalError != null) throw setWaterGoalError!;
+    // 云语义（index.js:255-260）：Math.max(800, Math.min(3000, Number(x)||1600))
+    // 截断后回显 {ok,waterGoalMl}；200ml 对齐是 H5 步进器职责，云端不归一。
+    final ml = (waterGoalMl).clamp(800, 3000);
+    waterGoal = ml;
+    final p = profile ??= profileMap();
+    final g = Map<String, dynamic>.of(
+        (p['goal'] as Map?)?.cast<String, dynamic>() ?? const <String, dynamic>{});
+    g['waterMl'] = ml; // ≙ index.js:258 profiles.update({waterMl})
+    p['goal'] = g;
+    return <String, dynamic>{'ok': true, 'waterGoalMl': ml};
   }
 
   @override

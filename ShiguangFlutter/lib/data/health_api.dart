@@ -89,6 +89,36 @@ class HealthApi {
             'delta': delta,
           });
 
+  /* ---------- 运动（M6-T1；路由 js/api.js:75-77） ---------- */
+
+  /// 某日运动记录（js/api.js:325 getExercises；响应数组 → callValue。
+  /// 注意：云端不回 createdAt（index.js:347-350），次数型记录刷新后 isRepRecord
+  /// 判别退化按分钟显示——H5 同病，bug-for-bug 保留，禁改云）
+  Future<List<dynamic>> getExercises(String date) async {
+    final data = await _client.callValue('/diet/exercises',
+        params: <String, dynamic>{'date': date});
+    return data is List ? data : const <dynamic>[];
+  }
+
+  /// 新增运动记录（js/api.js:326 addExercise 调用面：{date,key,name,emoji,amount,unit,kcal}；
+  /// 云端 kcal 取整后为 0 时回 {ok:false,message} 而非 HTTP 错，调用层判 ok）
+  Future<Map<String, dynamic>> addExercise(Map<String, dynamic> record) =>
+      _client.call('/diet/exercises', method: 'POST', body: record);
+
+  /// 删除运动记录（js/api.js:327 deleteExercise：DELETE /diet/exercises/:id）
+  Future<Map<String, dynamic>> deleteExercise(String id) =>
+      _client.call('/diet/exercises/:id',
+          method: 'DELETE', params: <String, dynamic>{'id': id});
+
+  /* ---------- 喝水目标（M6-T1；路由 js/api.js:65 waterGoal） ---------- */
+
+  /// 喝水目标（js/api.js:282 setWaterGoal：body {waterGoalMl}；
+  /// 云端 index.js:257 按 [800,3000] 截断后回显 {ok,waterGoalMl}——200ml
+  /// 对齐是 H5 步进器 UI 职责（app.js:1653-1654），云端不归一）
+  Future<Map<String, dynamic>> setWaterGoal(num waterGoalMl) =>
+      _client.call('/user/water-goal',
+          method: 'PUT', body: <String, dynamic>{'waterGoalMl': waterGoalMl});
+
   /* ---------- 食物库 ---------- */
 
   /// 食物搜索（js/api.js:330 searchFoods(keyword, meal)；meal 省略时

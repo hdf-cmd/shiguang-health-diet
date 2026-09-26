@@ -214,6 +214,31 @@
       "path": "/foods/custom", "httpMethod": "POST", "readOnly": false,
       "requestSample": { "body": { "name": "测试饭团", "kcal": 250, "grams": 100, "unit": "g", "meals": ["lunch", "dinner"], "protein": 5, "carb": 40, "fat": 6, "portion": "100g", "image": "" } },
       "responseShape": "object", "responseFields": ["ok", "id", "uid", "name", "kcal", "grams", "unit", "meals", "protein", "carb", "fat", "portion", "emoji", "image", "createdAt"]
+    },
+    {
+      "route": "exercises", "dartMethod": "getExercises", "jsMethod": "getExercises",
+      "path": "/diet/exercises", "httpMethod": "GET", "readOnly": true,
+      "requestSample": { "params": { "date": "2026-09-26" } },
+      "responseShape": "array", "responseFields": ["id", "key", "name", "emoji", "amount", "unit", "kcal"],
+      "responseSample": [ { "id": "rec_test_x1", "key": "run", "name": "跑步", "emoji": "🏃", "amount": 5, "unit": "km", "kcal": 181 } ]
+    },
+    {
+      "route": "addExercise", "dartMethod": "addExercise", "jsMethod": "addExercise",
+      "path": "/diet/exercises", "httpMethod": "POST", "readOnly": false,
+      "requestSample": { "body": { "date": "2026-09-26", "key": "pushup", "name": "俯卧撑", "emoji": "💪", "amount": 10, "unit": "min", "kcal": 12 } },
+      "responseShape": "object", "responseFields": ["ok", "id", "uid", "date", "key", "name", "emoji", "amount", "unit", "kcal", "createdAt"]
+    },
+    {
+      "route": "deleteExercise", "dartMethod": "deleteExercise", "jsMethod": "deleteExercise",
+      "path": "/diet/exercises/:id", "httpMethod": "DELETE", "readOnly": false,
+      "requestSample": { "params": { "id": "rec_test_x1" } },
+      "responseShape": "object", "responseFields": ["ok"]
+    },
+    {
+      "route": "waterGoal", "dartMethod": "setWaterGoal", "jsMethod": "setWaterGoal",
+      "path": "/user/water-goal", "httpMethod": "PUT", "readOnly": false,
+      "requestSample": { "body": { "waterGoalMl": 1600 } },
+      "responseShape": "object", "responseFields": ["ok", "waterGoalMl"]
     }
   ]
 }

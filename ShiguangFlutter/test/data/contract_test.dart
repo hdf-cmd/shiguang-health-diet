@@ -123,6 +123,14 @@ void main() {
         return api.getMonthReport(offset: p['offset'] as int);
       case 'getWeightTrend':
         return api.getWeightTrend();
+      case 'getExercises':
+        return api.getExercises(p['date'] as String);
+      case 'addExercise':
+        return api.addExercise(Map<String, dynamic>.from(b));
+      case 'deleteExercise':
+        return api.deleteExercise(p['id'] as String);
+      case 'setWaterGoal':
+        return api.setWaterGoal(b['waterGoalMl'] as num);
       default:
         throw StateError('contract_test 未接入的 dartMethod: ${r.dartMethod}');
     }
