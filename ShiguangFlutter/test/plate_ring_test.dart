@@ -14,6 +14,7 @@ import 'package:shiguang_flutter/features/home/home_controller.dart';
 import 'package:shiguang_flutter/features/home/home_screen.dart';
 import 'package:shiguang_flutter/features/home/plate_ring.dart';
 
+import 'harness.dart' show useBigSurface;
 import 'stubs/stub_health_api.dart';
 
 Widget ringHarness(Widget child) => MaterialApp(
@@ -169,6 +170,9 @@ void main() {
 
     testWidgets('加载完成且无记录：显真实零值（已摄入 0、环中心=预算、三餐未记录）',
         (tester) async {
+      // M6-T5 注：AdviceCard 落位后默认 800×600 视口把三餐卡推出 ListView
+      // 缓存区（harness.dart 注②病症）→ 撑大视口
+      await useBigSurface(tester);
       final api = StubHealthApi(summary: StubHealthApi.summaryMap(target: 1679));
       await tester.pumpWidget(homeHarness(api));
       await tester.pumpAndSettle();

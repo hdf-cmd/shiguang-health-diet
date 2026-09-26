@@ -8,6 +8,8 @@
 // error 态用例的 summaryCalls 因此 +1。改走 UncontrolledProviderScope +
 // `retry: (_,_) => null`（exercise_sheet_test 同法）关掉自动重试，
 // 「重试按钮=真重发」的计数断言恢复原语义。
+// M6-T5 注：首页新挂 AdviceCard（默认 800×600 视口下把三餐卡推出 ListView
+// 缓存区 → find 不到，harness.dart 注②既有病症），harness 统一 useBigSurface。
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -15,9 +17,11 @@ import 'package:shiguang_flutter/data/api_client.dart';
 import 'package:shiguang_flutter/features/home/home_controller.dart';
 import 'package:shiguang_flutter/features/home/home_screen.dart';
 
+import 'harness.dart' show useBigSurface;
 import 'stubs/stub_health_api.dart';
 
 Future<void> harness(WidgetTester tester, StubHealthApi api) async {
+  await useBigSurface(tester);
   final container = ProviderContainer(
     overrides: [healthApiProvider.overrideWithValue(api)],
     retry: (_, _) => null, // 禁默认退避重试（见头注）

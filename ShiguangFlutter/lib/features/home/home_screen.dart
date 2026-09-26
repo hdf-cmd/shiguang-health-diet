@@ -17,6 +17,9 @@
 // plate→(advice=T5 位)→water→exercise 保持；三餐卡系 M2 自有布局、H5 首页
 // 无对应物（task-3-report §4），运动卡末位不动；建议卡 T5 落地时插在餐盘卡
 // 与水卡之间。
+// M6-T5：建议卡 AdviceCard 落位（index.html:106-109 .card.advice-home）——
+// 卡位复核：H5 实序 plate(70)→advice(106)→water(111)→exercise(133)，
+// advice 在餐盘卡内环/营养条整体之后、水卡之前，即 T4 预留位，按序插入。
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -31,6 +34,7 @@ import '../exercise/exercise_controller.dart'
     show deleteExerciseRecord, exerciseKcalProvider, exercisesProvider;
 import '../exercise/exercise_sheet.dart'
     show confirmDeleteExercise, openExerciseSheet;
+import 'advice_card.dart' show AdviceCard;
 import 'home_controller.dart';
 import 'plate_ring.dart';
 import 'water_card.dart' show WaterCard;
@@ -102,6 +106,10 @@ class HomeScreen extends ConsumerWidget {
             )
           else ...[
             _plateCard(summary, ex),
+            const SizedBox(height: Tokens.sp3),
+            // 建议卡（index.html:106-109；卡序复核见文件头 M6-T5 注。
+            // summary 在途整卡不渲染 ≙ app.js:351，SizedBox 间距不叠空卡）
+            AdviceCard(date: date),
             const SizedBox(height: Tokens.sp3),
             // 水卡（index.html:111-131；卡序复核见文件头 M6-T4 注）
             WaterCard(date: date),
