@@ -21,7 +21,8 @@ import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
 import '../../domain/constants.dart'
     show waterCupMl, waterGoalMin, waterGoalMax;
-import '../../domain/js_compat.dart' show jsNumText;
+import '../../domain/js_compat.dart' show jsNumText, jsParseFloat;
+import '../common/sheet_toast.dart' show SheetToast;
 import '../profile/profile_providers.dart' show profileProvider;
 import 'home_controller.dart' show healthApiProvider;
 
@@ -100,13 +101,15 @@ class _GoalSheetState extends ConsumerState<_GoalSheet> {
   static String _fmt(num v) => jsNumText(v);
 
   /// bindStepperNorm 归一（app.js:1639-1644 + :1653-1654 after 支）：
-  /// NaN→min → clamp [800,3000] → 四舍五入对齐 200 整数倍
+  /// NaN→min → clamp [800,3000] → 四舍五入对齐 200 整数倍。
+  /// 解析走 jsParseFloat 前缀语义 ≙ H5 parseFloat（M6-T7 评审 F2：
+  /// "1600." JS=1600、num.tryParse=null→800 分歧已闭合）。
   void _normField() {
-    var v = num.tryParse(_ctl.text.trim());
-    if (v == null || v.isNaN) v = waterGoalMin; // :1640 isNaN→min
-    if (v > waterGoalMax) v = waterGoalMax; // :1641 Math.min
-    if (v < waterGoalMin) v = waterGoalMin; // :1641 Math.max
-    v = (v / waterCupMl).round() * waterCupMl; // :1654 Math.round(v/200)*200
+    double v = jsParseFloat(_ctl.text.trim());
+    if (v.isNaN) v = waterGoalMin.toDouble(); // :1640 isNaN→min
+    if (v > waterGoalMax) v = waterGoalMax.toDouble(); // :1641 Math.min
+    if (v < waterGoalMin) v = waterGoalMin.toDouble(); // :1641 Math.max
+    v = ((v / waterCupMl).round() * waterCupMl).toDouble(); // :1654 Math.round(v/200)*200
     _ctl.text = _fmt(v);
   }
 
@@ -133,7 +136,7 @@ class _GoalSheetState extends ConsumerState<_GoalSheet> {
     _toastEntry?.remove();
     late final OverlayEntry entry;
     entry = OverlayEntry(
-      builder: (_) => _SheetToast(
+      builder: (_) => SheetToast(
         msg: msg,
         onDone: () {
           if (entry.mounted) entry.remove();
@@ -168,6 +171,9 @@ class _GoalSheetState extends ConsumerState<_GoalSheet> {
         );
     } catch (e) {
       // 差异登记：H5 无 catch → 静默层开；Flutter 通知失败，层同样不关
+      // F1（M6-T7 评审）：与成功支 :157 对称的 mounted 守卫——在途关层后
+      // Overlay.of(deactivated context) 会抛未处理异步错
+      if (!mounted) return;
       _toastInSheet('同步失败：${e is ApiException ? e.message : '网络异常'}');
     }
   }
@@ -352,76 +358,6 @@ class _GoalSheetState extends ConsumerState<_GoalSheet> {
               fontSize: 24,
               fontWeight: FontWeight.w700,
               color: Tokens.primaryDeep,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 弹层内浮层 toast（≙ H5 #toast：fixed 底部居中、盖在弹层之上、2.4s 自隐）。
-/// Ticker 驱动（无裸 Timer，测试 pumpAndSettle 语义安全），播完自删。
-class _SheetToast extends StatefulWidget {
-  const _SheetToast({required this.msg, required this.onDone});
-
-  final String msg;
-  final VoidCallback onDone;
-
-  @override
-  State<_SheetToast> createState() => _SheetToastState();
-}
-
-class _SheetToastState extends State<_SheetToast>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 2400),
-  );
-
-  @override
-  void initState() {
-    super.initState();
-    _c.forward().whenComplete(widget.onDone);
-  }
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final opacity = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 10),
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.0), weight: 78),
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.0), weight: 12),
-    ]).animate(_c);
-    return IgnorePointer(
-      child: Align(
-        alignment: Alignment.bottomCenter,
-        child: Padding(
-          padding: const EdgeInsets.only(bottom: Tokens.sp8),
-          child: FadeTransition(
-            opacity: opacity,
-            child: Material(
-              color: const Color(0xE632352D),
-              borderRadius: BorderRadius.circular(14),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: Tokens.sp4,
-                  vertical: Tokens.sp2,
-                ),
-                child: Text(
-                  widget.msg,
-                  style: const TextStyle(
-                    fontSize: Tokens.textSm,
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
             ),
           ),
         ),

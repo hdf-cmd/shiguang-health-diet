@@ -18,5 +18,22 @@ String jsNumText(num v) {
   return '$d';
 }
 
+/// JS parseFloat 前缀语义（M6-T7 评审 F2）：取最长合法数字前缀，无合法前缀
+/// 返回 NaN。与 num.tryParse 全串语义不等价——"1600." JS parseFloat=1600 而
+/// tryParse=null；"16.2.3" parseFloat=16.2。goal-sheet 失焦归一 ≙
+/// bindStepperNorm 的 parseFloat(el.value)，必须用本函数对齐 H5。
+double jsParseFloat(String s) {
+  final t = s.trimLeft(); // parseFloat 跳过前导空白
+  final m = RegExp(r'^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?')
+      .firstMatch(t);
+  if (m == null) return double.nan;
+  var d = m.group(0)!;
+  final neg = d.startsWith('-');
+  if (neg || d.startsWith('+')) d = d.substring(1);
+  if (d.startsWith('.')) d = '0$d'; // Dart parse 不接受 ".5"
+  if (d.endsWith('.')) d = '${d}0'; // Dart parse 不接受 "5."
+  return double.parse(d) * (neg ? -1 : 1);
+}
+
 /// JS Math.ceil
 int jsCeil(num x) => x.toDouble().ceil();

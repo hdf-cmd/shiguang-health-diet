@@ -160,6 +160,9 @@ class StubHealthApi implements HealthApi {
   final List<num> waterGoalBodies = <num>[];
   ApiException? setWaterGoalError;
 
+  /// 非空 → setWaterGoal 先 await 它再走错误/成功支（M6-T7 F1 在途关层用例钉）
+  Completer<void>? setWaterGoalGate;
+
   /* ---------- M6-T4 水卡：addWater（POST /diet/water） ---------- */
 
   /// 桩侧当日杯数状态（≙ 云 sg_water.cups，index.js:438-446）：addWater 按
@@ -172,7 +175,9 @@ class StubHealthApi implements HealthApi {
   final List<({int delta, String? date})> waterBodies =
       <({int delta, String? date})>[];
 
-  /// 非空 → addWater 先 await 它再返回（验证乐观中间态，≙ addGate 定式）
+  /// 非空 → addWater 先 await 它再返回（验证乐观中间态，≙ addGate 定式）。
+  /// 次序注（M6-T7 F6 勘误）：实现里 addWaterError 抛出在前——两者同设时
+  /// 走抛错支，本闸不会被 await。
   Completer<void>? waterGate;
 
   /// deleteFoodRecord 收到的 id（按调用顺序收集）
@@ -548,6 +553,9 @@ class StubHealthApi implements HealthApi {
   @override
   Future<Map<String, dynamic>> setWaterGoal(num waterGoalMl) async {
     waterGoalBodies.add(waterGoalMl);
+    // M6-T7 F1 用例钉：非空 → 先 await 它再走错误/成功支（挂住在途，测试可
+    // 在回包前关层）
+    if (setWaterGoalGate != null) await setWaterGoalGate!.future;
     if (setWaterGoalError != null) throw setWaterGoalError!;
     // 云语义（index.js:255-260）：Math.max(800, Math.min(3000, Number(x)||1600))
     // 截断后回显 {ok,waterGoalMl}；200ml 对齐是 H5 步进器职责，云端不归一。

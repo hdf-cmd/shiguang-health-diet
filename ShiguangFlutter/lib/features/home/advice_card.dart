@@ -18,8 +18,9 @@
 //   weightKg     ← profileProvider body.weightKg ?? 55（:357 `||55`——上游裁定
 //                  用 ??，0 值 falsy 支不引入，避 water_card T4 评审同类问题；
 //                  在途/失败 → 55 ≙ H5 state.body 未就绪）
-//   waterGoalMl  ← profileProvider goal.waterMl ?? 1600（:358；缺省档 ≙
-//                  state.js:13 初值 1600，同 water_card._goalOf 口径但用 ??）
+//   waterGoalMl  ← waterGoalMlOf(profileProvider)（:358 → app.js:1948
+//                  `goal.waterMl || 1600` falsy 口径；M6-T7 F4 与 water_card
+//                  收敛为 profile_providers.dart 单一工具）
 // 版式 R4 自主：卡壳对齐首页既有卡（Tokens.surface 圆角阴影），标题行对齐
 // 运动卡 .card-title + .more 结构。
 import 'package:flutter/material.dart';
@@ -29,7 +30,7 @@ import '../../app/theme.dart';
 import '../../domain/advice.dart' show buildAdvice, makeAdviceCtx;
 import '../../domain/dates.dart' show todayIso;
 import '../exercise/exercise_controller.dart' show exerciseKcalProvider;
-import '../profile/profile_providers.dart' show profileProvider;
+import '../profile/profile_providers.dart' show profileProvider, waterGoalMlOf;
 import 'home_controller.dart' show recordsProvider, summaryProvider;
 
 @visibleForTesting
@@ -56,14 +57,6 @@ class AdviceCard extends ConsumerWidget {
     return w is num ? w : 55;
   }
 
-  /// ≙ :358 `state.waterGoalMl`（云缺档 1600，同 water_card._goalOf 取法，?? 支）
-  static num _goalOf(AsyncValue<Map<String, dynamic>> profile) {
-    final p = profile.maybeWhen(data: (v) => v, orElse: () => null);
-    final goal = p?['goal'];
-    final v = goal is Map ? goal['waterMl'] : null;
-    return v is num ? v : 1600;
-  }
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final summary = ref.watch(summaryProvider(date));
@@ -79,7 +72,9 @@ class AdviceCard extends ConsumerWidget {
       records: ref.watch(recordsProvider(date)).value ?? const [],
       isToday: date == todayIso(),
       weightKg: _weightOf(profile),
-      waterGoalMl: _goalOf(profile),
+      // ≙ :358 `state.waterGoalMl`（app.js:1948 `goal.waterMl || 1600` 口径，
+      // M6-T7 F4 收敛为 waterGoalMlOf 单一工具，round 对云整数值恒等）
+      waterGoalMl: waterGoalMlOf(profile),
     );
     final tips = buildAdvice(ctx); // 最多 3 条（logic.js:212 slice(0,3)）
 

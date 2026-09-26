@@ -108,7 +108,9 @@ class HomeScreen extends ConsumerWidget {
             _plateCard(summary, ex),
             const SizedBox(height: Tokens.sp3),
             // 建议卡（index.html:106-109；卡序复核见文件头 M6-T5 注。
-            // summary 在途整卡不渲染 ≙ app.js:351，SizedBox 间距不叠空卡）
+            // summary 在途整卡不渲染 ≙ app.js:351——卡体 shrink 消失，但其
+            // 后 SizedBox(sp3) 间距照常叠置：加载期餐盘卡与水卡之间为
+            // 2×sp3 空档（M6-T7 F6 勘误：原「不叠空卡」表述不实））
             AdviceCard(date: date),
             const SizedBox(height: Tokens.sp3),
             // 水卡（index.html:111-131；卡序复核见文件头 M6-T4 注）

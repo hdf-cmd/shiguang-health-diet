@@ -169,7 +169,9 @@ void main() {
     expect(find.text('发一条测试通知'), findsNothing);
     expect(find.text('发一条喝水到点提醒（测试）'), findsNothing);
     // 基线 217.0（旧实现两通栏钮版，挂 shiguangTheme、500×1600 面实测，
-    // 数值与出处见 task-6-report），一行化后应不足一半
+    // 数值与出处见 task-6-report），一行化后应不足一半。
+    // M6-T7 评审 F5：本断言绑卡面一行形态——提醒卡卡面任何增删元素需重测
+    // 基线并重钉此数，勿只放宽阈值。
     expect(remindCardHeight(tester), lessThan(217 / 2));
     expect(find.byIcon(Icons.settings_outlined), findsOneWidget); // 弹层入口
     expect(switchValue(tester), isTrue); // 初值取自 scheduler.enabled()

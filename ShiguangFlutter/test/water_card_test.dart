@@ -39,7 +39,7 @@ import 'package:shiguang_flutter/features/home/water_card.dart'
         waterCupKey,
         waterUndoKey;
 import 'package:shiguang_flutter/features/home/goal_sheet.dart'
-    show goalValueKey, goalDecKey, goalIncKey, goalSaveKey;
+    show goalValueKey, goalDecKey, goalIncKey, goalSaveKey, goalCloseKey;
 
 import 'harness.dart' show useBigSurface;
 import 'stubs/stub_health_api.dart';
@@ -287,6 +287,75 @@ void main() {
         findsOneWidget,
       ); // profile 回写+invalidate（:491）
       expect(find.text('已喝 3 杯 · 每杯 200ml'), findsOneWidget); // 600/2000 未达成
+    },
+  );
+
+  /* ---------- M6-T7 评审结转钉（F1/F2/F3） ---------- */
+
+  testWidgets(
+    '④d F2 归一 parseFloat 前缀语义：输入「1600.」保存 → setWaterGoal(1600)、'
+    'toast「喝水目标已设为 1600ml」（H5 parseFloat("1600.")=1600；原 '
+    'num.tryParse=null→NaN→800 分歧已闭合，js_compat.jsParseFloat）',
+    (tester) async {
+      final api = newApi(water: 3);
+      await openSheet(tester, api);
+      await tester.enterText(find.byKey(goalValueKey), '1600.');
+      await tester.tap(find.byKey(goalSaveKey));
+      await tester.pumpAndSettle();
+      expect(api.waterGoalBodies, [
+        1600,
+      ]); // ≙ H5 norm 后 value=1600 → Number=1600
+      expect(find.text('喝水目标已设为 1600ml'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    '④e F1 mounted 守卫：setWaterGoal 在途（gate 挂住）✕ 关层，回包错误后 '
+    'catch 支不再触碰已销毁 context（修复前 Overlay.of(deactivated) 抛未处理'
+    '异步错 → 本用例红）',
+    (tester) async {
+      final api = newApi();
+      api.setWaterGoalError = ApiException('boom');
+      api.setWaterGoalGate = Completer<void>();
+      await openSheet(tester, api);
+      await tester.tap(find.byKey(goalSaveKey));
+      await tester.pump(); // 在途：await setWaterGoalGate
+      expect(find.text('同步失败：boom'), findsNothing);
+      await tester.tap(find.byKey(goalCloseKey)); // 在途关层
+      await tester.pumpAndSettle();
+      expect(find.byKey(goalValueKey), findsNothing);
+      api.setWaterGoalGate!.complete(); // 错误此刻才落——守卫应静默吞掉
+      await tester.pumpAndSettle();
+      expect(find.text('同步失败：boom'), findsNothing); // 层已销毁，无 toast
+    },
+  );
+
+  testWidgets(
+    '①c F3 ||1600 falsy 口径：profile.goal.waterMl=0 → 目标行「目标 1600 ml」，'
+    '0 杯仍可喝一杯（≙ app.js:1948 falsy 支；修复前 goal=0 → 顶格闸恒触发）',
+    (tester) async {
+      final p = StubHealthApi.profileMap();
+      final goal = Map<String, dynamic>.of(
+        (p['goal'] as Map).cast<String, dynamic>(),
+      );
+      goal['waterMl'] = 0;
+      p['goal'] = goal;
+      final api = StubHealthApi(
+        summary: StubHealthApi.summaryMap(water: 0),
+        profile: p,
+      );
+      await pumpCard(tester, api);
+      expect(
+        find.textContaining('目标 1600 ml'),
+        findsOneWidget,
+      ); // ||1600 落 1600 档
+      expect(find.text('目标已达成 🎉'), findsNothing); // 闸不恒触发（0≥0 支死）
+      await tester.tap(find.byKey(waterCupKey));
+      await tester.pumpAndSettle();
+      expect(api.waterBodies, [
+        (delta: 1, date: todayIso()),
+      ]); // 喝一杯真发请求
+      expect(find.text('200'), findsOneWidget);
     },
   );
 

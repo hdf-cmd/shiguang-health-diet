@@ -12,8 +12,8 @@
 //   本任务 actualInfo 恒 null=预设缺口口径（缺口行注记「预设缺口 500」逐字
 //   取 :1601 非 useActual 支；M6 若做实际缺口再补）。H5 第五行「今日运动」
 //   M6-T3 已接线：watch exerciseKcalProvider(todayProvider)，行常驻（值 0 也
-//   显，:1588 metab-exercise 恒渲染，注记「今日运动记录累计」:1601）；
-//   TDEE/建议摄入值含 ex（:1587/:1589 `tdee+ex`/`suggest+ex`）、公式注记与
+//   显，:1589 metab-exercise 恒渲染，注记「今日运动记录累计」:1602）；
+//   TDEE/建议摄入值含 ex（:1588/:1591 `tdee+ex`/`suggest+ex`）、公式注记与
 //   标题右 note 的 ex>0 支（:1599-1605）逐字对齐。
 // - openBodySheet/bumpBodyVal/bindStepperNorm(:1612-1666)：弹层预填当前档案；
 //   身高 ±1 闸 100-250、体重 ±0.5 闸 30-200（bump 定 1 位小数 :1663-1664，
@@ -116,7 +116,7 @@ class BodyProfileCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(profileProvider);
     final p = profile.value;
-    // M6-T3：今日运动合计（≙ app.js:1585 `state.exerciseKcal || 0`；在途/失败
+    // M6-T3：今日运动合计（≙ app.js:1586 `state.exerciseKcal || 0`；在途/失败
     // orElse 0 ≙ H5 loadExercises 前缺省与 catch 降级）
     final ex = ref.watch(exerciseKcalProvider(ref.watch(todayProvider)));
     return Semantics(
@@ -247,11 +247,11 @@ class BodyProfileCard extends ConsumerWidget {
             '10×${jsNumText(b.weightKg)}+6.25×${jsNumText(b.heightCm)}−5×${jsNumText(b.age)}${b.gender == 'male' ? '+5' : '−161'}'), // :1598
         _metabLine(
             '每日消耗 TDEE', // :218
-            '${jsNumText(m.tdee + ex)} kcal', // :1587 值含 ex（H5 tdee+ex）
+            '${jsNumText(m.tdee + ex)} kcal', // :1588 值含 ex（H5 tdee+ex）
             'BMR×系数${jsNumText(af)}${ex > 0 ? '＋今日运动$ex' : ''}'), // :1599 两支逐字
         _metabLine(
             '今日建议摄入', // :219
-            '${jsNumText(m.suggest + ex)} kcal', // :1589 值含 ex（与首页环额度同源）
+            '${jsNumText(m.suggest + ex)} kcal', // :1591 值含 ex（与首页环额度同源）
             '消耗${jsNumText(m.tdee)}−缺口${jsNumText(m.realDeficit)}${ex > 0 ? '＋运动$ex' : ''}'), // :1600 两支逐字
         _metabLine(
             '每日缺口', // :220
@@ -259,8 +259,8 @@ class BodyProfileCard extends ConsumerWidget {
             '预设缺口 ${jsNumText(m.realDeficit)}'), // :1601 非 useActual 支（降级标注）
         _metabLine(
             '今日运动', // index.html:219 DOM 第 5 行（每日缺口之后）
-            '${jsNumText(ex)} kcal', // :1588 常驻（值 0 也显「0 kcal」）
-            '今日运动记录累计'), // :1601 注记常驻逐字
+            '${jsNumText(ex)} kcal', // :1589 常驻（值 0 也显「0 kcal」）
+            '今日运动记录累计'), // :1602 注记常驻逐字
         const SizedBox(height: Tokens.sp2),
         Text(m.etaText, // :1606-1608 原文
             style: const TextStyle(fontSize: Tokens.textXs, color: Tokens.ink2)),

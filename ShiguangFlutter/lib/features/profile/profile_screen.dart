@@ -34,6 +34,7 @@ import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
 import '../../domain/dates.dart' show todayIso;
 import '../common/food_thumb.dart';
+import '../common/sheet_toast.dart' show SheetToast;
 import '../home/home_controller.dart' show healthApiProvider;
 import '../notifications/reminder_scheduler.dart';
 import '../scale/scale_service.dart';
@@ -184,7 +185,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       builder: (_) => _ReminderSettingsSheet(
         onTestMeal: _testMealReminder,
         onTestWater: _testWaterReminder,
-        bindToastSink: (sink) => _reminderSheetToast = sink,
+        bindToastSink: (sink, mySink) {
+          // F5（M6-T7 评审）注销守卫：sink==null 表示注销，仅当当前通道仍
+          // 是注销方自己的 sink 才复位——防旧层迟到的 dispose 误清新层注册
+          if (sink == null) {
+            if (_reminderSheetToast == mySink) _reminderSheetToast = null;
+          } else {
+            _reminderSheetToast = sink;
+          }
+        },
       ),
     );
   }
@@ -648,6 +657,16 @@ class _HeadAvatar extends StatelessWidget {
       );
 }
 
+/// 「提醒设置」弹层的 toast 通道 binder（M6-T7 评审 F5）：
+/// - `sink != null`：注册——页体提示改道层内 OverlayEntry；
+/// - `sink == null`：注销请求，此时 [mySink] 为注销方自证身份，宿主仅当
+///   当前通道恰等于 mySink 才复位——防旧弹层迟到的 dispose 误清新弹层
+///   刚注册的通道（快速重开弹层时序）。
+typedef _SheetToastBinder = void Function(
+  void Function(String)? sink,
+  void Function(String)? mySink,
+);
+
 /// 「提醒设置」弹层（M6-T6 方案 A）：说明 + 分隔线 + 「诊断」小标题 + 两枚
 /// 通栏测试钮。钮直连页体原 handler（testMeal/testWater 链与 toast 文案零
 /// 变更）；两钮文本逐字 index.html:235-236（H5 无此钮，M4 自加诊断便利的
@@ -665,7 +684,9 @@ class _ReminderSettingsSheet extends StatefulWidget {
 
   final Future<void> Function() onTestMeal;
   final Future<void> Function() onTestWater;
-  final void Function(void Function(String)? sink) bindToastSink;
+
+  /// 通道注册/注销 binder（见 [_SheetToastBinder]，F5 注销守卫）。
+  final _SheetToastBinder bindToastSink;
 
   @override
   State<_ReminderSettingsSheet> createState() => _ReminderSettingsSheetState();
@@ -677,12 +698,13 @@ class _ReminderSettingsSheetState extends State<_ReminderSettingsSheet> {
   @override
   void initState() {
     super.initState();
-    widget.bindToastSink(_toastInSheet); // 页体 _toast 改道层内
+    widget.bindToastSink(_toastInSheet, _toastInSheet); // 页体 _toast 改道层内
   }
 
   @override
   void dispose() {
-    widget.bindToastSink(null); // 注销：页级通道复位 SnackBar（⑥用例钉）
+    // 注销走 F5 守卫：仅当通道仍是自己的 _toastInSheet 才复位 SnackBar
+    widget.bindToastSink(null, _toastInSheet); // （⑥用例钉）
     _toastEntry?.remove(); // 层内 toast 随层销毁
     super.dispose();
   }
@@ -692,7 +714,7 @@ class _ReminderSettingsSheetState extends State<_ReminderSettingsSheet> {
     _toastEntry?.remove();
     late final OverlayEntry entry;
     entry = OverlayEntry(
-      builder: (_) => _ReminderToast(
+      builder: (_) => SheetToast(
         msg: msg,
         onDone: () {
           if (entry.mounted) entry.remove();
@@ -758,78 +780,6 @@ class _ReminderSettingsSheetState extends State<_ReminderSettingsSheet> {
               child: const Text('发一条喝水到点提醒（测试）'),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 弹层内浮层 toast（≙ H5 #toast：fixed 底部居中、盖在弹层之上、2.4s 自隐）。
-/// Ticker 驱动（无裸 Timer，测试 pumpAndSettle 语义安全），播完自删。
-/// 抄 goal_sheet.dart `_SheetToast` 定式——跨库私有类不可复用，若第三处再
-/// 需则迁 common/（T7 收官可顺手，此处不过度设计）。
-class _ReminderToast extends StatefulWidget {
-  const _ReminderToast({required this.msg, required this.onDone});
-
-  final String msg;
-  final VoidCallback onDone;
-
-  @override
-  State<_ReminderToast> createState() => _ReminderToastState();
-}
-
-class _ReminderToastState extends State<_ReminderToast>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 2400),
-  );
-
-  @override
-  void initState() {
-    super.initState();
-    _c.forward().whenComplete(widget.onDone);
-  }
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final opacity = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 10),
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.0), weight: 78),
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.0), weight: 12),
-    ]).animate(_c);
-    return IgnorePointer(
-      child: Align(
-        alignment: Alignment.bottomCenter,
-        child: Padding(
-          padding: const EdgeInsets.only(bottom: Tokens.sp8),
-          child: FadeTransition(
-            opacity: opacity,
-            child: Material(
-              color: const Color(0xE632352D),
-              borderRadius: BorderRadius.circular(14),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: Tokens.sp4,
-                  vertical: Tokens.sp2,
-                ),
-                child: Text(
-                  widget.msg,
-                  style: const TextStyle(
-                    fontSize: Tokens.textSm,
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-          ),
         ),
       ),
     );

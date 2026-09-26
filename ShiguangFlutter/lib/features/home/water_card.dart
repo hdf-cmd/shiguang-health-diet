@@ -4,7 +4,9 @@
 // 既有卡样式，色值取 H5 screens.css:303-392 water 族：fill 渐变
 // #8FBCD4→nut-fat、杯描边 nut-fat、刻度 --surface）。
 // 数字口径全部 summary.water 杯数 × waterCupMl(200)（:414）；
-// 目标=profileProvider.goal.waterMl，缺省/在途 1600（≙ state.js:13 初值）。
+// 目标=waterGoalMlOf(profileProvider)（M6-T7 F3/F4 收敛：≙ app.js:1948
+// `goal.waterMl || 1600` falsy 支——waterMl=0 也落 1600，顶格闸不误恒触发；
+// 缺省/在途同 1600 档，≙ state.js:13 初值）。
 // 乐观更新 ≙ app.js:438-448/455-465 同构：本地 _waterOverride（null=跟
 // provider）→ 成功跟回包 water → 失败回滚 + toast「同步失败：{msg}」。
 // 不移植登记（R4/M4 降级面，详见 task-4-report 差异表）：
@@ -20,7 +22,7 @@ import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
 import '../../domain/constants.dart' show waterCupMl;
 import '../../domain/dates.dart' show dateLabelOf, todayIso;
-import '../profile/profile_providers.dart' show profileProvider;
+import '../profile/profile_providers.dart' show profileProvider, waterGoalMlOf;
 import 'goal_sheet.dart' show openGoalSheet;
 import 'home_controller.dart' show healthApiProvider, summaryProvider;
 
@@ -84,20 +86,6 @@ class _WaterCardState extends ConsumerState<WaterCard> {
   /// ≙ app.js:448/465 `e.message || '网络异常'`（ApiException 露后端 message）
   static String _errText(Object e) => e is ApiException ? e.message : '网络异常';
 
-  /// goal = profile.goal.waterMl ?? 1600（上游事实缺省 1600；在途/失败走
-  /// 1600 档 ≙ state.js:13 初值语义）
-  static int _goalOf(AsyncValue<Map<String, dynamic>> profile) {
-    final wm = profile.maybeWhen(
-      data: (p) {
-        final goal = p['goal'];
-        final v = goal is Map ? goal['waterMl'] : null;
-        return v is num ? v : null;
-      },
-      orElse: () => null,
-    );
-    return wm?.round() ?? 1600;
-  }
-
   /// 喝一杯（≙ drinkOneCup，app.js:432-449）
   Future<void> _drink(int n, int goal) async {
     if (n * waterCupMl >= goal) {
@@ -145,7 +133,7 @@ class _WaterCardState extends ConsumerState<WaterCard> {
   @override
   Widget build(BuildContext context) {
     final summary = ref.watch(summaryProvider(widget.date));
-    final goal = _goalOf(ref.watch(profileProvider));
+    final goal = waterGoalMlOf(ref.watch(profileProvider));
     final loading = !summary.hasValue;
     final n = _waterOverride ?? summary.value?.water.round() ?? 0;
     final ml = n * waterCupMl; // :414
@@ -351,7 +339,7 @@ class _WaterCardState extends ConsumerState<WaterCard> {
         onTap: () {
           final summary = ref.read(summaryProvider(widget.date));
           final n = _waterOverride ?? summary.value?.water.round() ?? 0;
-          _drink(n, _goalOf(ref.read(profileProvider)));
+          _drink(n, waterGoalMlOf(ref.read(profileProvider)));
         },
         child: SizedBox(
           width: 58,
