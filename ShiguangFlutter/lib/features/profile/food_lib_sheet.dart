@@ -29,9 +29,12 @@
 // - 自定义空态（:1320）：「还没有自定义食物\n点下方按钮添加你的常吃菜」。
 // id 语义：listCustomFoods 回裸 _id（云 index.js:300），归类/删除提交原样透传，
 // 不经搜索结果 cf_ 前缀路径（index.js:82 只在 /foods/search 拼前缀）——回归钉⑨。
-// R4 登记：H5 #lib-add「＋ 添加自定义食物」（fromLib 单钮形态）本批不做——
-// openCustomFoodSheet 无 fromLib 分支（M5-T7 头注），补齐需动表单弹层双钮语义，
-// 与简报「按现场取最已有件」的 YAGNI 边界冲突，结转清单交 T8；视觉（seg/chip/行族）
+// R4 差异登记（修复轮 1 更新）：#lib-add「＋ 添加自定义食物」（index.html:574，
+// 层底常驻、双 tab/加载/失败态均在；点击 ≙ js/app.js:1347 closeFoodLib() →
+// openCustomFoodSheet(true)）本批已补——落点：openFoodLibSheet 收到 pop(true)
+// 后关层再开表单（date=当日 todayIso、meal=默认档 lunch「正餐」，评审裁定）。
+// 缺口登记：表单仍为双钮完整形态，fromLib 单钮「存入食物库」+隐藏次钮
+// （js/app.js:1220-1221）未做，结转 T8；视觉（seg/chip/行族）
 // 为 R4 创新，文案逐字。toast 走层内 OverlayEntry（SheetToast 公共件，M6-T7 F5
 // 定式：SnackBar 会被弹层遮挡并向下层 Scaffold 广播双份）。
 
@@ -40,11 +43,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
+import '../../domain/dates.dart' show todayIso;
 import '../../domain/js_compat.dart' show jsNumText, jsOr;
 import '../common/food_thumb.dart';
 import '../common/sheet_toast.dart';
 import '../home/home_controller.dart' show healthApiProvider;
-import '../record/custom_food_sheet.dart' show cfMealMap;
+import '../record/custom_food_sheet.dart' show cfMealMap, openCustomFoodSheet;
 
 @visibleForTesting
 const libCloseKey = Key('lib-close'); // index.html:567 #lib-close
@@ -67,6 +71,9 @@ Key libTogKey(String id) => Key('lib-tog-$id'); // :1333 data-toggle-builtin
 @visibleForTesting
 const libRetryKey = Key('lib-retry'); // :1339 #lib-retry
 
+@visibleForTesting
+const libAddKey = Key('lib-add'); // index.html:574 #lib-add（层底常驻钮）
+
 /// kind 三档（:1316 渲染序）→ 钮文案（早餐/正餐/零食，逐字）
 const _kindLabels = <String, String>{
   'breakfast': '早餐',
@@ -87,8 +94,11 @@ String cfMealKind(Object? meals) {
 }
 
 /// 打开「我的食物库」管理弹层（≙ openFoodLib，js/app.js:1292）。
-Future<void> openFoodLibSheet(BuildContext context) {
-  return showModalBottomSheet<void>(
+/// 层底「＋ 添加自定义食物」（#lib-add）点按 pop 带回 true ≙ :1347
+/// closeFoodLib() → openCustomFoodSheet(true)：关层后开自定义食物表单
+/// （date=当日、meal=默认档正餐；fromLib 单钮形态结转 T8，见头注 R4 登记）。
+Future<void> openFoodLibSheet(BuildContext context) async {
+  final addRequested = await showModalBottomSheet<bool>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Tokens.surface,
@@ -98,6 +108,15 @@ Future<void> openFoodLibSheet(BuildContext context) {
     ),
     builder: (_) => const _FoodLibSheet(),
   );
+  if (addRequested == true) {
+    if (!context.mounted) return; // 层动画期间入口页可能已销毁
+    await openCustomFoodSheet(
+      context,
+      date: todayIso(), // ≙ H5 :1244 在途常读全局 state.date=当日（我的页无选日态）
+      meal: 'lunch', // 默认档（评审裁定：本批 meal 可默认档；三钮初值=正餐 :1218）
+      onSaved: () {}, // H5 入库后不重开管理层；下次开层 renderLibList 天然重取
+    );
+  }
 }
 
 class _FoodLibSheet extends ConsumerStatefulWidget {
@@ -387,6 +406,17 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
                           fontSize: Tokens.textXs, color: Tokens.ink3)),
                 ),
               Expanded(child: _body()),
+              // 层底常驻「＋ 添加自定义食物」（index.html:574 #lib-add：在
+              // #lib-list 之外，双 tab/加载/失败态均在；文案逐字，
+              // btn-primary btn-block ≙ FilledButton 拉伸 + margin-top sp3）
+              const SizedBox(height: Tokens.sp3),
+              FilledButton(
+                key: libAddKey,
+                // ≙ js/app.js:1347 closeFoodLib() → openCustomFoodSheet(true)
+                // 关层带 true 回执，由 openFoodLibSheet 接续开表单
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('＋ 添加自定义食物'),
+              ),
             ],
           ),
         ),

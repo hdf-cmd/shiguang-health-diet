@@ -13,6 +13,9 @@
 // 只 pump()，不可 pumpAndSettle（动画跑完 toast 自删，profile_reminders ③ 同法）。
 // 回归钉：管理链路 bodies id 恒裸值不含 cf_（cf_ 前缀只在搜索结果 id，
 // 云 index.js:82；listCustomFoods 回裸 _id，index.js:300）。
+// 修复轮 1（评审 Important#1）：钉⑧ 增「空态在场时下方有可点添加钮」断言；
+// 新增钉⑩/⑩b —— #lib-add（index.html:574）→ closeFoodLib → openCustomFoodSheet
+// 链路可达（js/app.js:1347），钮双 tab/失败态常驻。
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -25,6 +28,8 @@ import 'package:shiguang_flutter/features/notifications/reminder_scheduler.dart'
 import 'package:shiguang_flutter/features/profile/food_lib_sheet.dart';
 import 'package:shiguang_flutter/features/profile/profile_screen.dart'
     show ProfileScreen;
+import 'package:shiguang_flutter/features/record/custom_food_sheet.dart'
+    show cfNameKey, cfSaveAddKey;
 import 'package:shiguang_flutter/features/scale/scale_service.dart';
 
 import 'harness.dart';
@@ -120,6 +125,17 @@ Future<void> tapText(WidgetTester tester, String text) async {
   await tester.tap(f);
 }
 
+/// 懒构建行取回：测试环境弹层 0.72*600=432px，行高约 240，第三行起落在
+/// ListView 构建区外（真机 0.72*屏高不存在此界）——先拖滚再 ensureVisible
+Future<void> reveal(WidgetTester tester, Finder f) async {
+  for (var i = 0; i < 6 && f.evaluate().isEmpty; i++) {
+    await tester.drag(find.byType(ListView), const Offset(0, -160));
+    await tester.pumpAndSettle();
+  }
+  await tester.ensureVisible(f);
+  await tester.pumpAndSettle();
+}
+
 bool segSelected(WidgetTester tester, String tab) =>
     tester.widget<LibSegButton>(find.byKey(libSegKey(tab))).selected;
 
@@ -194,6 +210,9 @@ void main() {
     expect(
         find.text('150g · 543 kcal · 蛋白 43g / 碳水 66g / 脂肪 12g'),
         findsOneWidget); // :1315 meta 模板（grams 有值带前缀）
+    // 测试环境弹层仅 0.72*600=432px 高，第三行落在 ListView 懒构建区外
+    //（真机 0.72*屏高足够）——先滚到在场再断言
+    await reveal(tester, find.text('90 kcal · 蛋白 0g / 碳水 0g / 脂肪 0g'));
     expect(find.text('90 kcal · 蛋白 0g / 碳水 0g / 脂肪 0g'), findsOneWidget,
         reason: 'grams=0 → 前缀省略（:1315 三元falsy支）');
     expect(api.builtinCalls, 0); // 内置 tab 未开不取数
@@ -289,6 +308,8 @@ void main() {
 
     expect(mealSelected(tester, 'raw_2', 'lunch'), isTrue); // lunch,dinner→kind lunch
     expect(mealSelected(tester, 'raw_2', 'breakfast'), isFalse);
+    // raw_3 行在测试视口构建区外（同钉①注释）——滚入后再断言三钮
+    await reveal(tester, find.byKey(libMealKey('raw_3', 'breakfast')));
     expect(mealSelected(tester, 'raw_3', 'breakfast'), isFalse); // 未归类无高亮
     expect(mealSelected(tester, 'raw_3', 'lunch'), isFalse);
     expect(mealSelected(tester, 'raw_3', 'snack'), isFalse);
@@ -409,14 +430,61 @@ void main() {
     expect(subText(tester), '自定义 3 条 · 点餐次标签可改归类');
   });
 
-  /* ---------- 钉⑧ 自定义空态 ---------- */
+  /* ---------- 钉⑧ 自定义空态 + 层底添加钮（修复轮 1：Important#1） ---------- */
 
-  testWidgets('钉⑧ 自定义空库 → 「还没有自定义食物\n点下方按钮添加你的常吃菜」（:1320 逐字）',
+  testWidgets('钉⑧ 自定义空库 → 「还没有自定义食物\n点下方按钮添加你的常吃菜」（:1320 逐字）；'
+      '空态文案在场时下方存在可点「＋ 添加自定义食物」钮（≙ index.html:574 层底常驻）',
       (tester) async {
     final api = StubHealthApi(libCustomFoods: <Map<String, dynamic>>[]);
     await pumpSheet(tester, api);
     expect(find.text('还没有自定义食物\n点下方按钮添加你的常吃菜'), findsOneWidget);
     expect(subText(tester), '自定义 0 条 · 点餐次标签可改归类');
+
+    // 评审钉：空态指涉「点下方按钮」必须落地——层底钮在场、可点、位于文案下方
+    expect(find.text('＋ 添加自定义食物'), findsOneWidget); // index.html:574 逐字
+    expect(tester.widget<FilledButton>(find.byKey(libAddKey)).onPressed,
+        isNotNull);
+    final emptyRect =
+        tester.getRect(find.text('还没有自定义食物\n点下方按钮添加你的常吃菜'));
+    final addRect = tester.getRect(find.byKey(libAddKey));
+    expect(addRect.top, greaterThan(emptyRect.bottom),
+        reason: '钮在空态文案下方（btn-block 层底）');
+  });
+
+  /* ---------- 钉⑩ 添加钮链路（≙ js/app.js:1347 closeFoodLib→openCustomFoodSheet(true)） ---------- */
+
+  testWidgets('钉⑩ 点「＋ 添加自定义食物」→ 关管理层、开自定义食物表单（cf-name 在场）；'
+      '管理链路不 mock 相机——表单打开即证', (tester) async {
+    final api = StubHealthApi(libCustomFoods: <Map<String, dynamic>>[]);
+    await pumpSheet(tester, api);
+
+    await tapKey(tester, libAddKey);
+    await tester.pumpAndSettle(); // 管理层 pop 动画
+    await tester.pumpAndSettle(); // openFoodLibSheet 续链推入表单层
+
+    expect(find.text('我的食物库'), findsNothing); // ≙ closeFoodLib()（先关层）
+    expect(find.text('自定义食物'), findsOneWidget); // 表单标题 index.html:509
+    expect(find.byKey(cfNameKey), findsOneWidget); // 表单字段在场=链路可达
+    expect(find.byKey(cfSaveAddKey), findsOneWidget);
+    expect(api.listFoodsCalls, 1, reason: '开表单不触发额外取数');
+  });
+
+  testWidgets('钉⑩b 添加钮常驻：内置 tab 与加载失败态均在层底在场（#lib-add 在 #lib-list 之外）',
+      (tester) async {
+    final api = StubHealthApi(
+        libCustomFoods: customStore(), libBuiltins: builtinStore());
+    await pumpSheet(tester, api);
+    expect(find.byKey(libAddKey), findsOneWidget); // 自定义 tab
+
+    await tapKey(tester, libSegKey('builtin'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(libAddKey), findsOneWidget); // 内置 tab（双 tab 均在）
+
+    api.listFoodsError = ApiException('boom');
+    await tapKey(tester, libSegKey('custom'));
+    await tester.pumpAndSettle();
+    expect(find.text('加载失败：boom'), findsOneWidget);
+    expect(find.byKey(libAddKey), findsOneWidget); // 失败态仍常驻
   });
 
   /* ---------- 钉⑨ 回归钉：管理链路 bodies id 恒裸值（不含 cf_ 前缀） ---------- */
