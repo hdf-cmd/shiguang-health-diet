@@ -41,6 +41,8 @@ class StubHealthApi implements HealthApi {
     this.waterCupsByDate,
     this.addWaterError,
     this.summaryByDate,
+    this.libCustomFoods,
+    this.libBuiltins,
   });
 
   /// 成功返回体（null 时按全零汇总/空记录处理）
@@ -204,6 +206,141 @@ class StubHealthApi implements HealthApi {
   /// deleteFoodRecord 收到的 id（按调用顺序收集）
   final List<String> deletedIds = <String>[];
   ApiException? deleteError;
+
+  /* ---------- M7-T4 食物库管理：listCustomFoods / setCustomFoodMeals /
+  deleteCustomFood / setHiddenFoods / getBuiltinFoods ---------- */
+
+  /// 自定义食物库（可变存储；元素 12 键平铺 ≙ 云 index.js:299-305 GET 返形）。
+  /// listCustomFoods 返回浅拷贝；setMeals/delete 成功后对库做同款写操作
+  /// （meals 白名单过滤回写、按裸 id 摘除）——重取即见真值。
+  /// 注意：用例请传可变 List/Map（[cfFoodMap] 工厂即满足）。
+  List<Map<String, dynamic>>? libCustomFoods;
+
+  /// 内置库（元素 7 键含 hidden ≙ 云 index.js:329-332）；setHiddenFoods 按
+  /// 云语义 **全量替换** 后同步各条 hidden 旗标。同样需可变形变。
+  List<Map<String, dynamic>>? libBuiltins;
+
+  ApiException? listFoodsError;
+  ApiException? builtinError;
+  ApiException? setMealsError;
+  ApiException? deleteCustomError;
+  ApiException? setHiddenError;
+  int listFoodsCalls = 0;
+  int builtinCalls = 0;
+
+  /// setCustomFoodMeals 收到的 (id, 白名单过滤后 meals)（按调用顺序收集；
+  /// 回归钉「管理链路 id 恒裸值不含 cf_」的观测面）
+  final List<({String id, List<String> meals})> mealSetBodies =
+      <({String id, List<String> meals})>[];
+
+  /// deleteCustomFood 收到的 id（按调用顺序收集，注错时亦记录=请求已发出）
+  final List<String> deletedCustomIds = <String>[];
+
+  /// setHiddenFoods 收到的全量 ids（按调用顺序收集；云 slice(0,200) 已在桩截断）
+  final List<List<String>> hiddenSubmissions = <List<String>>[];
+
+  /// 自定义食物库单条（云 GET /foods/custom 返形 12 键，index.js:299-305；
+  /// unit 归一 g/ml、meals 缺省空数组同云）
+  static Map<String, dynamic> cfFoodMap({
+    required String id,
+    required String name,
+    num kcal = 0,
+    num grams = 0,
+    String unit = 'g',
+    List<String> meals = const <String>[],
+    num protein = 0,
+    num carb = 0,
+    num fat = 0,
+    String portion = '',
+    String emoji = '🍽️',
+    String image = '',
+  }) =>
+      <String, dynamic>{
+        'id': id,
+        'name': name,
+        'kcal': kcal,
+        'grams': grams,
+        'unit': unit == 'ml' ? 'ml' : 'g',
+        'meals': List<String>.of(meals),
+        'protein': protein,
+        'carb': carb,
+        'fat': fat,
+        'portion': portion,
+        'emoji': emoji,
+        'image': image,
+      };
+
+  /// 内置库单条（云 GET /foods/builtin 返形 7 键，index.js:329-332）
+  static Map<String, dynamic> builtinFoodMap({
+    required String id,
+    required String name,
+    String meta = '',
+    num kcal = 0,
+    String emoji = '🍽️',
+    String image = '',
+    bool hidden = false,
+  }) =>
+      <String, dynamic>{
+        'id': id,
+        'name': name,
+        'meta': meta,
+        'kcal': kcal,
+        'emoji': emoji,
+        'image': image,
+        'hidden': hidden,
+      };
+
+  @override
+  Future<List<dynamic>> listCustomFoods() async {
+    listFoodsCalls++;
+    if (listFoodsError != null) throw listFoodsError!;
+    return List<dynamic>.of(libCustomFoods ?? const <Map<String, dynamic>>[]);
+  }
+
+  @override
+  Future<Map<String, dynamic>> setCustomFoodMeals(
+      String id, List<String> meals) async {
+    // 云白名单（index.js:311-313）：四 meal 过滤 + slice(0,4)
+    final filtered = meals
+        .where((m) =>
+            m == 'breakfast' || m == 'lunch' || m == 'dinner' || m == 'snack')
+        .take(4)
+        .toList();
+    mealSetBodies.add((id: id, meals: filtered));
+    if (setMealsError != null) throw setMealsError!;
+    for (final f in libCustomFoods ?? const <Map<String, dynamic>>[]) {
+      if (f['id'] == id) f['meals'] = List<String>.of(filtered);
+    }
+    return <String, dynamic>{'ok': true, 'id': id, 'meals': filtered};
+  }
+
+  @override
+  Future<Map<String, dynamic>> deleteCustomFood(String id) async {
+    deletedCustomIds.add(id);
+    if (deleteCustomError != null) throw deleteCustomError!;
+    // 云 where({uid,_id}).remove()（index.js:321）：裸 id 摘除
+    libCustomFoods?.removeWhere((f) => f['id'] == id);
+    return <String, dynamic>{'ok': true};
+  }
+
+  @override
+  Future<Map<String, dynamic>> setHiddenFoods(List<String> ids) async {
+    final full = List<String>.of(ids.take(200)); // 云 slice(0,200)（index.js:338）
+    hiddenSubmissions.add(full);
+    if (setHiddenError != null) throw setHiddenError!;
+    // 全量替换（index.js:339 整列覆写 profile.hiddenFoods）：hidden 旗标随列表
+    for (final f in libBuiltins ?? const <Map<String, dynamic>>[]) {
+      f['hidden'] = full.contains(f['id']);
+    }
+    return <String, dynamic>{'ok': true, 'ids': full};
+  }
+
+  @override
+  Future<List<dynamic>> getBuiltinFoods() async {
+    builtinCalls++;
+    if (builtinError != null) throw builtinError!;
+    return List<dynamic>.of(libBuiltins ?? const <Map<String, dynamic>>[]);
+  }
 
   /* ---------- M3-T4 报告页：week/month；T6 体重趋势 ---------- */
 

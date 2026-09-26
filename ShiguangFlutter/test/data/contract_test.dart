@@ -131,6 +131,15 @@ void main() {
         return api.deleteExercise(p['id'] as String);
       case 'setWaterGoal':
         return api.setWaterGoal(b['waterGoalMl'] as num);
+      case 'listCustomFoods':
+        return api.listCustomFoods();
+      case 'setCustomFoodMeals':
+        return api.setCustomFoodMeals(
+            p['id'] as String, (b['meals'] as List).cast<String>());
+      case 'deleteCustomFood':
+        return api.deleteCustomFood(p['id'] as String);
+      case 'setHiddenFoods':
+        return api.setHiddenFoods((b['ids'] as List).cast<String>());
       default:
         throw StateError('contract_test 未接入的 dartMethod: ${r.dartMethod}');
     }

@@ -142,6 +142,42 @@ class HealthApi {
   Future<Map<String, dynamic>> addCustomFood(Map<String, dynamic> food) =>
       _client.call('/foods/custom', method: 'POST', body: food);
 
+  /* ---------- 我的食物库管理（M7-T4；路由 js/api.js:81-85） ---------- */
+
+  /// 自定义食物全量列表（js/api.js:333 listCustomFoods；GET /foods/custom，
+  /// 响应数组 → callValue。元素 12 键平铺，云端按 index.js:299-305：
+  /// id 为裸 _id（cf_ 前缀只出现在搜索结果 id，index.js:82））
+  Future<List<dynamic>> listCustomFoods() async {
+    final data = await _client.callValue('/foods/custom');
+    return data is List ? data : const <dynamic>[];
+  }
+
+  /// 改自定义食物餐次归类（js/api.js:335 setCustomFoodMeals：
+  /// PUT /foods/custom/:id，body {meals}；云端白名单过滤
+  /// breakfast/lunch/dinner/snack 截 4，回 {ok,id,meals}，index.js:309-316）
+  Future<Map<String, dynamic>> setCustomFoodMeals(
+    String id,
+    List<String> meals,
+  ) => _client.call(
+    '/foods/custom/:id',
+    method: 'PUT',
+    params: <String, dynamic>{'id': id},
+    body: <String, dynamic>{'meals': meals},
+  );
+
+  /// 删除自定义食物（js/api.js:334 deleteCustomFood：DELETE /foods/custom/:id，
+  /// 回 {ok:true}，index.js:319-323；id 为裸 _id）
+  Future<Map<String, dynamic>> deleteCustomFood(String id) =>
+      _client.call('/foods/custom/:id',
+          method: 'DELETE', params: <String, dynamic>{'id': id});
+
+  /// 设置内置库「已移除」id 列表（js/api.js:337 setHiddenFoods：
+  /// PUT /foods/hidden，body {ids} **全量替换**（云端整列覆写
+  /// profile.hiddenFoods，index.js:336-341），回 {ok,ids}）
+  Future<Map<String, dynamic>> setHiddenFoods(List<String> ids) =>
+      _client.call('/foods/hidden',
+          method: 'PUT', body: <String, dynamic>{'ids': ids});
+
   /* ---------- 报告（M3-T2；路由 js/api.js:92-94，响应契约 index.js:462-546/579-601） ---------- */
 
   /// 本周（周一起）7 天柱状 + 宏量达标率（js/api.js:348 getWeekReport；

@@ -39,6 +39,7 @@ import '../home/home_controller.dart' show healthApiProvider;
 import '../notifications/reminder_scheduler.dart';
 import '../scale/scale_service.dart';
 import 'body_profile_card.dart' show BodyProfileCard;
+import 'food_lib_sheet.dart' show openFoodLibSheet;
 import 'profile_edit_sheet.dart'
     show avatarDataOf, avatarInitial, openProfileEditSheet;
 import 'profile_providers.dart' show profileProvider;
@@ -336,6 +337,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             _weightCard(weight),
             const SizedBox(height: Tokens.sp3),
             _remindCard(),
+            const SizedBox(height: Tokens.sp3),
+            // 食物库管理入口（M7-T4；≙ index.html:249 #btn-foodlib「食物库」
+            // btn-soft 钮，文案逐字；位置=提醒卡后、退出登录前——R4 定，
+            // H5 本钮在记录页，spec §4.2 裁定落「我的」页）。
+            FilledButton.tonal(
+              onPressed: () => openFoodLibSheet(context),
+              child: const Text('食物库'),
+            ),
             const SizedBox(height: Tokens.sp3),
             // 退出登录（index.html:456「退出登录」，danger 色）
             TextButton(

@@ -239,6 +239,38 @@
       "path": "/user/water-goal", "httpMethod": "PUT", "readOnly": false,
       "requestSample": { "body": { "waterGoalMl": 1600 } },
       "responseShape": "object", "responseFields": ["ok", "waterGoalMl"]
+    },
+    {
+      "_comment": "M7-T4 我的食物库管理。GET /foods/custom 为读路由但 M2/M3 真实采集批次未含（写链红线不实测、本条按 api-diet index.js:299-305 返回代码手写构造，延续 M3 周报口径）：元素 12 键平铺、id 为裸 _id（cf_ 前缀只在搜索结果 id，index.js:82）。",
+      "route": "listCustomFoods", "dartMethod": "listCustomFoods", "jsMethod": "listCustomFoods",
+      "path": "/foods/custom", "httpMethod": "GET", "readOnly": true,
+      "requestSample": {},
+      "responseShape": "array",
+      "responseFields": ["id", "name", "kcal", "grams", "unit", "meals", "protein", "carb", "fat", "portion", "emoji", "image"],
+      "responseSample": [
+        { "id": "cfdoc_test_1", "name": "测试饭团", "kcal": 234, "grams": 100, "unit": "g", "meals": ["lunch", "dinner"], "protein": 5, "carb": 40, "fat": 6, "portion": "100g", "emoji": "🍙", "image": "" }
+      ]
+    },
+    {
+      "_comment": "M7-T4：PUT /foods/custom/:id 回包 ≙ index.js:315 {ok,id,meals}（meals 经白名单过滤后回显）。",
+      "route": "setCustomFoodMeals", "dartMethod": "setCustomFoodMeals", "jsMethod": "setCustomFoodMeals",
+      "path": "/foods/custom/:id", "httpMethod": "PUT", "readOnly": false,
+      "requestSample": { "params": { "id": "cfdoc_test_1" }, "body": { "meals": ["lunch", "dinner"] } },
+      "responseShape": "object", "responseFields": ["ok", "id", "meals"]
+    },
+    {
+      "_comment": "M7-T4：DELETE /foods/custom/:id 回包 ≙ index.js:322 {ok:true}。",
+      "route": "deleteCustomFood", "dartMethod": "deleteCustomFood", "jsMethod": "deleteCustomFood",
+      "path": "/foods/custom/:id", "httpMethod": "DELETE", "readOnly": false,
+      "requestSample": { "params": { "id": "cfdoc_test_1" } },
+      "responseShape": "object", "responseFields": ["ok"]
+    },
+    {
+      "_comment": "M7-T4：PUT /foods/hidden 全量替换语义，回包 ≙ index.js:340 {ok,ids}（ids 为写入后的完整列表，截 200）。",
+      "route": "hiddenFoods", "dartMethod": "setHiddenFoods", "jsMethod": "setHiddenFoods",
+      "path": "/foods/hidden", "httpMethod": "PUT", "readOnly": false,
+      "requestSample": { "body": { "ids": ["u_01", "u_06"] } },
+      "responseShape": "object", "responseFields": ["ok", "ids"]
     }
   ]
 }
