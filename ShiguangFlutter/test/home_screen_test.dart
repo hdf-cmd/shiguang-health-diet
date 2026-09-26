@@ -3,6 +3,11 @@
 // 全部走 StubHealthApi（test/stubs/stub_health_api.dart），零网络。
 // 数据形状取自 contract/fixtures/diet-core.json 的
 // dailySummary/mealRecords responseSample。
+// M6-T3 注：首页新挂 exercisesProvider（运动卡/环额度），首载多一轮异步泵帧，
+// 会推着 pumpAndSettle 的虚拟时钟越过 riverpod 默认失败退避重试的定时器——
+// error 态用例的 summaryCalls 因此 +1。改走 UncontrolledProviderScope +
+// `retry: (_,_) => null`（exercise_sheet_test 同法）关掉自动重试，
+// 「重试按钮=真重发」的计数断言恢复原语义。
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -12,10 +17,17 @@ import 'package:shiguang_flutter/features/home/home_screen.dart';
 
 import 'stubs/stub_health_api.dart';
 
-Widget harness(StubHealthApi api) => ProviderScope(
-      overrides: [healthApiProvider.overrideWithValue(api)],
-      child: const MaterialApp(home: HomeScreen()),
-    );
+Future<void> harness(WidgetTester tester, StubHealthApi api) async {
+  final container = ProviderContainer(
+    overrides: [healthApiProvider.overrideWithValue(api)],
+    retry: (_, _) => null, // 禁默认退避重试（见头注）
+  );
+  addTearDown(container.dispose);
+  await tester.pumpWidget(UncontrolledProviderScope(
+    container: container,
+    child: MaterialApp(home: HomeScreen()),
+  ));
+}
 
 void main() {
   final kSummary = StubHealthApi.summaryMap(kcal: 712, target: 1679, carb: 60, protein: 45, fat: 30, water: 3);
@@ -28,7 +40,7 @@ void main() {
 
   testWidgets('有记录：环中心=还可摄入(budget-kcal)，aside 已摄入/额度行，三餐行渲染真实记录', (tester) async {
     final api = StubHealthApi(summary: kSummary, records: kRecords);
-    await tester.pumpWidget(harness(api));
+    await harness(tester, api);
     await tester.pumpAndSettle();
 
     expect(find.text('今日盘子'), findsOneWidget);
@@ -49,7 +61,7 @@ void main() {
 
   testWidgets('全空：三餐都是"未记录"，环中心=预算全额（摄入 0）', (tester) async {
     final api = StubHealthApi(summary: StubHealthApi.summaryMap(target: 1679));
-    await tester.pumpWidget(harness(api));
+    await harness(tester, api);
     await tester.pumpAndSettle();
 
     expect(find.text('1679'), findsOneWidget); // 环中心 = budget-0（H5：无记录即全额可吃）
@@ -62,7 +74,7 @@ void main() {
       summaryError: ApiException('登录已过期，请重新登录'),
       recordsError: ApiException('登录已过期，请重新登录'),
     );
-    await tester.pumpWidget(harness(api));
+    await harness(tester, api);
     await tester.pumpAndSettle();
 
     expect(find.text('登录已过期，请重新登录'), findsOneWidget);

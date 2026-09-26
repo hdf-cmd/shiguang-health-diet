@@ -11,7 +11,10 @@
 //   **降级登记**：H5 传 state.actualDeficit（localStorage 近 7 天实际缺口），
 //   本任务 actualInfo 恒 null=预设缺口口径（缺口行注记「预设缺口 500」逐字
 //   取 :1601 非 useActual 支；M6 若做实际缺口再补）。H5 第五行「今日运动」
-//   依赖首页运动记录 state，本卡不接线（ex=0 恒等支），差异登记报告。
+//   M6-T3 已接线：watch exerciseKcalProvider(todayProvider)，行常驻（值 0 也
+//   显，:1588 metab-exercise 恒渲染，注记「今日运动记录累计」:1601）；
+//   TDEE/建议摄入值含 ex（:1587/:1589 `tdee+ex`/`suggest+ex`）、公式注记与
+//   标题右 note 的 ex>0 支（:1599-1605）逐字对齐。
 // - openBodySheet/bumpBodyVal/bindStepperNorm(:1612-1666)：弹层预填当前档案；
 //   身高 ±1 闸 100-250、体重 ±0.5 闸 30-200（bump 定 1 位小数 :1663-1664，
 //   保存输入 norm 定 2 位 :1650）、年龄 ±1 闸 10-100；bump 钳制后不变 →
@@ -38,8 +41,9 @@ import '../../domain/constants.dart' show activity;
 import '../../domain/js_compat.dart' show jsFixed1, jsNumText;
 import '../../domain/metabolism.dart' show computeMetabolism;
 import '../../domain/models.dart' show Body;
+import '../exercise/exercise_controller.dart' show exerciseKcalProvider;
 import '../home/home_controller.dart'
-    show healthApiProvider, summaryProvider;
+    show healthApiProvider, summaryProvider, todayProvider;
 import 'profile_providers.dart' show profileProvider;
 
 /* ---------- 测试键（H5 id 同名，index.html:354-413） ---------- */
@@ -112,6 +116,9 @@ class BodyProfileCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(profileProvider);
     final p = profile.value;
+    // M6-T3：今日运动合计（≙ app.js:1585 `state.exerciseKcal || 0`；在途/失败
+    // orElse 0 ≙ H5 loadExercises 前缺省与 catch 降级）
+    final ex = ref.watch(exerciseKcalProvider(ref.watch(todayProvider)));
     return Semantics(
       label: '编辑身体档案', // index.html:202 aria-label 逐字
       button: true,
@@ -134,7 +141,7 @@ class BodyProfileCard extends ConsumerWidget {
                   : const Text('…',
                       style: TextStyle(
                           fontSize: Tokens.textMd, color: Tokens.ink3)))
-              : _cardBody(p),
+              : _cardBody(p, ex),
         ),
       ),
     );
@@ -169,7 +176,7 @@ class BodyProfileCard extends ConsumerWidget {
 
   // ---- 卡面（renderBodyCard + renderMetab，版式 R4 自主） ----
 
-  Widget _cardBody(Map<String, dynamic> p) {
+  Widget _cardBody(Map<String, dynamic> p, int ex) {
     final b = _bodyOf(p);
     final goal = (p['goal'] as Map?)?.cast<String, dynamic>() ?? const {};
     final tw = (goal['targetWeight'] as num?)?.toDouble();
@@ -223,7 +230,12 @@ class BodyProfileCard extends ConsumerWidget {
                       fontWeight: FontWeight.w700,
                       color: Tokens.ink)),
             ),
-            Text('基准目标 ${jsNumText(m.suggest)} kcal', // :1605 非含运动支逐字
+            Text(
+                // :1605 note 两支逐字：useActual 支 Flutter 不存在（actualInfo 恒
+                // null 降级），ex>0/0 两支 M6-T3 均可真实到达
+                ex > 0
+                    ? '含今日运动 $ex kcal · 基准 ${jsNumText(m.suggest)}'
+                    : '基准目标 ${jsNumText(m.suggest)} kcal',
                 style:
                     const TextStyle(fontSize: Tokens.textXs, color: Tokens.ink3)),
           ],
@@ -235,16 +247,20 @@ class BodyProfileCard extends ConsumerWidget {
             '10×${jsNumText(b.weightKg)}+6.25×${jsNumText(b.heightCm)}−5×${jsNumText(b.age)}${b.gender == 'male' ? '+5' : '−161'}'), // :1598
         _metabLine(
             '每日消耗 TDEE', // :218
-            '${jsNumText(m.tdee)} kcal',
-            'BMR×系数${jsNumText(af)}'), // :1599 ex=0 支
+            '${jsNumText(m.tdee + ex)} kcal', // :1587 值含 ex（H5 tdee+ex）
+            'BMR×系数${jsNumText(af)}${ex > 0 ? '＋今日运动$ex' : ''}'), // :1599 两支逐字
         _metabLine(
             '今日建议摄入', // :219
-            '${jsNumText(m.suggest)} kcal',
-            '消耗${jsNumText(m.tdee)}−缺口${jsNumText(m.realDeficit)}'), // :1600 ex=0 支
+            '${jsNumText(m.suggest + ex)} kcal', // :1589 值含 ex（与首页环额度同源）
+            '消耗${jsNumText(m.tdee)}−缺口${jsNumText(m.realDeficit)}${ex > 0 ? '＋运动$ex' : ''}'), // :1600 两支逐字
         _metabLine(
             '每日缺口', // :220
             '${jsNumText(m.effDeficit)} kcal',
             '预设缺口 ${jsNumText(m.realDeficit)}'), // :1601 非 useActual 支（降级标注）
+        _metabLine(
+            '今日运动', // index.html:219 DOM 第 5 行（每日缺口之后）
+            '${jsNumText(ex)} kcal', // :1588 常驻（值 0 也显「0 kcal」）
+            '今日运动记录累计'), // :1601 注记常驻逐字
         const SizedBox(height: Tokens.sp2),
         Text(m.etaText, // :1606-1608 原文
             style: const TextStyle(fontSize: Tokens.textXs, color: Tokens.ink2)),

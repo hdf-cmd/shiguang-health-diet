@@ -7,12 +7,26 @@
 // M3-T7（终审 Minor M1 核销）：加载期显式静态骨架（plate-ring-skeleton /
 // meal-skeleton，与报告页 T4 卡框骨架同路线——不排持续帧，pumpAndSettle 不死等），
 // 仅"加载完成且无记录"才显零值态；餐盘环本体见 plate_ring.dart。
+// M6-T3：①环额度接真实运动消耗（exerciseKcalProvider，app.js:298-309 两支
+// note 逐字）；②三餐卡后插运动卡 HomeExerciseCard（app.js:1740-1754 +
+// index.html:133-137）。卡序复核：H5 首页 plate(70)→advice(106)→water(111)→
+// exercise(133)，运动卡为 home 末位卡；Flutter 首页现无建议/喝水卡（T4/T5
+// 落地），运动卡按序置于三餐卡后=末位，advice/water 后续落地时应插在餐盘卡
+// 与运动卡之间，与 H5 相对位一致。
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
+import '../../domain/constants.dart' show exerciseLib;
+import '../../domain/dates.dart' show dateLabelOf, todayIso;
+import '../../domain/exercise.dart' show isRepRecord;
+import '../../domain/js_compat.dart' show jsNumText;
 import '../../domain/models.dart';
+import '../exercise/exercise_controller.dart'
+    show deleteExerciseRecord, exerciseKcalProvider, exercisesProvider;
+import '../exercise/exercise_sheet.dart'
+    show confirmDeleteExercise, openExerciseSheet;
 import 'home_controller.dart';
 import 'plate_ring.dart';
 
@@ -35,6 +49,9 @@ class HomeScreen extends ConsumerWidget {
     final date = ref.watch(todayProvider);
     final summary = ref.watch(summaryProvider(date));
     final records = ref.watch(recordsProvider(date));
+    // M6-T3 环接线（app.js:298 ex=state.exerciseKcal||0；在途/失败 orElse 0
+    // ≙ H5 loadExercises 前缺省与 catch 降级，不阻断主流程）
+    final ex = ref.watch(exerciseKcalProvider(date));
     final error = _errorMessage(summary, records);
 
     return SafeArea(
@@ -72,9 +89,12 @@ class HomeScreen extends ConsumerWidget {
               ),
             )
           else ...[
-            _plateCard(summary),
+            _plateCard(summary, ex),
             const SizedBox(height: Tokens.sp3),
             _mealsCard(records),
+            const SizedBox(height: Tokens.sp3),
+            // 运动卡（index.html:133-137，H5 首页末位卡；复核注释见文件头）
+            HomeExerciseCard(date: date),
           ],
         ],
       ),
@@ -87,7 +107,8 @@ class HomeScreen extends ConsumerWidget {
   /// （板块日期切换非 M3 范围）。
   /// 加载期（summary 未回）：环位显静态骨架、aside 数字显"—"——与"加载完成
   /// 且无记录"的零值态（真实 0/预算数字）可分辨（M2 终审 Minor M1）。
-  Widget _plateCard(AsyncValue<Summary> summary) {
+  /// [ex] 今日运动消耗（M6-T3 接线，app.js:298）；加载期不显 0 而显 —（同口径）。
+  Widget _plateCard(AsyncValue<Summary> summary, int ex) {
     final s = summary.value;
     // H5 renderRing 入参先 Math.round 语义取整（本仓 _n 口径同源）
     final kcal = s?.kcal.round() ?? 0;
@@ -100,8 +121,10 @@ class HomeScreen extends ConsumerWidget {
             carb: s.carb.round(),
             protein: s.protein.round(),
             fat: s.fat.round(),
+            exerciseKcal: ex,
           );
-    final budget = s == null ? '—' : '${target + PlateRing.exerciseKcal}';
+    // budget = target + ex（app.js:299；M3 恒 0 口子已由实例参数闭环）
+    final budget = s == null ? '—' : '${target + ex}';
     return _card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -119,14 +142,16 @@ class HomeScreen extends ConsumerWidget {
                     const SizedBox(height: Tokens.sp3), // .aside gap --sp-3
                     _goalLine('已摄入', s == null ? '—' : '$kcal'),
                     const SizedBox(height: Tokens.sp3),
-                    _goalLine('运动消耗', s == null ? '—' : '0'),
-                    // note（app.js:306-308 ex==0 分支逐字；ex=0 恒走此分支，
-                    // ex>0 文案归 M4+ 运动打卡）。加载期无 target 不显。
+                    _goalLine('运动消耗', s == null ? '—' : '$ex'),
+                    // note（app.js:306-309 两支逐字；M6-T3 起 ex>0 支可真实到达，
+                    // ex=0 支为 M3 已落文案）。加载期无 target 不显。
                     if (s != null) ...[
                       const SizedBox(height: Tokens.sp2), // .goal-note margin-top
                       Text(
                         key: const ValueKey('ring-note'),
-                        '基准目标 $target kcal · 记运动后额度自动上调',
+                        ex > 0
+                            ? '额度 ${target + ex} = 基准 $target + 运动 $ex kcal'
+                            : '基准目标 $target kcal · 记运动后额度自动上调',
                         style: const TextStyle(
                             fontSize: Tokens.textXs,
                             color: Tokens.ink3,
@@ -331,6 +356,206 @@ class _MealSkeletonRow extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/* ---------- M6-T3 首页运动卡（≙ app.js:1740-1754 + index.html:133-137） ---------- */
+
+/// 行 ✕ 删除钮测试键（id 取自云记录）
+@visibleForTesting
+Key homeExDelKey(String id) => Key('home-ex-del-$id');
+
+/// 今日运动卡：卡题两支（:1741 今日「今日运动」/非今日「运动 · {dateLabel}」）、
+/// 副行「消耗 N kcal」（:1742）、行=emoji thumb+名+meta+「-kcal kcal」+✕
+/// （:1743-1751）、空态「今天还没运动，点下方「记运动」」（:1754，error 降级同空
+/// ≙ loadExercises catch→[]，不阻断主流程）、按钮「＋ 记运动」开 T2 弹层
+/// （index.html:136 btn-add-exercise）。版式 R4 自主：对齐首页既有卡样式
+/// （Tokens.surface 圆角阴影），行结构复用 _mealRow 观感。
+/// 删除链走 T2 confirmDeleteExercise + deleteExerciseRecord，防重入守卫 ≙
+/// app.js:1832「确认框已开则 return」（T2 评审移交①）。
+class HomeExerciseCard extends ConsumerStatefulWidget {
+  const HomeExerciseCard({super.key, required this.date});
+
+  final String date;
+
+  @override
+  ConsumerState<HomeExerciseCard> createState() => _HomeExerciseCardState();
+}
+
+class _HomeExerciseCardState extends ConsumerState<HomeExerciseCard> {
+  /// 确认框在开标志（≙ H5 全局 #confirm-sheet.show 判定，:1832）：
+  /// 长按+click 双触同帧二次进入时直接 return。
+  bool _confirmOpen = false;
+
+  void _toast(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  Future<void> _delete(Map<String, dynamic> rec) async {
+    if (_confirmOpen) return; // :1832 逐义：确认框已开则 return
+    _confirmOpen = true;
+    late final bool ok;
+    try {
+      ok = await confirmDeleteExercise(context);
+    } finally {
+      _confirmOpen = false; // ≙ H5 确认框关闭即解除守卫（删除在途不再拦第二框）
+    }
+    if (!ok || !mounted) return; // :1834 取消零请求
+    await deleteExerciseRecord(ref, widget.date, rec, _toast);
+  }
+
+  /// meta 行（app.js:1750）：rep 记录「{amount} {repUnit}」/ km「{amount} km」/
+  /// 其余「{amount} 分钟」。云 GET 无 createdAt（T1 登记）→ isRepRecord 恒
+  /// false → 次数型刷新后退化按分钟显示，H5 同病 bug-for-bug（测试钉死）。
+  static String _metaOf(Map<String, dynamic> r) {
+    final amount = jsNumText((r['amount'] as num?) ?? 0); // JS Number 串形（5.0→5）
+    final key = '${r['key'] ?? ''}';
+    final createdAt = (r['createdAt'] as num?)?.toInt() ?? 0;
+    if (isRepRecord(key: key, createdAt: createdAt)) {
+      // rep 判别命中 ⇒ key 必属 {pushup,rope}（_repKeys），exerciseLib 必含
+      final lib = exerciseLib.firstWhere((l) => l.key == key);
+      return '$amount ${lib.repUnit ?? '次'}';
+    }
+    return r['unit'] == 'km' ? '$amount km' : '$amount 分钟';
+  }
+
+  Widget _row(Map<String, dynamic> r) {
+    final id = '${r['id']}';
+    final name = '${r['name'] ?? ''}';
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: Tokens.sp1),
+      child: Row(
+        children: [
+          Text('${r['emoji'] ?? ''}',
+              style: const TextStyle(fontSize: Tokens.textLg)), // .thumb
+          const SizedBox(width: Tokens.sp2),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        color: Tokens.ink, fontSize: Tokens.textSm)), // .name
+                Text(_metaOf(r),
+                    style: const TextStyle(
+                        fontSize: Tokens.textXs, color: Tokens.ink3)), // .meta
+              ],
+            ),
+          ),
+          const SizedBox(width: Tokens.sp2),
+          Text(
+              // 「-{kcal} kcal」 :1750
+              '-${jsNumText((r['kcal'] as num?) ?? 0)} kcal',
+              style: const TextStyle(
+                  color: Tokens.ink2,
+                  fontSize: Tokens.textSm,
+                  fontWeight: FontWeight.w700)),
+          const SizedBox(width: Tokens.sp1),
+          Semantics(
+            label: '删除$name', // aria-label 删除${r.name} :1751 逐字
+            button: true,
+            child: GestureDetector(
+              key: homeExDelKey(id),
+              onTap: () => _delete(r),
+              behavior: HitTestBehavior.opaque,
+              child: const Padding(
+                padding: EdgeInsets.all(Tokens.sp1),
+                child: Text('✕',
+                    style:
+                        TextStyle(fontSize: Tokens.textMd, color: Tokens.ink3)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final list = ref.watch(exercisesProvider(widget.date));
+    final total = ref.watch(exerciseKcalProvider(widget.date)); // :1742 reduce
+    // 卡题两支（:1741）：dateLabelOf 不识别「今天」，调用方自判（dates.dart 注）
+    final title = widget.date == todayIso()
+        ? '今日运动'
+        : '运动 · ${dateLabelOf(widget.date)}';
+    final recs = list.value ?? const <Map<String, dynamic>>[];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(Tokens.sp5),
+      decoration: BoxDecoration(
+        color: Tokens.surface,
+        borderRadius: BorderRadius.circular(Tokens.radiusLg),
+        boxShadow: Tokens.shadowCard,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(title,
+                    style: const TextStyle(fontWeight: FontWeight.w700)),
+              ),
+              Text('消耗 $total kcal', // .more（index.html:134）
+                  style: const TextStyle(
+                      fontSize: Tokens.textSm, color: Tokens.ink3)),
+            ],
+          ),
+          const SizedBox(height: Tokens.sp3),
+          if (list.value == null && list.isLoading)
+            const _ExerciseSkeletonRow() // 首载骨架（与餐盘/三餐卡同口径）
+          else if (recs.isEmpty)
+            Text('今天还没运动，点下方「记运动」', // :1754 逐字
+                style: const TextStyle(
+                    fontSize: Tokens.textSm, color: Tokens.ink3))
+          else
+            for (final r in recs) _row(r),
+          const SizedBox(height: Tokens.sp3), // :137 btn margin-top --sp-3
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              // btn-soft btn-block ≙ soft 底通栏（R4 观感；Column stretch 安全位）
+              style: FilledButton.styleFrom(
+                backgroundColor: Tokens.primarySoft,
+                foregroundColor: Tokens.primaryDeep,
+              ),
+              onPressed: () =>
+                  openExerciseSheet(context, ref, date: widget.date),
+              child: const Text('＋ 记运动'), // index.html:136 逐字
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 运动记录首载骨架行：单条灰条占位（高 ≈ 行名+meta 两行，surfaceSoft）
+class _ExerciseSkeletonRow extends StatelessWidget {
+  const _ExerciseSkeletonRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: Tokens.sp1),
+      child: SizedBox(
+        key: ValueKey('exercise-skeleton'),
+        height: 34,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Tokens.surfaceSoft,
+            borderRadius: BorderRadius.all(Radius.circular(Tokens.radiusSm)),
+          ),
+        ),
       ),
     );
   }

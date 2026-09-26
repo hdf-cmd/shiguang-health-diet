@@ -315,20 +315,24 @@ class _ExerciseSheetState extends ConsumerState<_ExerciseSheet> {
                       child: Row(
                         children: [
                           Expanded(
-                            child: TextField(
-                              controller: _amountCtl,
-                              key: exAmountKey,
-                              textAlign: TextAlign.center,
-                              keyboardType: const TextInputType
-                                  .numberWithOptions(decimal: true),
-                              // M5-T7 定式：字符类过滤，非法解析由步进/保存兜底
-                              inputFormatters: [
-                                FilteringTextInputFormatter.allow(
-                                    RegExp(r'[0-9.]')),
-                              ],
-                              onChanged: (_) => setState(() {}), // 预览实时刷
-                              decoration: const InputDecoration(
-                                  isDense: true, counterText: ''),
+                            child: Semantics(
+                              // T2 评审移交②：index.html:428 aria-label 逐字
+                              label: '运动量',
+                              child: TextField(
+                                controller: _amountCtl,
+                                key: exAmountKey,
+                                textAlign: TextAlign.center,
+                                keyboardType: const TextInputType
+                                    .numberWithOptions(decimal: true),
+                                // M5-T7 定式：字符类过滤，非法解析由步进/保存兜底
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.allow(
+                                      RegExp(r'[0-9.]')),
+                                ],
+                                onChanged: (_) => setState(() {}), // 预览实时刷
+                                decoration: const InputDecoration(
+                                    isDense: true, counterText: ''),
+                              ),
                             ),
                           ),
                           const SizedBox(width: Tokens.sp1),

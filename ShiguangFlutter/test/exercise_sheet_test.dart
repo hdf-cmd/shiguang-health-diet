@@ -309,6 +309,17 @@ void main() {
 
   /* ---------- ⑥ 删除（:1831-1852）：确认框 + 成功/取消/失败 ---------- */
 
+  /* ---------- ⑦ 运动量输入框 Semantics（T2 评审移交②，index.html:428 aria-label） ---------- */
+
+  testWidgets('⑦弹层运动量输入框带 Semantics「运动量」（index.html:428 aria-label 逐字）',
+      (tester) async {
+    final handle = tester.ensureSemantics();
+    await pumpHost(tester, newApi());
+    await openSheet(tester);
+    expect(find.bySemanticsLabel('运动量'), findsOneWidget);
+    handle.dispose();
+  });
+
   Map<String, dynamic> x1() => <String, dynamic>{
         'id': 'x1',
         'key': 'run',

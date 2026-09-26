@@ -10,8 +10,9 @@
 // - 内环三段 strokeDasharray=`len C_IN` + strokeDashoffset=-前段累加
 //   （app.js:332-338）⇒ 每段起点 = 前段扫角之和，顺排不重叠。
 //
-// 运动消耗：exerciseKcal 恒 0——运动打卡不在 M3，**M4+ 接运动打卡后启用**
-// （H5 app.js:298-299 budget = target + exerciseKcal 的 ex 项）。
+// 运动消耗：M6-T3 起为实例参数 exerciseKcal（默认 0），首页接
+// exerciseKcalProvider(date)（H5 app.js:298-299 budget = target + exerciseKcal 的
+// ex 项，本组件恒 0 口子就此闭环）。
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart'; // visibleForTesting 经 material 再导出
@@ -61,6 +62,7 @@ class PlateRing extends StatelessWidget {
     required this.carb,
     required this.protein,
     required this.fat,
+    this.exerciseKcal = 0,
   });
 
   final int kcal;
@@ -71,9 +73,9 @@ class PlateRing extends StatelessWidget {
   final int protein;
   final int fat;
 
-  /// 运动消耗恒 0：运动打卡不在 M3，**M4+ 接运动打卡后启用**（届时 budget
-  /// = target + exerciseKcal 的加项生效，H5 app.js:298-299 同源）。
-  static const int exerciseKcal = 0;
+  /// 今日运动消耗（H5 app.js:298 `state.exerciseKcal || 0`）。M6-T3 起首页接
+  /// exerciseKcalProvider(date)；默认 0 保留无运动语境（M3 骨架测试/预览可用）。
+  final int exerciseKcal;
 
   /// 今日额度 = 基准目标 + 运动消耗（app.js:299）
   int get budget => target + exerciseKcal;

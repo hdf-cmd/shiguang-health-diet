@@ -12,6 +12,7 @@ import '../data/token_store.dart';
 // 终审 I1：登出/换号失效全部账号数据 provider，需引用各 feature 的 provider。
 // app→features 的单向依赖本就存在（root_container.dart 同层同法拼装），
 // home_controller ↔ auth_state 的文件级环 Dart 合法且此前已成立。
+import '../features/exercise/exercise_controller.dart' show exercisesProvider;
 import '../features/home/home_controller.dart' show recordsProvider, summaryProvider;
 import '../features/profile/profile_providers.dart' show profileProvider;
 import '../features/profile/profile_screen.dart' show profileWeightProvider;
@@ -65,6 +66,7 @@ class AuthNotifier extends Notifier<AuthStatus> {
       ..invalidate(profileWeightProvider)
       ..invalidate(summaryProvider) // family：整族失效
       ..invalidate(recordsProvider) // family：整族失效
+      ..invalidate(exercisesProvider) // M6-T3：运动记录 family：整族失效
       ..invalidate(weekReportProvider)
       ..invalidate(monthReportProvider)
       ..invalidate(weightTrendProvider)

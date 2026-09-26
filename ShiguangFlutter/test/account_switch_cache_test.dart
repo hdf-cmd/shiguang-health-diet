@@ -15,6 +15,8 @@ import 'package:shiguang_flutter/app/auth_state.dart';
 import 'package:shiguang_flutter/app/root_container.dart';
 import 'package:shiguang_flutter/data/token_store.dart';
 import 'package:shiguang_flutter/domain/dates.dart' show todayIso;
+import 'package:shiguang_flutter/features/exercise/exercise_controller.dart'
+    show exerciseKcalProvider, exercisesProvider;
 import 'package:shiguang_flutter/features/home/home_controller.dart'
     show summaryProvider;
 import 'package:shiguang_flutter/features/profile/profile_screen.dart'
@@ -40,11 +42,13 @@ class _MemFreqStore implements FoodFreqStore {
   Future<void> markInitialized() async {}
 }
 
-/// 账号数据剧本：体重/日汇总/周报三个路由的返回体，按账号切换。
+/// 账号数据剧本：体重/日汇总/周报/运动记录四个路由的返回体，按账号切换。
+/// M6-T3：运动卡上线后登出清单含 exercisesProvider（family 整族）。
 Map<String, StubResponse> routesFor({
   required double weightKg,
   required num kcal,
   required num weekTarget,
+  required String exercisesJson,
 }) =>
     {
       '/user/body-metrics': (
@@ -54,6 +58,10 @@ Map<String, StubResponse> routesFor({
       '/diet/summary': (
         status: 200,
         text: '{"ok":true,"kcal":$kcal,"target":1679,"carb":0,"protein":0,"fat":0,"water":0}'
+      ),
+      '/diet/exercises': (
+        status: 200,
+        text: exercisesJson // 契约 responseShape=array（contract diet-core.json）
       ),
       '/report/week': (
         status: 200,
@@ -80,12 +88,21 @@ Future<InMemoryTokenStore> signedInStore() async {
 }
 
 void main() {
-  test('登出→换号重登：profileWeight/summary/weekReport/foodFreq 全部失效，重读发新请求拿新账号值',
+  // A 账号一条 100kcal 运动记录；B 账号清空（数组响应，契约 exercises 形状）
+  const kExA =
+      '[{"id":"x1","key":"run","name":"跑步","emoji":"🏃","amount":1,"unit":"min","kcal":100}]';
+  const kExB = '[]';
+
+  test('登出→换号重登：profileWeight/summary/weekReport/exercises/foodFreq 全部失效，重读发新请求拿新账号值',
       () async {
     final store = await signedInStore();
     final freqStore = _MemFreqStore();
     final adapter = RecordingAdapter(
-        routes: routesFor(weightKg: 66.6, kcal: 1200, weekTarget: 1679));
+        routes: routesFor(
+            weightKg: 66.6,
+            kcal: 1200,
+            weekTarget: 1679,
+            exercisesJson: kExA));
     final container = buildRootContainer(
       tokenStore: store,
       dio: Dio()..httpClientAdapter = adapter,
@@ -107,6 +124,10 @@ void main() {
     final weekSub = container.listen(weekReportProvider, (_, _) {});
     addTearDown(weekSub.close);
     expect((await container.read(weekReportProvider.future)).target, 1679);
+    final exSub = container.listen(exercisesProvider(date), (_, _) {});
+    addTearDown(exSub.close);
+    expect(await container.read(exercisesProvider(date).future), hasLength(1));
+    expect(container.read(exerciseKcalProvider(date)), 100);
     await container.read(foodFreqProvider.notifier).record('苹果');
     expect(container.read(foodFreqProvider), {'苹果': 1});
     expect(adapter.countOf('/user/body-metrics'), 1);
@@ -119,7 +140,11 @@ void main() {
     // 阶段 3：换号重登（B 剧本：体重 88.8 / kcal 500 / 周报 target 2000）。
     // 会话过期直登路径不经过 signOut，也靠 submit 成功后的失效兜底——
     // 本阶段 signOut 已失效一次，此处断言的是「登录后的重读必须是 B 数据」。
-    adapter.routes.addAll(routesFor(weightKg: 88.8, kcal: 500, weekTarget: 2000));
+    adapter.routes.addAll(routesFor(
+        weightKg: 88.8,
+        kcal: 500,
+        weekTarget: 2000,
+        exercisesJson: kExB));
     await container.read(authStateProvider.notifier).submit(
         username: 'b', password: 'Test1234!@', isRegister: false);
     expect(container.read(authStateProvider), AuthStatus.authed);
@@ -132,6 +157,12 @@ void main() {
     expect(adapter.countOf('/user/body-metrics'), 2); // 真的重发了请求
     expect((await container.read(summaryProvider(date).future)).kcal, 500);
     expect((await container.read(weekReportProvider.future)).target, 2000);
+    // M6-T3：运动记录 family 整族失效——重取不带 A 的 x1。计数不锁死：
+    // keepAlive 家族带监听 invalidate 即刻重取（登出一次+换号一次=共 3 发），
+    // 断「>1 必重发 + 值回 B 空列表」即可证缓存不残留。
+    expect(await container.read(exercisesProvider(date).future), isEmpty);
+    expect(container.read(exerciseKcalProvider(date)), 0);
+    expect(adapter.countOf('/diet/exercises'), greaterThan(1));
     // 常吃计数：provider 回空（内存态随登出清空；prefs 面按终审处方不动）
     expect(container.read(foodFreqProvider), isEmpty);
   });
@@ -140,7 +171,11 @@ void main() {
       () async {
     final store = await signedInStore();
     final adapter = RecordingAdapter(
-        routes: routesFor(weightKg: 66.6, kcal: 1200, weekTarget: 1679));
+        routes: routesFor(
+            weightKg: 66.6,
+            kcal: 1200,
+            weekTarget: 1679,
+            exercisesJson: kExA));
     final container = buildRootContainer(
       tokenStore: store,
       dio: Dio()..httpClientAdapter = adapter,
@@ -154,7 +189,11 @@ void main() {
 
     // forceAnon（ApiClient 401 终判的生产回调）→ 不 signOut 直接重登 B
     container.read(authStateProvider.notifier).forceAnon();
-    adapter.routes.addAll(routesFor(weightKg: 88.8, kcal: 500, weekTarget: 2000));
+    adapter.routes.addAll(routesFor(
+        weightKg: 88.8,
+        kcal: 500,
+        weekTarget: 2000,
+        exercisesJson: kExB));
     await container.read(authStateProvider.notifier).submit(
         username: 'b', password: 'Test1234!@', isRegister: false);
 
