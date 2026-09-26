@@ -7,6 +7,8 @@
 // 数据：复用 home_controller 的 recordsProvider（同 family 不重建，与首页共享缓存）。
 // 与 H5 差异：H5 记录页纵向平铺四个餐次分组；M2 按任务简报改为顶部餐次分段，
 // 只呈现当前餐次已记列表。H5 的 ✕ 按钮删除改为长按+确认（简报二选一取有确认者）。
+// M7-T6：顶部 7 天日期行（≙ js/app.js renderDateRow :498-516）+ 列表日期源由
+// todayProvider 改 plateDateProvider（≙ H5 全局 state.date，与首页五卡共享）。
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,6 +16,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
 import '../../domain/constants.dart';
+import '../../domain/dates.dart' show localIso;
+import '../home/home_controller.dart' show plateDateProvider;
 import '../common/food_thumb.dart';
 import 'record_controller.dart';
 import 'search_sheet.dart';
@@ -92,7 +96,10 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final date = ref.watch(todayProvider);
+    // M7-T6：日期源=共享 plateDateProvider（≙ H5 全局 state.date，js/app.js:512
+    // chip 点击直写 + :514 renderPlateDate 联动首页餐盘）。此前 M2 固定
+    // todayProvider（每天只见当天），本任务改为可与首页互翻的 7 天行。
+    final date = ref.watch(plateDateProvider);
     final records = ref.watch(recordsProvider(date));
 
     // 自带 Scaffold：SnackBars（H5 toast 位）在本屏内呈现，不依赖 Shell
@@ -110,6 +117,8 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
                       fontSize: Tokens.textXl,
                       fontWeight: FontWeight.w800,
                       color: Tokens.ink)),
+              const SizedBox(height: Tokens.sp3),
+              _dateRow(date),
               const SizedBox(height: Tokens.sp3),
               _mealSeg(),
               const SizedBox(height: Tokens.sp3),
@@ -130,6 +139,74 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// 顶部 7 天日期行 ≙ js/app.js renderDateRow（:498-516）：
+  /// 7 chip = 今天往前 7 天（今-6..今，:501-503），末位（i==6）文案「今天」，
+  /// 其余「M/D」不补零（:506 实读——非 dateLabelOf 的「M月D日」形态）；
+  /// 点击置共享日期源（≙ :512 `state.date = chip.dataset.date`），
+  /// recordsProvider(date) 等 family 随 watch 自动重取（≙ :515 并行拉取）；
+  /// 无未来闸——行内本无未来日（H5 :510-512 同款，不判）。
+  /// 版式 ≙ screens.css:395-396：flex 等分 7 列 + 8px gap（R4：单行不滚，
+  /// 与 H5 同形；chip 视觉 ≙ components.css:52-61 .chip/.chip.active）。
+  Widget _dateRow(String selected) {
+    final now = DateTime.now();
+    final chips = <Widget>[];
+    for (var i = 0; i < 7; i++) {
+      final d = DateTime(now.year, now.month, now.day - (6 - i));
+      final iso = localIso(d);
+      chips.add(Expanded(
+        child: Padding(
+          // gap 8px（--sp-2），末位不挂尾隙
+          padding: EdgeInsets.only(right: i == 6 ? 0 : Tokens.sp2),
+          child: _dateChip(iso, i == 6 ? '今天' : '${d.month}/${d.day}',
+              iso == selected),
+        ),
+      ));
+    }
+    return Row(children: chips);
+  }
+
+  Widget _dateChip(String iso, String label, bool active) {
+    return GestureDetector(
+      // ≙ :509-512 点击置 state.date（plateDateProvider ≙ T1 共享日期源；
+      // 首页五卡/餐盘胶囊同容器同 provider，天然联动）
+      onTap: () => ref.read(plateDateProvider.notifier).state = iso,
+      child: AnimatedContainer(
+        key: ValueKey('date-chip-$iso'),
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(vertical: 9), // .chip padding 9px 0
+        decoration: BoxDecoration(
+          color: active ? Tokens.primary : Tokens.surface,
+          borderRadius: BorderRadius.circular(999), // --radius-full
+          border: Border.all(
+              color: active ? Colors.transparent : Tokens.hairline),
+          boxShadow: active
+              // .chip.active box-shadow: 0 4px 14px -4px var(--primary-glow)
+              ? const [
+                  BoxShadow(
+                      color: Tokens.primaryGlow,
+                      offset: Offset(0, 4),
+                      blurRadius: 14,
+                      spreadRadius: -4)
+                ]
+              : const [
+                  // .chip 常态微影 0 1px 2px rgba(28,36,24,.03)
+                  BoxShadow(
+                      color: Color(0x081C2418),
+                      offset: Offset(0, 1),
+                      blurRadius: 2)
+                ],
+        ),
+        child: Text(label,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: Tokens.textSm,
+              fontWeight: active ? FontWeight.w600 : FontWeight.w400,
+              color: active ? Colors.white : Tokens.ink2, // --on-primary
+            )),
       ),
     );
   }
