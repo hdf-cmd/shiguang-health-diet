@@ -25,7 +25,7 @@ import '../../app/theme.dart';
 import '../../domain/constants.dart' show Exercise, exerciseLib;
 import '../../domain/exercise.dart'
     show exerciseAmountLabel, exerciseKcalOf;
-import '../../domain/js_compat.dart' show jsFixed1;
+import '../../domain/js_compat.dart' show jsFixed1, jsNumber;
 import '../profile/profile_providers.dart' show profileProvider;
 import 'exercise_controller.dart'
     show addExerciseRecord, exerciseWeightKg;
@@ -142,7 +142,9 @@ class _ExerciseSheetState extends ConsumerState<_ExerciseSheet> {
   static String _fmt(num v) =>
       v == v.roundToDouble() ? v.toInt().toString() : '$v';
 
-  num _parseField() => num.tryParse(_amountCtl.text.trim()) ?? 0; // Number('')=0/NaN→0 近似
+  num _parseField() => jsNumber(_amountCtl.text.trim()) ?? 0;
+  // Number() 全串语义（终审 I1）：''→0、'5.'→5（tryParse 曾误落 0 与 H5 分岔）；
+  // NaN→null→0，调用侧 ||step/||state 兜底与 H5 NaN falsy 同路
 
   void _apply(num amount) {
     setState(() {
@@ -192,8 +194,8 @@ class _ExerciseSheetState extends ConsumerState<_ExerciseSheet> {
   /// 保存（≙ :1807-1830）
   Future<void> _save() async {
     final lib = _lib;
-    final v = num.tryParse(_amountCtl.text.trim());
-    final amount = (v == null || v == 0) ? _amountState : v; // :1809 Number()||state
+    final v = jsNumber(_amountCtl.text.trim()); // :1809 Number()||state（终审 I1）
+    final amount = (v == null || v == 0) ? _amountState : v;
     final kcal =
         exerciseKcalOf(lib, amount, exerciseWeightKg(widget.hostRef)); // :1810-1811
     if (kcal == 0) {

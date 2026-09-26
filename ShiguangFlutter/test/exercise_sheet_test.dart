@@ -357,6 +357,16 @@ void main() {
     expect(find.text('ex-n:0'), findsOneWidget); // 桩成功即删行 → invalidate 重取
   });
 
+  testWidgets('②c 终审 I1 步进链 Number 全串语义：输入「5.」点加 → 5.5'
+      '（H5 Number("5.")=5 再 +0.5；原 num.tryParse=null→0→jsFixed1(0.5) 分岔）',
+      (tester) async {
+    await pumpHost(tester, newApi());
+    await openSheet(tester); // 默认跑步 km 档
+    await setAmount(tester, '5.');
+    await tapKey(tester, exIncKey);
+    expect(amountOf(tester), '5.5'); // :1801 +((Number(v)+step).toFixed(1))
+  });
+
   testWidgets('⑥c deleteExerciseError → toast「删除失败：boom」+ invalidate 后列表回插',
       (tester) async {
     final api = newApi(exercises: {kDate: [x1()]});

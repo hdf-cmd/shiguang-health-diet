@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/api_client.dart' show ApiException;
 import '../../domain/constants.dart' show Exercise;
 import '../../domain/exercise.dart' show exerciseKcalOf;
+import '../../domain/js_compat.dart' show jsOr;
 import '../home/home_controller.dart'
     show healthApiProvider, summaryProvider;
 import '../profile/profile_providers.dart' show profileProvider;
@@ -54,7 +55,7 @@ void _syncDay(WidgetRef ref, String date) {
 }
 
 String _failReason(String msg) =>
-    msg.isEmpty ? '网络异常' : msg; // :1828 `err.message || '网络异常'`
+    jsOr(msg, '网络异常'); // :1828 `err.message || '网络异常'`（口径收敛 jsOr）
 
 /// 记一笔运动（≙ app.js:1807-1830 save 处理链的云端段）。
 /// body 七键逐字 :1820-1822：{date,key,name,emoji,amount,unit,kcal}，

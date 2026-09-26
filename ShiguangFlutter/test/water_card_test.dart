@@ -368,4 +368,23 @@ void main() {
     expect(await api.setWaterGoal(5000), containsPair('waterGoalMl', 3000));
     expect(await api.setWaterGoal(2000), containsPair('waterGoalMl', 2000));
   });
+
+  testWidgets(
+    '④f 终审 I1 步进链 Number 全串语义：输入「1600.」点加 → 1800'
+    '（H5 :478 Number("1600.")=1600 +200；原 num.tryParse=null→0→200→clamp '
+    '800 分岔。失焦归一先行时两版同值，本钉锁 _bump 自身口径）',
+    (tester) async {
+      final api = newApi(water: 3);
+      await openSheet(tester, api);
+      await tester.enterText(find.byKey(goalValueKey), '1600.');
+      await tester.pump();
+      await tester.tap(find.byKey(goalIncKey));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextField>(find.byKey(goalValueKey)).controller!.text,
+        '1800',
+      );
+      expect(find.text('最大 3000ml'), findsNothing); // 非顶格无 toast
+    },
+  );
 }

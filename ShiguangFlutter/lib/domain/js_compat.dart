@@ -37,3 +37,25 @@ double jsParseFloat(String s) {
 
 /// JS Math.ceil
 int jsCeil(num x) => x.toDouble().ceil();
+
+/// JS Number(str) 全串语义（M6 终审 I1）：trim 后空串→0；整串须为合法十进制
+/// 数字（'1600.'、'.5'、'1e3' 形态均可），否则返回 null（≙ NaN，调用方走
+/// `||` 兜底）。与 jsParseFloat 前缀语义的差：'16.2.3' → NaN（前缀会得 16.2）。
+/// H5 步进/保存链是 Number(el.value)（app.js:478/:1794/:1801/:1809），必须用
+/// 本函数而非 num.tryParse（其拒绝 '1600.' 尾点形态）。
+/// 已知不可达面：Number 的 '0x10'→16/Infinity 字面量——输入框字符类 [0-9.]
+/// 拦住，不复刻。
+num? jsNumber(String s) {
+  final t = s.trim();
+  if (t.isEmpty) return 0; // Number('')=0
+  if (!RegExp(r'^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$')
+      .hasMatch(t)) {
+    return null; // NaN
+  }
+  return jsParseFloat(t); // 全串校验已过，前缀解析可复用（吸收 '5.'/'.5'）
+}
+
+/// JS `x || fallback` 对字符串的 falsy 语义：null/空串→fallback（'0' 非空串
+/// 原样返回 ≙ JS）。统一「e.message || '网络异常'」族口径（终审 Minor-1）。
+String jsOr(String? s, String fallback) =>
+    (s == null || s.isEmpty) ? fallback : s;

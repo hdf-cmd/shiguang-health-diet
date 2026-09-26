@@ -22,6 +22,7 @@ import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
 import '../../domain/constants.dart' show waterCupMl;
 import '../../domain/dates.dart' show dateLabelOf, todayIso;
+import '../../domain/js_compat.dart' show jsOr;
 import '../profile/profile_providers.dart' show profileProvider, waterGoalMlOf;
 import 'goal_sheet.dart' show openGoalSheet;
 import 'home_controller.dart' show healthApiProvider, summaryProvider;
@@ -84,7 +85,9 @@ class _WaterCardState extends ConsumerState<WaterCard> {
   }
 
   /// ≙ app.js:448/465 `e.message || '网络异常'`（ApiException 露后端 message）
-  static String _errText(Object e) => e is ApiException ? e.message : '网络异常';
+  static String _errText(Object e) =>
+      e is ApiException ? jsOr(e.message, '网络异常') : '网络异常';
+      // ≙ e.message || '网络异常'（终审 Minor-1 与 exercise 族统一口径）
 
   /// 喝一杯（≙ drinkOneCup，app.js:432-449）
   Future<void> _drink(int n, int goal) async {

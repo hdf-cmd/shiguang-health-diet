@@ -21,7 +21,8 @@ import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
 import '../../domain/constants.dart'
     show waterCupMl, waterGoalMin, waterGoalMax;
-import '../../domain/js_compat.dart' show jsNumText, jsParseFloat;
+import '../../domain/js_compat.dart'
+    show jsNumText, jsNumber, jsOr, jsParseFloat;
 import '../common/sheet_toast.dart' show SheetToast;
 import '../profile/profile_providers.dart' show profileProvider;
 import 'home_controller.dart' show healthApiProvider;
@@ -113,9 +114,11 @@ class _GoalSheetState extends ConsumerState<_GoalSheet> {
     _ctl.text = _fmt(v);
   }
 
-  /// bumpGoal（≙ app.js:476-483 逐字）：±200 截断，顶格值不动 + 边界 toast
+  /// bumpGoal（≙ app.js:476-483 逐字）：±200 截断，顶格值不动 + 边界 toast。
+  /// 解析=Number() 全串语义（终审 I1：'1600.'→1600，与 :478 对合；
+  /// Number('')=0，NaN 不可达——字符类 [0-9.]，null→0 兜底同 ||0）
   void _bump(int dir) {
-    final cur = num.tryParse(_ctl.text.trim()) ?? 0; // Number('')→0 近似
+    final cur = jsNumber(_ctl.text.trim()) ?? 0;
     var next = cur + dir * waterCupMl;
     if (next > waterGoalMax) next = waterGoalMax; // Math.min(WATER_GOAL_MAX,·)
     if (next < waterGoalMin) next = waterGoalMin; // Math.max(WATER_GOAL_MIN,·)
@@ -151,7 +154,7 @@ class _GoalSheetState extends ConsumerState<_GoalSheet> {
   /// 保存（≙ app.js:484-493）：await setWaterGoal → 关层 → invalidate → toast
   Future<void> _save() async {
     _normField(); // ≙ 按钮点击先触发输入框 change/blur（浏览器时序近似）
-    final ml = num.tryParse(_ctl.text.trim()) ?? 0; // :487 Number(value)
+    final ml = jsNumber(_ctl.text.trim()) ?? 0; // :487 Number(value)（终审 I1 统一）
     final messenger = ScaffoldMessenger.of(context);
     final hostRef = widget.hostRef;
     try {
@@ -174,7 +177,8 @@ class _GoalSheetState extends ConsumerState<_GoalSheet> {
       // F1（M6-T7 评审）：与成功支 :157 对称的 mounted 守卫——在途关层后
       // Overlay.of(deactivated context) 会抛未处理异步错
       if (!mounted) return;
-      _toastInSheet('同步失败：${e is ApiException ? e.message : '网络异常'}');
+      _toastInSheet(
+          '同步失败：${e is ApiException ? jsOr(e.message, '网络异常') : '网络异常'}');
     }
   }
 
