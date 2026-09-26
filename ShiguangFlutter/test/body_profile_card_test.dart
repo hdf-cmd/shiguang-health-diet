@@ -22,15 +22,18 @@
 // 主题债（T5 评审点名）：真主题 shiguangTheme() 必挂——FilledButton
 // minimumSize 宽=∞ 在 Row 非 flex 位会整块不渲染，默认主题会漏检。
 // 装配样板：抄 test/profile_head_test.dart 的 headContainer（全桩零网络）。
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shiguang_flutter/app/auth_state.dart' show tokenStoreProvider;
 import 'package:shiguang_flutter/app/theme.dart' show shiguangTheme;
 import 'package:shiguang_flutter/data/api_client.dart' show ApiException;
 import 'package:shiguang_flutter/data/token_store.dart';
+import 'package:shiguang_flutter/domain/dates.dart' show localIso, todayIso;
 import 'package:shiguang_flutter/domain/js_compat.dart' show jsFixed1;
 import 'package:shiguang_flutter/domain/metabolism.dart' show computeMetabolism;
 import 'package:shiguang_flutter/domain/models.dart' show Body;
@@ -374,4 +377,65 @@ void main() {
         '55'); // 预填 ≙ :1429
     expect(find.byKey(bodySaveKey), findsNothing); // 整卡开层手势未被误触
   });
+
+  /* ---------- ⑨ M7-T7 实际缺口消费点（renderMetab :1601/:1604 useActual 支） ---------- */
+
+  testWidgets('⑨近2天有记录：缺口行值=实际均值、注记「近2天均值(消耗−摄入)」逐字、note「缺口为近 2 天实际日均 · 预设 500」逐字、eta 实际支',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({}); // 真 PrefsActualDeficitStore 落 mock，不落平台通道
+    final api = newApi();
+    // 昨/前日两条有效记录（其余日 kcal=0 不入 rows；今日 0 不并入）
+    api.summaryByDate = <String, Map<String, dynamic>>{
+      _back(1): StubHealthApi.summaryMap(kcal: 1800),
+      _back(2): StubHealthApi.summaryMap(kcal: 2000),
+    };
+    api.exercisesByDate = <String, List<Map<String, dynamic>>>{
+      _back(1): <Map<String, dynamic>>[
+        {'kcal': 200},
+      ],
+    };
+    await pumpProfile(tester, api);
+
+    // tdee2179 → rows=[{1800,200},{2000,0}] → avg=(579+179)/2=379
+    expect(find.text('379 kcal'), findsOneWidget); // 每日缺口值 effDeficit=avgDeficit
+    expect(find.text('近2天均值(消耗−摄入)'), findsOneWidget); // :1601 useActual 支逐字
+    expect(find.text('缺口为近 2 天实际日均 · 预设 500'), findsOneWidget); // :1604 逐字
+    expect(find.text('预设缺口 500'), findsNothing); // 降级支已让位
+    expect(find.textContaining('按近 2 天实际日均缺口 379 kcal 估算'),
+        findsOneWidget); // computeMetabolism eta useActual 支
+    // 历史六日双请求确实发出（消费点触发的拉取链）
+    expect(
+        api.summaryDates.where((d) => d != todayIso()).toList(), hasLength(6));
+    expect(
+        api.exerciseDates.where((d) => d != todayIso()).toList(), hasLength(6));
+  });
+
+  testWidgets('⑩prefs 当日缓存命中：代谢卡出实际缺口态且零历史请求（先显缓存值 ≙ 缓存语义）',
+      (tester) async {
+    final cached = <String, Object?>{
+      'date': todayIso(),
+      'tdee': 2179,
+      'history': <Object?>[
+        {'date': _back(1), 'intake': 1800, 'exKcal': 200},
+        {'date': _back(2), 'intake': 2000, 'exKcal': 0},
+      ],
+    };
+    SharedPreferences.setMockInitialValues({
+      'sg_actual_deficit_u_test': jsonEncode(cached), // 键名逐字 ≙ H5 :1511
+    });
+    final api = newApi();
+    await pumpProfile(tester, api);
+
+    expect(find.text('379 kcal'), findsOneWidget);
+    expect(find.text('近2天均值(消耗−摄入)'), findsOneWidget);
+    // 零历史请求：summary/exercise 仅今日 watch 各 1 次
+    expect(api.summaryDates.where((d) => d != todayIso()), isEmpty);
+    expect(api.exerciseDates.where((d) => d != todayIso()), isEmpty);
+  });
+}
+
+/// 昨起回退 i 天（真实时钟锚，≙ app.js:1526 setDate 日历日减一）
+String _back(int i) {
+  final n = DateTime.now();
+  return localIso(DateTime(n.year, n.month, n.day - i));
 }

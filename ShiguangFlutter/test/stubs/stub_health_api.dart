@@ -41,6 +41,8 @@ class StubHealthApi implements HealthApi {
     this.waterCupsByDate,
     this.addWaterError,
     this.summaryByDate,
+    this.summaryErrorByDate,
+    this.exerciseErrorByDate,
     this.libCustomFoods,
     this.libBuiltins,
   });
@@ -53,6 +55,12 @@ class StubHealthApi implements HealthApi {
   /// 跨日用例需要「今天/昨天 summary 不同值」才能证水卡显的是当日真值
   /// （同法 exercisesByDate）。
   Map<String, Map<String, dynamic>>? summaryByDate;
+
+  /// M7-T7：按日期注错（该日抛、他日正常）——钉 fetchDeficitHistory 的
+  /// 单日失败 `.catch(()=>null)` 跳过支（全局 [summaryError]/[exerciseError]
+  /// 会让 6 天全挂，测不出「跳过不整体挂」）。
+  Map<String, ApiException>? summaryErrorByDate;
+  Map<String, ApiException>? exerciseErrorByDate;
 
   /// 非空 → 对应方法抛该异常（可在测试中途清空，模拟"重试后成功"）
   ApiException? summaryError;
@@ -459,6 +467,8 @@ class StubHealthApi implements HealthApi {
   Future<Map<String, dynamic>> getDailySummary(String date) async {
     summaryCalls++;
     summaryDates.add(date);
+    final dayErr = summaryErrorByDate?[date]; // M7-T7：单日失败注入（先于全局档）
+    if (dayErr != null) throw dayErr;
     if (summaryError != null) throw summaryError!;
     if (summaryGate != null) await summaryGate!.future;
     // M7-T3：summaryByDate 优先（跨日用例按 date 给不同真值），否则回退单值档
@@ -649,6 +659,8 @@ class StubHealthApi implements HealthApi {
   Future<List<dynamic>> getExercises(String date) async {
     exerciseCalls++;
     exerciseDates.add(date);
+    final dayErr = exerciseErrorByDate?[date]; // M7-T7：单日失败注入
+    if (dayErr != null) throw dayErr;
     if (exerciseError != null) throw exerciseError!;
     return exercisesByDate?[date] ?? const <dynamic>[];
   }

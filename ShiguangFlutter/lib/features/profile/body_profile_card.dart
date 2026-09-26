@@ -8,9 +8,11 @@
 // - renderMetab(:1581-1609)：tw=profileData.goal.targetWeight（:1583）；
 //   BMR/TDEE/建议摄入/缺口四数 + 公式注记（:1598-1601）+ 标题右 note
 //   「基准目标 suggest kcal」（:1605 非含运动支）+ etaText/rangeText 原文。
-//   **降级登记**：H5 传 state.actualDeficit（localStorage 近 7 天实际缺口），
-//   本任务 actualInfo 恒 null=预设缺口口径（缺口行注记「预设缺口 500」逐字
-//   取 :1601 非 useActual 支；M6 若做实际缺口再补）。H5 第五行「今日运动」
+//   **M7-T7 已脱降级**：actualInfo=actualDeficitProvider（prefs 缓存近 6 天
+//   历史+今日实时，≙ state.actualDeficit）。useActual 支（缺口行注记
+//   「近N天均值(消耗−摄入)」:1601 / note「缺口为近 N 天实际日均 · 预设 X」
+//   :1604）与预设支（「预设缺口 X」:1601 / :1605 两支）同屏互斥。
+//   H5 第五行「今日运动」
 //   M6-T3 已接线：watch exerciseKcalProvider(todayProvider)，行常驻（值 0 也
 //   显，:1589 metab-exercise 恒渲染，注记「今日运动记录累计」:1602）；
 //   TDEE/建议摄入值含 ex（:1588/:1591 `tdee+ex`/`suggest+ex`）、公式注记与
@@ -45,7 +47,7 @@ import '../exercise/exercise_controller.dart' show exerciseKcalProvider;
 import '../home/home_controller.dart'
     show healthApiProvider, summaryProvider, todayProvider;
 import 'goal_edit_sheet.dart' show openGoalEditSheet;
-import 'profile_providers.dart' show profileProvider;
+import 'profile_providers.dart' show actualDeficitProvider, profileProvider;
 
 /* ---------- 测试键（H5 id 同名，index.html:354-413） ---------- */
 
@@ -205,7 +207,18 @@ class BodyProfileCard extends ConsumerWidget {
     final b = _bodyOf(p);
     final goal = (p['goal'] as Map?)?.cast<String, dynamic>() ?? const {};
     final tw = (goal['targetWeight'] as num?)?.toDouble();
-    final m = computeMetabolism(b, tw, null); // 降级：actualInfo=null 预设口径
+    // M7-T7：≙ state.actualDeficit（:1584 第三参）。在途/失败/不足 2 天皆
+    // null ≙ H5 state.actualDeficit 初值 null → computeMetabolism 预设支。
+    final actual = ref.watch(actualDeficitProvider).maybeWhen(
+          data: (v) => v,
+          orElse: () => null,
+        );
+    final m = computeMetabolism(b, tw, actual);
+    // useActual 闸在 computeMetabolism 内部（avgDeficit>0 && days≥2，
+    // :87-88 logic.js），m.useActual==true 时 actual 必非空——:1601/:1604
+    // 读 actualDeficit.days 两支各自解构，null 期走预设支。
+    final daysText =
+        m.useActual ? jsNumText((actual!['days'] as num)) : null;
     final af = (activity[b.activity] ?? activity['light']!).f;
     final bmiShown = (b.bmi ??
             b.weightKg / math.pow(b.heightCm / 100, 2)) // 云端缺 bmi 时补算（防御）
@@ -301,11 +314,13 @@ class BodyProfileCard extends ConsumerWidget {
                       color: Tokens.ink)),
             ),
             Text(
-                // :1605 note 两支逐字：useActual 支 Flutter 不存在（actualInfo 恒
-                // null 降级），ex>0/0 两支 M6-T3 均可真实到达
-                ex > 0
-                    ? '含今日运动 $ex kcal · 基准 ${jsNumText(m.suggest)}'
-                    : '基准目标 ${jsNumText(m.suggest)} kcal',
+                // :1603-1605 note 三支逐字：useActual 支（M7-T7 接入）优先，
+                // 否则 ex>0/0 两支（M6-T3 已可真实到达）
+                m.useActual
+                    ? '缺口为近 $daysText 天实际日均 · 预设 ${jsNumText(m.realDeficit)}'
+                    : ex > 0
+                        ? '含今日运动 $ex kcal · 基准 ${jsNumText(m.suggest)}'
+                        : '基准目标 ${jsNumText(m.suggest)} kcal',
                 style:
                     const TextStyle(fontSize: Tokens.textXs, color: Tokens.ink3)),
           ],
@@ -325,8 +340,10 @@ class BodyProfileCard extends ConsumerWidget {
             '消耗${jsNumText(m.tdee)}−缺口${jsNumText(m.realDeficit)}${ex > 0 ? '＋运动$ex' : ''}'), // :1600 两支逐字
         _metabLine(
             '每日缺口', // :220
-            '${jsNumText(m.effDeficit)} kcal',
-            '预设缺口 ${jsNumText(m.realDeficit)}'), // :1601 非 useActual 支（降级标注）
+            '${jsNumText(m.effDeficit)} kcal', // useActual 时 effDeficit=avgDeficit（metabolism.dart）
+            m.useActual
+                ? '近$daysText天均值(消耗−摄入)' // :1601 useActual 支逐字
+                : '预设缺口 ${jsNumText(m.realDeficit)}'), // :1601 非 useActual 支逐字
         _metabLine(
             '今日运动', // index.html:219 DOM 第 5 行（每日缺口之后）
             '${jsNumText(ex)} kcal', // :1589 常驻（值 0 也显「0 kcal」）
