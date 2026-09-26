@@ -45,7 +45,10 @@ import 'package:shiguang_flutter/features/profile/body_profile_card.dart'
         bodyHeightValKey,
         bodySaveKey,
         bodyWeightIncKey,
-        bodyWeightValKey;
+        bodyWeightValKey,
+        goalEditEntryKey;
+import 'package:shiguang_flutter/features/profile/goal_edit_sheet.dart'
+    show goalEditValueKey;
 import 'package:shiguang_flutter/features/profile/profile_screen.dart'
     show ProfileScreen;
 import 'package:shiguang_flutter/features/scale/scale_service.dart';
@@ -279,6 +282,40 @@ void main() {
     expect(find.text('已本地保存：网络异常'), findsOneWidget);
   });
 
+  /* ---------- ⑦ M7-T5 收口钉：双 try 失败分流（spec §4.3，M5 旧账） ---------- */
+
+  testWidgets('⑦updateProfile 成功 + setGoal 抛错(boom)：toast「目标同步失败：boom」，非「已本地保存/身体档案已保存」；invalidate 仍发生',
+      (tester) async {
+    final api = newApi()..setGoalError = ApiException('boom'); // profile 支正常
+    await pumpProfile(tester, api);
+    final getBefore = api.profileCalls;
+
+    await openSheet(tester);
+    await tester.tap(find.byKey(bodyHeightIncKey)); // 168→169 → suggest≠1679 → setGoal 发
+    await tester.pumpAndSettle();
+    await tapSave(tester);
+
+    expect(api.profileUpdateBodies, hasLength(1)); // 资料确实已存成功
+    expect(api.goalCalls, 1); // 第二发确实打了 goal
+    expect(find.text('目标同步失败：boom'), findsOneWidget); // 新支逐字
+    expect(find.textContaining('已本地保存'), findsNothing); // 不再冒充资料失败
+    expect(find.text('身体档案已保存'), findsNothing);
+    expect(api.profileCalls, getBefore + 1); // 无论成败 invalidate 仍发生
+  });
+
+  testWidgets('⑦b setGoal 空 message → 「目标同步失败：网络异常」（同族 jsOr 兜底）',
+      (tester) async {
+    final api = newApi()..setGoalError = ApiException('');
+    await pumpProfile(tester, api);
+
+    await openSheet(tester);
+    await tester.tap(find.byKey(bodyHeightIncKey));
+    await tester.pumpAndSettle();
+    await tapSave(tester);
+
+    expect(find.text('目标同步失败：网络异常'), findsOneWidget);
+  });
+
   /* ---------- ⑥ 步进器边界闸（bumpBodyVal :1627-1634 逐字 toast） ---------- */
 
   testWidgets('⑥身高顶到 250 再点＋→「已到上限」不动；年龄 10 点−→「已到下限」；体重 200 点＋→「已到上限」（±0.5 定 1 位小数）',
@@ -317,5 +354,24 @@ void main() {
     expect(
         tester.widget<TextField>(find.byKey(bodyWeightValKey)).controller!.text,
         '200');
+  });
+
+  /* ---------- ⑧ M7-T5 代谢卡目标体重行入口（≙ #btn-edit-goal） ---------- */
+
+  testWidgets('⑧代谢卡「目标体重」行：点「点击修改」开目标弹层（预填 55），不触发整卡身体档案 GestureDetector',
+      (tester) async {
+    await pumpProfile(tester, newApi()); // goal.targetWeight=55
+
+    expect(find.text('目标体重'), findsOneWidget); // 行 label（≙ goal-banner :196）
+    expect(find.text('点击修改 ›'), findsOneWidget); // 入口文案（spec §4.3）
+
+    await tester.tap(find.byKey(goalEditEntryKey));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(goalEditValueKey), findsOneWidget); // 目标弹层已开
+    expect(
+        tester.widget<TextField>(find.byKey(goalEditValueKey)).controller!.text,
+        '55'); // 预填 ≙ :1429
+    expect(find.byKey(bodySaveKey), findsNothing); // 整卡开层手势未被误触
   });
 }

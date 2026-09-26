@@ -204,6 +204,12 @@
       "responseShape": "object", "responseFields": ["ok"]
     },
     {
+      "route": "setGoal", "dartMethod": "setGoal",
+      "path": "/user/goal", "httpMethod": "PUT", "readOnly": false,
+      "requestSample": { "body": { "targetWeight": 55 } },
+      "responseShape": "object", "responseFields": ["ok"]
+    },
+    {
       "route": "avatar", "dartMethod": "updateAvatar", "jsMethod": "updateAvatar",
       "path": "/user/avatar", "httpMethod": "PUT", "readOnly": false,
       "requestSample": { "body": { "data": "data:image/jpeg;base64,AAAA" } },

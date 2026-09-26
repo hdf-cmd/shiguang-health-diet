@@ -44,6 +44,7 @@ import '../../domain/models.dart' show Body;
 import '../exercise/exercise_controller.dart' show exerciseKcalProvider;
 import '../home/home_controller.dart'
     show healthApiProvider, summaryProvider, todayProvider;
+import 'goal_edit_sheet.dart' show openGoalEditSheet;
 import 'profile_providers.dart' show profileProvider;
 
 /* ---------- 测试键（H5 id 同名，index.html:354-413） ---------- */
@@ -69,6 +70,14 @@ const bodyAgeIncKey = Key('age-inc');
 @visibleForTesting
 const bodySaveKey = Key('body-save');
 
+/// 目标体重「点击修改」入口（≙ #btn-edit-goal，index.html:199 goal-banner 的
+/// 「编辑」小钮 → app.js:1031 openGoalEditSheet。勘正：简报 :1031 一带实读为
+/// goal-banner（每日基准目标+目标体重）内 class=edit 文案「编辑」；spec §4.3
+/// 裁定 Flutter 落代谢卡目标体重行「点击修改」——本卡即 renderMetab 宿主，
+/// 目标体重是代谢计算的输入（:1583），入口随行呈现语义更近）。
+@visibleForTesting
+const goalEditEntryKey = Key('btn-edit-goal');
+
 /// JS Number→JSON 串形：整数值落 int（168.0 → 168，同 js JSON.stringify）。
 num _jsNumOut(num v) =>
     v is double && v == v.truncateToDouble() && v.abs() < 1e15 ? v.toInt() : v;
@@ -80,8 +89,12 @@ Body _bodyOf(Map<String, dynamic> p) =>
 /// 保存链（≙ body-save :1696-1702 + syncTarget :1706-1718；简报裁定签名：
 /// toast 由调用方传页面 _toast/弹层宿主 toast，不做 ref 扩展）。
 /// 次序：updateProfile(bodyMap) → suggest≠goal.dailyKcal 才 setGoal →
-/// toast；失败仍走 toast「已本地保存：…」；无论成败 finally 双 invalidate
+/// toast；失败仍走 toast「已本地保存：…」；无论成败收尾双 invalidate
 /// （profileProvider 重取回真值；summaryProvider family 整族——首页环目标联动）。
+/// M7-T5 收口（spec §4.3，M5 旧账）：updateProfile 与 setGoal **拆两 try**——
+/// 同 try 时 setGoal 失败会谎报「已本地保存」（profile 实已存成功）；分流后
+/// setGoal 失败说「目标同步失败：msg||网络异常」（新支，updateProfile 支
+/// 现语义「已本地保存：…」不变）。
 Future<void> saveBodyProfile(WidgetRef ref, Map<String, Object?> bodyMap,
     void Function(String) toast) async {
   final api = ref.read(healthApiProvider);
@@ -89,23 +102,34 @@ Future<void> saveBodyProfile(WidgetRef ref, Map<String, Object?> bodyMap,
   final goal = (profile['goal'] as Map?)?.cast<String, dynamic>() ?? const {};
   final tw = (goal['targetWeight'] as num?)?.toDouble();
   final body = Body.fromMap(bodyMap);
+  var profileSaved = false;
   try {
     await api.updateProfile(bodyMap.cast<String, dynamic>()); // :1697
-    // :1709 computeMetabolism(state.body, tw)——第三参省略 ≙ Flutter 传 null
-    final m = computeMetabolism(body, tw, null);
-    if (m.suggest != (goal['dailyKcal'] as num?)) {
-      // :1715 setGoal({dailyKcal: suggest, targetWeight: tw})；tw 缺省回落当前体重
-      await api.setGoal(m.suggest, tw ?? body.weightKg.toDouble());
-    }
-    toast('身体档案已保存'); // :1699 逐字
+    profileSaved = true;
   } catch (e) {
     final msg = e is ApiException ? e.message : '';
     // :1701 `toast('已本地保存：' + (e.message || '网络异常'))`（空串 falsy 兜底）
     toast('已本地保存：${msg.isEmpty ? '网络异常' : msg}');
-  } finally {
-    ref.invalidate(profileProvider);
-    ref.invalidate(summaryProvider); // family 整族失效（首页环目标联动）
   }
+  if (profileSaved) {
+    try {
+      // :1709 computeMetabolism(state.body, tw)——第三参省略 ≙ Flutter 传 null
+      final m = computeMetabolism(body, tw, null);
+      if (m.suggest != (goal['dailyKcal'] as num?)) {
+        // :1715 setGoal({dailyKcal: suggest, targetWeight: tw})；tw 缺省回落当前体重
+        await api.setGoal(
+            dailyKcal: m.suggest,
+            targetWeight: tw ?? body.weightKg.toDouble());
+      }
+      toast('身体档案已保存'); // :1699 逐字
+    } catch (e) {
+      final msg = e is ApiException ? e.message : '';
+      // 目标同步失败：msg||网络异常（M7-T5 新支——资料已存，不冒充「已本地保存」）
+      toast('目标同步失败：${msg.isEmpty ? '网络异常' : msg}');
+    }
+  }
+  ref.invalidate(profileProvider);
+  ref.invalidate(summaryProvider); // family 整族失效（首页环目标联动）
 }
 
 /// 身体参数卡（六值 + 代谢明细；点卡开编辑弹层 ≙ #body-card click :1658）
@@ -141,7 +165,7 @@ class BodyProfileCard extends ConsumerWidget {
                   : const Text('…',
                       style: TextStyle(
                           fontSize: Tokens.textMd, color: Tokens.ink3)))
-              : _cardBody(p, ex),
+              : _cardBody(context, ref, p, ex),
         ),
       ),
     );
@@ -176,7 +200,8 @@ class BodyProfileCard extends ConsumerWidget {
 
   // ---- 卡面（renderBodyCard + renderMetab，版式 R4 自主） ----
 
-  Widget _cardBody(Map<String, dynamic> p, int ex) {
+  Widget _cardBody(BuildContext context, WidgetRef ref,
+      Map<String, dynamic> p, int ex) {
     final b = _bodyOf(p);
     final goal = (p['goal'] as Map?)?.cast<String, dynamic>() ?? const {};
     final tw = (goal['targetWeight'] as num?)?.toDouble();
@@ -218,6 +243,51 @@ class BodyProfileCard extends ConsumerWidget {
                   '活动量',
                   (activity[b.activity] ?? activity['light']!).label)), // :1578
         ]),
+        const SizedBox(height: Tokens.sp2),
+        // 目标体重行（≙ index.html:195-199 goal-banner「目标体重」+ #btn-edit-goal
+        // 「编辑」→ app.js:1031 openGoalEditSheet；spec §4.3 裁定 Flutter 入口
+        // 文案「点击修改」落本行。值 ≙ renderProfile :1022
+        // `${p.goal.targetWeight} <small>kg</small>`，缺 goal 兜 55 ≙ :1429
+        // `|| 55` falsy 支。保存链经 profileProvider invalidate 联动本行 +
+        // ETA/代谢明细重算（renderMetab 等价，:1458-1459））
+        Row(
+          children: [
+            const Text('目标体重', // index.html:196 逐字
+                style: TextStyle(fontSize: Tokens.textXs, color: Tokens.ink2)),
+            const SizedBox(width: Tokens.sp2),
+            Text.rich(TextSpan(
+                style: const TextStyle(
+                    fontSize: Tokens.textMd,
+                    fontWeight: FontWeight.w700,
+                    color: Tokens.ink),
+                children: [
+                  TextSpan(text: jsNumText(tw ?? 55)),
+                  const TextSpan(
+                      text: ' kg', // `<small>kg</small>` ≙ 小字单位
+                      style: TextStyle(
+                          fontSize: Tokens.textXs,
+                          fontWeight: FontWeight.w400,
+                          color: Tokens.ink3)),
+                ])),
+            const Spacer(),
+            Semantics(
+              label: '点击修改', // spec §4.3 入口文案逐字
+              button: true,
+              container: true,
+              child: GestureDetector(
+                key: goalEditEntryKey,
+                behavior: HitTestBehavior.opaque,
+                onTap: () => openGoalEditSheet(context, ref),
+                child: const Padding(
+                  padding: EdgeInsets.all(Tokens.sp1),
+                  child: Text('点击修改 ›',
+                      style:
+                          TextStyle(fontSize: Tokens.textSm, color: Tokens.ink3)),
+                ),
+              ),
+            ),
+          ],
+        ),
         const SizedBox(height: Tokens.sp3),
         const Divider(height: 1, color: Tokens.line),
         const SizedBox(height: Tokens.sp3),

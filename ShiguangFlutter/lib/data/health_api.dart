@@ -44,14 +44,21 @@ class HealthApi {
   Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> data) =>
       _client.call('/user/profile', method: 'PUT', body: data);
 
-  /// 每日目标（js/api.js:278 setGoal：body 即 {dailyKcal, targetWeight}）
-  Future<Map<String, dynamic>> setGoal(num dailyKcal, num targetWeight) =>
-      _client.call('/user/goal',
-          method: 'PUT',
-          body: <String, dynamic>{
-            'dailyKcal': dailyKcal,
-            'targetWeight': targetWeight,
-          });
+  /// 每日目标（js/api.js:278 setGoal：body 即 goal 对象。H5 两支调用面：
+  /// app.js:1456 **单键** {targetWeight}（M7-T5 目标体重弹层）/ app.js:1715
+  /// 双键 {dailyKcal,targetWeight}（M5-T6 syncTarget）。null 键剥离 ≙ js 侧
+  /// 该键 undefined 序列化不发（同 logWeight :39 先例）；云端 index.js:249-250
+  /// 按 truthy 分支部分更新——只发 targetWeight 时 dailyKcal 不动，回包 {ok}）
+  Future<Map<String, dynamic>> setGoal({
+    num? dailyKcal,
+    num? targetWeight,
+  }) => _client.call('/user/goal',
+    method: 'PUT',
+    body: <String, dynamic>{
+      'dailyKcal': ?dailyKcal,
+      'targetWeight': ?targetWeight,
+    },
+  );
 
   /// 上传头像 dataURL（js/api.js:280 updateAvatar：body {data}，云端原样存字符串）
   Future<Map<String, dynamic>> updateAvatar(String dataUrl) =>

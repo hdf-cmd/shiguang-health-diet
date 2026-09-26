@@ -109,8 +109,10 @@ class StubHealthApi implements HealthApi {
 
   /* ---------- M5-T6 身体卡：setGoal（PUT /user/goal） ---------- */
 
-  /// setGoal 收到的 {dailyKcal,targetWeight}（按调用顺序收集）/ 次数 / 注错。
-  /// 成功时写回 p['goal']，供「重取回真值」断言（≙ api-diet :246-252）。
+  /// setGoal 收到的 body（按调用顺序收集；M7-T5 起单键 {targetWeight} 与双键
+  /// {dailyKcal,targetWeight} 两支调用面共用，null 键剥离 ≙ 真机发出形状）。
+  /// 成功时按云端 truthy 部分更新语义写回 p['goal']，供「重取回真值」断言
+  /// （≙ api-diet :246-252）。
   final List<Map<String, dynamic>> goalBodies = <Map<String, dynamic>>[];
   int goalCalls = 0;
   ApiException? setGoalError;
@@ -581,19 +583,24 @@ class StubHealthApi implements HealthApi {
   }
 
   @override
-  Future<Map<String, dynamic>> setGoal(num dailyKcal, num targetWeight) async {
+  Future<Map<String, dynamic>> setGoal({
+    num? dailyKcal,
+    num? targetWeight,
+  }) async {
     goalCalls++;
+    // 收集 ≙ 真机发出的 body 形状（null 键剥离，单键/双键两支调用面共用）
     goalBodies.add(<String, dynamic>{
-      'dailyKcal': dailyKcal,
-      'targetWeight': targetWeight,
+      'dailyKcal': ?dailyKcal,
+      'targetWeight': ?targetWeight,
     });
     if (setGoalError != null) throw setGoalError!;
     final p = profile ??= profileMap();
     final g = Map<String, dynamic>.of(
       (p['goal'] as Map?)?.cast<String, dynamic>() ?? const <String, dynamic>{},
     );
-    g['dailyKcal'] = dailyKcal;
-    g['targetWeight'] = targetWeight;
+    // ≙ api-diet :249-250 truthy 分支部分更新：只写发来的键
+    if (dailyKcal != null) g['dailyKcal'] = dailyKcal;
+    if (targetWeight != null) g['targetWeight'] = targetWeight;
     p['goal'] = g; // ≙ api-diet :246-252 云端 goal 列写回
     return <String, dynamic>{'ok': true};
   }

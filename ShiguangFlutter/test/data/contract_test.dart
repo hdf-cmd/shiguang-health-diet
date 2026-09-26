@@ -94,7 +94,12 @@ void main() {
       case 'updateProfile':
         return api.updateProfile(Map<String, dynamic>.from(b));
       case 'setGoal':
-        return api.setGoal(b['dailyKcal'] as num, b['targetWeight'] as num);
+        // 双键样本 ≙ app.js:1715 syncTarget；单键样本 ≙ app.js:1456 目标体重
+        // 弹层（M7-T5）——缺的键传 null，序列化剥离后 body 与样本精确相等
+        return api.setGoal(
+          dailyKcal: b['dailyKcal'] as num?,
+          targetWeight: b['targetWeight'] as num?,
+        );
       case 'updateAvatar':
         return api.updateAvatar(b['data'] as String);
       case 'addCustomFood':
