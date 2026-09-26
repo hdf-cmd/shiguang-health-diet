@@ -29,10 +29,11 @@
 // - 自定义空态（:1320）：「还没有自定义食物\n点下方按钮添加你的常吃菜」。
 // id 语义：listCustomFoods 回裸 _id（云 index.js:300），归类/删除提交原样透传，
 // 不经搜索结果 cf_ 前缀路径（index.js:82 只在 /foods/search 拼前缀）——回归钉⑨。
-// R4 差异登记（修复轮 1 更新）：#lib-add「＋ 添加自定义食物」（index.html:574，
-// 层底常驻、双 tab/加载/失败态均在；点击 ≙ js/app.js:1347 closeFoodLib() →
-// openCustomFoodSheet(true)）本批已补——落点：openFoodLibSheet 收到 pop(true)
-// 后关层再开表单（date=当日 todayIso、meal=默认档 lunch「正餐」，评审裁定）。
+// R4 差异登记（修复轮 1 更新；M7 终审 I1 勘正）：#lib-add「＋ 添加自定义食物」
+// （index.html:574，层底常驻、双 tab/加载/失败态均在；点击 ≙ js/app.js:1347
+// closeFoodLib() → openCustomFoodSheet(true)）本批已补——落点：openFoodLibSheet
+// 收到 pop(true) 后关层再开表单（date=plate 日期 ≙ H5 :1244 在途常读全局
+// state.date，经 ref 直读 plateDateProvider；meal=默认档 lunch「正餐」）。
 // fromLib 形态终裁（M7-T8，结转 T4 Minor③收口）：H5 上游 label/行为不一致——
 // :1220 fromLib 主钮文案「存入食物库」，但 :1276 handler 仍走
 // saveCustomFood(true)（实际照样记一餐）。**不照搬该文案 bug**：Flutter 维持
@@ -46,11 +47,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
-import '../../domain/dates.dart' show todayIso;
 import '../../domain/js_compat.dart' show jsNumText, jsOr;
 import '../common/food_thumb.dart';
 import '../common/sheet_toast.dart';
-import '../home/home_controller.dart' show healthApiProvider;
+import '../home/home_controller.dart' show healthApiProvider, plateDateProvider;
 import '../record/custom_food_sheet.dart' show cfMealMap, openCustomFoodSheet;
 
 @visibleForTesting
@@ -99,9 +99,11 @@ String cfMealKind(Object? meals) {
 /// 打开「我的食物库」管理弹层（≙ openFoodLib，js/app.js:1292）。
 /// 层底「＋ 添加自定义食物」（#lib-add）点按 pop 带回 true ≙ :1347
 /// closeFoodLib() → openCustomFoodSheet(true)：关层后开自定义食物表单
-/// （date=当日、meal=默认档正餐；fromLib 单钮形态 T8 终裁不做，见头注与
+/// （date=plate 日期 ref.read(plateDateProvider) ≙ H5 :1244 在途常读全局
+/// state.date——M7 终审 I1：首页/记录页翻到历史日后添加，记餐落所翻之日，
+/// 不落今天；meal=默认档正餐，fromLib 单钮形态 T8 终裁不做，见头注与
 /// custom_food_sheet.dart「有意背离」登记）。
-Future<void> openFoodLibSheet(BuildContext context) async {
+Future<void> openFoodLibSheet(BuildContext context, WidgetRef ref) async {
   final addRequested = await showModalBottomSheet<bool>(
     context: context,
     isScrollControlled: true,
@@ -116,7 +118,7 @@ Future<void> openFoodLibSheet(BuildContext context) async {
     if (!context.mounted) return; // 层动画期间入口页可能已销毁
     await openCustomFoodSheet(
       context,
-      date: todayIso(), // ≙ H5 :1244 在途常读全局 state.date=当日（我的页无选日态）
+      date: ref.read(plateDateProvider), // ≙ H5 :1244 在途读全局 state.date（≙ plateDateProvider 共享日期源；终审 I1，勘正旧「我的页无选日态⇒todayIso」前提——T1/T6 落地全局日期态后该前提失效）
       meal: 'lunch', // 默认档（评审裁定：本批 meal 可默认档；三钮初值=正餐 :1218）
       onSaved: () {}, // H5 入库后不重开管理层；下次开层 renderLibList 天然重取
     );

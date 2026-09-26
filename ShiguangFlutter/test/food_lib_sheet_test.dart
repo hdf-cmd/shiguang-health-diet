@@ -23,15 +23,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shiguang_flutter/app/theme.dart' show shiguangTheme;
 import 'package:shiguang_flutter/data/api_client.dart' show ApiException;
+import 'package:shiguang_flutter/domain/dates.dart' show localIso;
 import 'package:shiguang_flutter/features/home/home_controller.dart'
-    show healthApiProvider;
+    show healthApiProvider, plateDateProvider;
 import 'package:shiguang_flutter/features/notifications/reminder_scheduler.dart'
     show reminderSchedulerProvider;
 import 'package:shiguang_flutter/features/profile/food_lib_sheet.dart';
 import 'package:shiguang_flutter/features/profile/profile_screen.dart'
     show ProfileScreen;
 import 'package:shiguang_flutter/features/record/custom_food_sheet.dart'
-    show cfNameKey, cfSaveAddKey;
+    show cfKcalKey, cfNameKey, cfSaveAddKey;
 import 'package:shiguang_flutter/features/scale/scale_service.dart';
 
 import 'harness.dart';
@@ -76,15 +77,21 @@ List<Map<String, dynamic>> builtinStore() => <Map<String, dynamic>>[
           id: 'u_11', name: '西兰花', meta: '蔬菜 · 1 份约 200g', kcal: 68, emoji: '🥦', hidden: true),
     ];
 
-class _Host extends StatelessWidget {
+class _Host extends ConsumerStatefulWidget {
   const _Host();
 
+  @override
+  ConsumerState<_Host> createState() => _HostState();
+}
+
+class _HostState extends ConsumerState<_Host> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Center(
         child: TextButton(
-          onPressed: () => openFoodLibSheet(context),
+          // M7 终审 I1：宿主传 ref（openFoodLibSheet 续链直读 plateDateProvider）
+          onPressed: () => openFoodLibSheet(context, ref),
           child: const Text('open-lib'),
         ),
       ),
@@ -92,12 +99,17 @@ class _Host extends StatelessWidget {
   }
 }
 
-Future<void> pumpSheet(WidgetTester tester, StubHealthApi api) async {
+Future<void> pumpSheet(WidgetTester tester, StubHealthApi api,
+    {String? plateDate}) async {
   await useBigSurface(tester);
   final container = ProviderContainer(
     overrides: [healthApiProvider.overrideWithValue(api)],
     retry: (_, _) => null,
   );
+  if (plateDate != null) {
+    // M7 终审 I1：预置共享日期源（≙ 用户已在首页 ‹ 翻到该日）
+    container.read(plateDateProvider.notifier).state = plateDate;
+  }
   addTearDown(container.dispose);
   await tester.pumpWidget(UncontrolledProviderScope(
     container: container,
@@ -566,5 +578,30 @@ void main() {
     expect(find.byKey(cfNameKey), findsOneWidget);
     expect(find.text('open-lib'), findsOneWidget,
         reason: '弹层下方宿主路由未被第二发 pop 吞掉');
+  });
+
+  /* ---------- M7 终审 I1：lib-add 记餐日期锚 plate 日期（≙ H5 :1244 全局 state.date） ---------- */
+
+  testWidgets('I1钉 plate=昨天时食物库「＋添加」→「保存并记入」→ 记餐 body date=昨天'
+      '（修前 todayIso() 写死即落今天，背离 H5 state.date）', (tester) async {
+    final now = DateTime.now();
+    final y = localIso(DateTime(now.year, now.month, now.day - 1)); // ‹ 翻一天 ≙ T1 语义
+    final api = StubHealthApi(libCustomFoods: <Map<String, dynamic>>[]);
+    await pumpSheet(tester, api, plateDate: y);
+
+    await tapKey(tester, libAddKey);
+    await tester.pumpAndSettle(); // 管理层 pop 动画
+    await tester.pumpAndSettle(); // 续链开表单
+
+    await tester.enterText(find.byKey(cfNameKey), '回归饭团');
+    await tester.enterText(find.byKey(cfKcalKey), '123');
+    await tester.pump();
+    await tapKey(tester, cfSaveAddKey); // 保存并记入
+    await tester.pumpAndSettle();
+
+    expect(api.customFoodBodies, hasLength(1)); // 入库链先成
+    expect(api.addBodies, hasLength(1));
+    expect(api.addBodies.single['date'], y,
+        reason: '记餐落 plate 日期（H5 :1244 addFoodRecord({date: state.date})）');
   });
 }

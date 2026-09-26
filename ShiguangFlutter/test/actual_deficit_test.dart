@@ -78,9 +78,9 @@ ProviderContainer make(StubHealthApi api, ActualDeficitStore store) {
     ],
     retry: (_, _) => null,
   );
-  // riverpod 3 语义：无监听者的 keepAlive AsyncNotifier 在 build 重入时挂起
-  // 续体（read(.future) 不算监听，diag 实测 3s 不推进）。生产侧消费点
-  // （代谢卡 ConsumerWidget）天然是监听者；测试补一枚常驻监听对齐真实形态。
+  // riverpod 3 语义：无监听者时元素随时销毁/挂起续体（read(.future) 不算
+  // 监听，diag 实测 3s 不推进）。M7 终审 I2 起本 provider 为 autoDispose，
+  // 本监听 ≙ 生产侧唯一消费点（代谢卡 ConsumerWidget 的在体 watch）。
   container.listen(actualDeficitProvider, (_, _) {});
   addTearDown(container.dispose);
   return container;
@@ -312,5 +312,56 @@ void main() {
     // 缓存 date==today → 全程零历史重拉（重算只走缓存+实时值，轻量）
     expect(api.summaryDates.where((d) => d != today), isEmpty);
     expect(api.exerciseDates.where((d) => d != today), isEmpty);
+  });
+
+  /* ---------- ⑦ M7 终审 I2 反钉死：离页回访仍重发今日实时请求 ---------- */
+
+  test('⑦首访我的页构建后离页（监听全卸）再回访 → 今日 summary/exercises 重发'
+      '（keepAlive 常驻监听会钉死 autoDispose 今日元素＝T2 立论反向复发；'
+      '当日 prefs 缓存闸使重建成本≈仅两次今日实时读，语义回归 H5 每次进页重拉）',
+      () async {
+    final store = FakeStore()
+      ..saved['u_test'] = {
+        'date': today, // 当日缓存命中：回访零历史重拉
+        'tdee': 2179,
+        'history': [
+          {'date': back(1), 'intake': 1700, 'exKcal': 100},
+        ],
+      };
+    final api = apiWith(summaryByDate: {
+      today: StubHealthApi.summaryMap(kcal: 1600),
+    });
+    final container = ProviderContainer(
+      overrides: [
+        healthApiProvider.overrideWithValue(api),
+        actualDeficitStoreProvider.overrideWithValue(store),
+        todayProvider.overrideWithValue(today),
+      ],
+      retry: (_, _) => null,
+    );
+    addTearDown(container.dispose);
+
+    // 首访我的页（代谢卡 mount ≙ 在体监听）
+    final sub1 = container.listen(actualDeficitProvider, (_, _) {});
+    await container.read(actualDeficitProvider.future);
+    expect(api.summaryDates, [today]);
+    expect(api.exerciseDates, [today]);
+    sub1.close(); // 离页（监听全卸）
+    // riverpod 3 autoDispose 元素在无监听后于当前任务末尾才真正 dispose——
+    // 让位一次事件循环，回访语义 ≙ 下帧重挂代谢卡
+    await Future<void>.delayed(Duration.zero);
+
+    // 回访：修前（keepAlive）元素永驻 → 零重发，本断言 RED；
+    // 修后（autoDispose）重建重发今日 summary/exercises 各一发
+    final sub2 = container.listen(actualDeficitProvider, (_, _) {});
+    await container.read(actualDeficitProvider.future);
+    expect(api.summaryDates, [today, today],
+        reason: '回访必须重发今日 summary（外源变更可被刷新）');
+    expect(api.exerciseDates, [today, today],
+        reason: '回访必须重发今日 exercises');
+    // 当日缓存闸不破：历史 6 天依旧零重拉
+    expect(api.summaryDates.where((d) => d != today), isEmpty);
+    expect(api.exerciseDates.where((d) => d != today), isEmpty);
+    sub2.close();
   });
 }

@@ -95,18 +95,29 @@ final actualDeficitStoreProvider = Provider<ActualDeficitStore>(
     (ref) => PrefsActualDeficitStore());
 
 /// 近 7 天实际日均缺口（值 ≙ deficit.dart 的 {avgDeficit, days, tdee} 或
-/// null=不足 2 天走预设缺口）。keepAlive：与 profileProvider 同族账号级；
-/// 换号场景 profileProvider invalidate → 本 build 重跑 → 新 uid 读新键
-/// （缓存键随 uid 天然隔离，无需另挂 auth_state 失效面）。
+/// null=不足 2 天走预设缺口）。
+///
+/// **autoDispose（M7 终审 I2，方案①）**：本 build watch 今日
+/// summaryProvider(today)/exerciseKcalProvider(today) 两个 autoDispose
+/// family 元素——若本 provider keepAlive，首访我的页后常驻监听永驻，钉死
+/// 今日元素永不 dispose，之后离页回访零重取（外源变更在「今天」这一日不再
+/// 被刷新），正是 T2 立论（keepAlive 派生会钉死 autoDispose 依赖，
+/// exercise_controller.dart:22-23/186-187）的反向复发。改 autoDispose 后
+/// 消费点（代谢卡 watch）即持有者：离页即卸、回访重建重发今日实时两读；
+/// prefs 当日缓存闸（build 内 cache['date']==today 即零历史重拉）使重建
+/// 成本≈0，语义回归 H5 每次进页 loadSummary/loadExercises（app.js:221-223/
+/// 515）。回归钉 actual_deficit_test ⑦。
+/// 换号：缓存键随 uid 天然隔离（prefs 键 `sg_actual_deficit_<uid>`），且
+/// autoDispose 后无跨栈常驻态，无需另挂 auth_state 失效面。
 ///
 /// provider 形态取舍（简报裁定「形态自定」）：AsyncNotifier 而非
-/// FutureProvider——① 与 H5 对齐的「watch 驱动重算」需要常驻实例承载
+/// FutureProvider——① 与 H5 对齐的「watch 驱动重算」需要监听承载的
 /// watch 集（profile/今日 summary/今日运动合计），记录链 invalidate
 /// summaryProvider 即自动重算（≙ renderRing :344 recomputeActualDeficitLive
 /// 挂点，spec §3.4「invalidate 驱动」）；② 未来若有 force 重拉口（H5
 /// refreshActualDeficit(true) 暂无消费面）Notifier 天然可扩展。
 final actualDeficitProvider =
-    AsyncNotifierProvider<ActualDeficitNotifier, Map<String, Object>?>(
+    AsyncNotifierProvider.autoDispose<ActualDeficitNotifier, Map<String, Object>?>(
   ActualDeficitNotifier.new,
 );
 

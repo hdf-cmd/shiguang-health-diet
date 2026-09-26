@@ -342,7 +342,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             // btn-soft 钮，文案逐字；位置=提醒卡后、退出登录前——R4 定，
             // H5 本钮在记录页，spec §4.2 裁定落「我的」页）。
             FilledButton.tonal(
-              onPressed: () => openFoodLibSheet(context),
+              onPressed: () => openFoodLibSheet(context, ref),
               child: const Text('食物库'),
             ),
             const SizedBox(height: Tokens.sp3),

@@ -14,11 +14,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shiguang_flutter/app/auth_state.dart';
 import 'package:shiguang_flutter/app/root_container.dart';
 import 'package:shiguang_flutter/data/token_store.dart';
-import 'package:shiguang_flutter/domain/dates.dart' show todayIso;
+import 'package:shiguang_flutter/domain/dates.dart' show localIso, todayIso;
 import 'package:shiguang_flutter/features/exercise/exercise_controller.dart'
     show exerciseKcalProvider, exercisesProvider;
 import 'package:shiguang_flutter/features/home/home_controller.dart'
-    show summaryProvider, waterOverrideProvider;
+    show plateDateProvider, summaryProvider, waterOverrideProvider;
 import 'package:shiguang_flutter/features/profile/profile_screen.dart'
     show profileWeightProvider;
 import 'package:shiguang_flutter/features/record/food_freq.dart'
@@ -135,6 +135,13 @@ void main() {
     await container.read(foodFreqProvider.notifier).record('苹果');
     expect(container.read(foodFreqProvider), {'苹果': 1});
     expect(adapter.countOf('/user/body-metrics'), 1);
+    // M7 终审 m1：A 账号停在首页翻到的昨天（plateDateProvider keepAlive
+    // 视图态，≙ H5 state.date 被 ‹ 翻动）
+    final now = DateTime.now();
+    final yesterday =
+        localIso(DateTime(now.year, now.month, now.day - 1));
+    container.read(plateDateProvider.notifier).state = yesterday;
+    expect(container.read(plateDateProvider), yesterday);
 
     // 阶段 2：登出（H5 logout 等价：清 token + anon）
     await container.read(authStateProvider.notifier).signOut();
@@ -172,6 +179,9 @@ void main() {
     expect(container.read(foodFreqProvider), isEmpty);
     // M7-T3：水卡乐观杯数随登出/换号归 null（显示回新账号 summary 真值）
     expect(container.read(waterOverrideProvider(date)), isNull);
+    // M7 终审 m1 钉：换号后 plate 日期复位今天（H5 登出=location.reload()
+    // app.js:1168，state.date 回 today；修前清单缺 plateDateProvider → RED）
+    expect(container.read(plateDateProvider), todayIso());
   });
 
   test('会话过期→直接换号登录（不经过 signOut）：submit 成功后同样不带 A 残留',

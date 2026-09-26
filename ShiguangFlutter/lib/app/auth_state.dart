@@ -14,7 +14,7 @@ import '../data/token_store.dart';
 // home_controller ↔ auth_state 的文件级环 Dart 合法且此前已成立。
 import '../features/exercise/exercise_controller.dart' show exercisesProvider;
 import '../features/home/home_controller.dart'
-    show recordsProvider, summaryProvider, waterOverrideProvider;
+    show plateDateProvider, recordsProvider, summaryProvider, waterOverrideProvider;
 import '../features/profile/profile_providers.dart' show profileProvider;
 import '../features/profile/profile_screen.dart' show profileWeightProvider;
 import '../features/record/food_freq.dart' show foodFreqProvider;
@@ -77,6 +77,11 @@ class AuthNotifier extends Notifier<AuthStatus> {
       ..invalidate(weekReportProvider)
       ..invalidate(monthReportProvider)
       ..invalidate(weightTrendProvider)
+      // M7 终审 m1：plate 视图日期随换号复位今天——keepAlive StateProvider
+      // 不随 Shell 卸载销毁，新账号会停在旧账号翻到的历史日；H5 登出=
+      // location.reload()（js/app.js:1168）state.date 天然回 today。非数据
+      // 串号（provider key 无账号态），系视图态残留。
+      ..invalidate(plateDateProvider)
       ..invalidate(foodFreqProvider);
   }
 
