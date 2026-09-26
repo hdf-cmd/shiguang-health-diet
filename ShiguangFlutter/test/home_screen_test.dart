@@ -13,6 +13,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shiguang_flutter/app/theme.dart' show shiguangTheme;
 import 'package:shiguang_flutter/data/api_client.dart';
 import 'package:shiguang_flutter/features/home/home_controller.dart';
 import 'package:shiguang_flutter/features/home/home_screen.dart';
@@ -29,7 +30,9 @@ Future<void> harness(WidgetTester tester, StubHealthApi api) async {
   addTearDown(container.dispose);
   await tester.pumpWidget(UncontrolledProviderScope(
     container: container,
-    child: MaterialApp(home: HomeScreen()),
+    // M7-T8（终审复核点名）：裸 MaterialApp 改挂真主题——工程纪律
+    // 「widget 测试必挂 shiguangTheme()」，FilledButton/间距等装饰面与生产一致
+    child: MaterialApp(theme: shiguangTheme(), home: const HomeScreen()),
   ));
 }
 

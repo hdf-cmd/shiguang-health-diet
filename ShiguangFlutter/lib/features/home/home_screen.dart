@@ -153,8 +153,8 @@ class HomeScreen extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // plate-head 在 error 态照常在场（≙ index.html:71-75 系静态
-                  // markup、renderPlateDate :201 不读 summary）：取数失败仍可用
-                  // ‹ › 翻日期重试历史日，不被整张卡一起吞掉。
+                  // markup、renderPlateDate :201-224 实读不读 summary）：取数失败
+                  // 仍可用 ‹ › 翻日期重试历史日，不被整张卡一起吞掉。
                   const _PlateHead(),
                   Text(
                     error,
@@ -180,11 +180,11 @@ class HomeScreen extends ConsumerWidget {
             )
           else ...[
             _plateCard(summary, ex),
-            const SizedBox(height: Tokens.sp3),
             // 建议卡（index.html:106-109；卡序复核见文件头 M6-T5 注。
-            // summary 在途整卡不渲染 ≙ app.js:351——卡体 shrink 消失，但其
-            // 后 SizedBox(sp3) 间距照常叠置：加载期餐盘卡与水卡之间为
-            // 2×sp3 空档（M6-T7 F6 勘误：原「不叠空卡」表述不实））
+            // summary 在途整卡不渲染 ≙ app.js:351 `if (!s || !el) return`——
+            // 卡体连同其顶部 sp3 间距一并消失（间距在 AdviceCard 卡体条件
+            // 构造内，M7-T8 Minor-3：加载期餐盘卡与水卡之间恒为单份 sp3，
+            // 不再叠 2×sp3 空档——原双空档系 M6-T7 F6 勘误登记的既知面））
             AdviceCard(date: date),
             const SizedBox(height: Tokens.sp3),
             // 水卡（index.html:111-131；卡序复核见文件头 M6-T4 注）
@@ -724,6 +724,10 @@ class _HomeExerciseCardState extends ConsumerState<HomeExerciseCard> {
     final createdAt = (r['createdAt'] as num?)?.toInt() ?? 0;
     if (isRepRecord(key: key, createdAt: createdAt)) {
       // rep 判别命中 ⇒ key 必属 {pushup,rope}（_repKeys），exerciseLib 必含
+      // （首屏实读 H5 app.js:1748 无兜底：`EXERCISE_LIB.find(...).repUnit`）。
+      // 书面销账（终审 Minor-4，M7-T8）：`?? '次'` 兜底位 H5 该位为
+      // find 未命中即 TypeError（生产不可达——lib 恒含两键且 pushup/rope
+      // 均带 repUnit，constants.dart:90/93），本端保留防御，不逐字搬 throw。
       final lib = exerciseLib.firstWhere((l) => l.key == key);
       return '$amount ${lib.repUnit ?? '次'}';
     }

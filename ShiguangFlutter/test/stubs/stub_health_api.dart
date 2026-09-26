@@ -238,6 +238,10 @@ class StubHealthApi implements HealthApi {
   int listFoodsCalls = 0;
   int builtinCalls = 0;
 
+  /// M7-T8（钉②a 在途即时置灰用例）：非空 → setCustomFoodMeals 先 await 它
+  /// 再走错误/成功支（挂住回包观测 disabled 即时态，≙ customFoodGate 定式）
+  Completer<void>? setMealsGate;
+
   /// setCustomFoodMeals 收到的 (id, 白名单过滤后 meals)（按调用顺序收集；
   /// 回归钉「管理链路 id 恒裸值不含 cf_」的观测面）
   final List<({String id, List<String> meals})> mealSetBodies =
@@ -317,6 +321,7 @@ class StubHealthApi implements HealthApi {
         .take(4)
         .toList();
     mealSetBodies.add((id: id, meals: filtered));
+    if (setMealsGate != null) await setMealsGate!.future; // M7-T8 在途置灰钉
     if (setMealsError != null) throw setMealsError!;
     for (final f in libCustomFoods ?? const <Map<String, dynamic>>[]) {
       if (f['id'] == id) f['meals'] = List<String>.of(filtered);
@@ -671,12 +676,14 @@ class StubHealthApi implements HealthApi {
     // M7-T2 钉①②：先挂闸（回包前测试可断乐观中间态），再走错误/云态支
     if (addExerciseGate != null) await addExerciseGate!.future;
     if (addExerciseError != null) throw addExerciseError!;
-    // 云语义（index.js:353-368）：kcal 取整后为 0 → 回 {ok:false,message}
-    // 而非 HTTP 错，由调用层判 ok；有效时回平铺 {ok,id,...doc} 含 createdAt。
-    final kcal = (num.tryParse('${record['kcal']}') ?? 0).round().clamp(
-      0,
-      1 << 31,
-    );
+    // 云语义（index.js:353-369，M7-T8 T1 deferred 销账·逐字实读对齐）：
+    // kcal ≙ :354 `Math.max(0, Math.round(Number(body.kcal) || 0))`——只取
+    // 非负地板，**无上界**（旧桩 clamp 上界 1<<31 系自加，云没有，已去）；
+    // amount ≙ :362 `Number(body.amount) || 0` 宽容式强转（数字串按值收，
+    // 非数落 0；true→1 系 JS Number 理论位，端上恒传 num，桩按 0 处理）。
+    final kcalRaw = num.tryParse('${record['kcal']}') ?? 0;
+    var kcal = kcalRaw.round();
+    if (kcal < 0) kcal = 0; // Math.max(0,·)
     if (kcal == 0) {
       return <String, dynamic>{'ok': false, 'message': '消耗热量无效'};
     }
@@ -698,7 +705,7 @@ class StubHealthApi implements HealthApi {
           ? (name.length > 60 ? name.substring(0, 60) : name)
           : '运动',
       'emoji': emoji.isNotEmpty ? emoji : '🏃',
-      'amount': record['amount'] is num ? record['amount'] : 0,
+      'amount': num.tryParse('${record['amount']}') ?? 0, // ≙ :362 Number()||0
       'unit': record['unit'] == 'km' ? 'km' : 'min',
       'kcal': kcal,
       'createdAt': DateTime.now().millisecondsSinceEpoch,

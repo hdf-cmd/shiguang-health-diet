@@ -33,10 +33,13 @@
 // 层底常驻、双 tab/加载/失败态均在；点击 ≙ js/app.js:1347 closeFoodLib() →
 // openCustomFoodSheet(true)）本批已补——落点：openFoodLibSheet 收到 pop(true)
 // 后关层再开表单（date=当日 todayIso、meal=默认档 lunch「正餐」，评审裁定）。
-// 缺口登记：表单仍为双钮完整形态，fromLib 单钮「存入食物库」+隐藏次钮
-// （js/app.js:1220-1221）未做，结转 T8；视觉（seg/chip/行族）
-// 为 R4 创新，文案逐字。toast 走层内 OverlayEntry（SheetToast 公共件，M6-T7 F5
-// 定式：SnackBar 会被弹层遮挡并向下层 Scaffold 广播双份）。
+// fromLib 形态终裁（M7-T8，结转 T4 Minor③收口）：H5 上游 label/行为不一致——
+// :1220 fromLib 主钮文案「存入食物库」，但 :1276 handler 仍走
+// saveCustomFood(true)（实际照样记一餐）。**不照搬该文案 bug**：Flutter 维持
+// 双钮完整形态（文案与真实行为一致），不实现 fromLib 单钮，详 custom_food_sheet.dart
+// 头注「有意背离」登记；本条列入 M7 终审呈报项。toast 走层内 OverlayEntry
+// （SheetToast 公共件，M6-T7 F5 定式：SnackBar 会被弹层遮挡并向下层 Scaffold
+// 广播双份）。
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -96,7 +99,8 @@ String cfMealKind(Object? meals) {
 /// 打开「我的食物库」管理弹层（≙ openFoodLib，js/app.js:1292）。
 /// 层底「＋ 添加自定义食物」（#lib-add）点按 pop 带回 true ≙ :1347
 /// closeFoodLib() → openCustomFoodSheet(true)：关层后开自定义食物表单
-/// （date=当日、meal=默认档正餐；fromLib 单钮形态结转 T8，见头注 R4 登记）。
+/// （date=当日、meal=默认档正餐；fromLib 单钮形态 T8 终裁不做，见头注与
+/// custom_food_sheet.dart「有意背离」登记）。
 Future<void> openFoodLibSheet(BuildContext context) async {
   final addRequested = await showModalBottomSheet<bool>(
     context: context,
@@ -139,11 +143,23 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
   /// 在途动作集（≙ 被点钮 disabled=true，:1359/:1371/:1389；失败复位）
   final Set<String> _busy = <String>{};
 
+  /// busy 置位/复位走 setState（M7-T8，T4 Minor②）：H5 :1359 `mealChip.disabled
+  /// = true` 是对在体 DOM 节点的即时赋值，点下当帧即灰；此前裸 mutate 只在
+  /// 下一场重建（重取/toast 后）生效，在途钮观感未即时置灰。
+  void _setBusy(String key, bool on) {
+    setState(() => on ? _busy.add(key) : _busy.remove(key));
+  }
+
   /// sub 行：仅成功渲染时更新（:1309/:1324；失败/在途保留上一成功值 ≙ H5
   /// #foodlib-sub 只在成功路径 textContent 赋值）
   String? _sub;
 
   OverlayEntry? _toastEntry;
+
+  /// lib-add 连点闸（M7-T8，T4 Minor⑤）：pop(true) 后层关闭动画窗口内二次
+  /// tap 会再发一次 pop——穿透掉下方路由（H5 无此窗：closeFoodLib 即 display
+  /// 切换、:1347 重开表单为幂等函数调用）。最简 bool 守卫，置位后不再回执。
+  bool _addPopped = false;
 
   @override
   void initState() {
@@ -229,7 +245,7 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
   Future<void> _setMeal(String id, String kind) async {
     final key = 'meal:$id:$kind';
     if (_busy.contains(key)) return;
-    _busy.add(key); // mealChip.disabled = true
+    _setBusy(key, true); // mealChip.disabled = true（:1359 即时置灰）
     try {
       await ref
           .read(healthApiProvider)
@@ -243,7 +259,9 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
     } catch (_) {
       if (mounted) _toast('设置失败：网络异常');
     } finally {
-      _busy.remove(key); // 失败支 disabled=false 复位（成功支随重取重建）
+      if (mounted) _setBusy(key, false); // 失败支 disabled=false 复位（≙ :1364
+      // `mealChip.disabled = false`；成功支 H5 随 renderLibList 重建新钮天然
+      // 复位，本端同语义：重取后此行按新 _busy 集渲染）
     }
   }
 
@@ -283,7 +301,7 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
     if (ok != true || !mounted) return; // 取消/点外零请求（:1370）
     final key = 'del:$id';
     if (_busy.contains(key)) return;
-    _busy.add(key); // del.disabled = true
+    _setBusy(key, true); // del.disabled = true（:1371 即时置灰）
     try {
       await ref.read(healthApiProvider).deleteCustomFood(id);
       if (!mounted) return;
@@ -294,7 +312,7 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
     } catch (_) {
       if (mounted) _toast('删除失败：网络异常');
     } finally {
-      _busy.remove(key);
+      if (mounted) _setBusy(key, false);
     }
   }
 
@@ -303,7 +321,7 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
     final id = '${item['id']}';
     final key = 'tog:$id';
     if (_busy.contains(key)) return;
-    _busy.add(key); // tog.disabled = true
+    _setBusy(key, true); // tog.disabled = true（:1389 即时置灰）
     try {
       final wasHidden = item['hidden'] == true;
       // :1385-1388：现 hidden 集全量 + 本条摘除/追加（全量替换语义）
@@ -331,7 +349,8 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
     } catch (_) {
       if (mounted) _toast('操作失败：网络异常');
     } finally {
-      _busy.remove(key);
+      if (mounted) _setBusy(key, false); // ≙ :1395 tog.disabled=false（成功支
+      // H5 随 :1393 renderLibList 重建复位，本端随本 setState 重绘同效）
     }
   }
 
@@ -413,8 +432,13 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
               FilledButton(
                 key: libAddKey,
                 // ≙ js/app.js:1347 closeFoodLib() → openCustomFoodSheet(true)
-                // 关层带 true 回执，由 openFoodLibSheet 接续开表单
-                onPressed: () => Navigator.of(context).pop(true),
+                // 关层带 true 回执，由 openFoodLibSheet 接续开表单；
+                // _addPopped 闸防关闭动画窗口连点二次 pop（见字段注）。
+                onPressed: () {
+                  if (_addPopped) return;
+                  _addPopped = true;
+                  Navigator.of(context).pop(true);
+                },
                 child: const Text('＋ 添加自定义食物'),
               ),
             ],

@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shiguang_flutter/data/api_client.dart';
 import 'package:shiguang_flutter/data/health_api.dart';
 import 'package:shiguang_flutter/domain/dates.dart';
@@ -78,6 +79,52 @@ void main() {
     });
   });
 
+  /* ---------- M7-T8（T4 池）：prefs 键分账号，旧全局键读到即删不迁移 ---------- */
+
+  group('PrefsFoodFreqStore 分账号键', () {
+    test('旧全局键（counts/init）读到即删；新键 sg_food_freq_counts_<uid> 读写，账号间不互读',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        'sg_food_freq_counts': '{"旧菜":3}',
+        'sg_food_freq_init_v1': true,
+      });
+      final store = PrefsFoodFreqStore();
+      // 旧键内容不迁移（ensureLoaded 30 天回填可重建，迁移属 YAGNI）：
+      // 新 uid 档初读必为「未初始化 + 空计数」
+      expect(await store.isInitialized('u1'), isFalse);
+      expect(await store.loadCounts('u1'), isEmpty);
+      var p = await SharedPreferences.getInstance();
+      expect(p.containsKey('sg_food_freq_counts'), isFalse); // 旧 counts 键已删
+      expect(p.containsKey('sg_food_freq_init_v1'), isFalse); // 旧 init 键已删
+      await store.saveCounts('u1', {'米饭': 2});
+      await store.markInitialized('u1');
+      p = await SharedPreferences.getInstance();
+      expect(p.getString('sg_food_freq_counts_u1'), '{"米饭":2}');
+      expect(p.getBool('sg_food_freq_init_v1_u1'), isTrue);
+      expect(await store.loadCounts('u2'), isEmpty); // 他账号不互读
+      expect(await store.isInitialized('u2'), isFalse);
+    });
+
+    test('端到端 ensureLoaded：uid 由 profile id 解析，落新键逐字（anon 档兜底面另测）',
+        () async {
+      SharedPreferences.setMockInitialValues({});
+      final api = _RecordsByDate(records: [
+        {'name': '米饭'}
+      ]);
+      final c = ProviderContainer(overrides: [
+        foodFreqStoreProvider.overrideWithValue(PrefsFoodFreqStore()),
+        healthApiProvider.overrideWithValue(api),
+        todayProvider.overrideWithValue(localIso(DateTime(2026, 9, 25, 12))),
+      ]);
+      addTearDown(c.dispose);
+      await c.read(foodFreqProvider.notifier).ensureLoaded();
+      final p = await SharedPreferences.getInstance();
+      // _RecordsByDate.getProfile().id='u_freq' ≙ profile['id'] 解析链
+      expect(p.getString('sg_food_freq_counts_u_freq'), contains('米饭'));
+      expect(p.getBool('sg_food_freq_init_v1_u_freq'), isTrue);
+    });
+  });
+
   group('FoodFreqNotifier.ensureLoaded（首次初始化，方案 B）', () {
     test('未初始化：拉满 30 天记录聚合落盘并打标记，计数进 state', () async {
       final store = _MemoryStore();
@@ -90,8 +137,8 @@ void main() {
       final c = _container(store: store, api: api);
       await c.read(foodFreqProvider.notifier).ensureLoaded();
       expect(c.read(foodFreqProvider), {'米饭': 30, '鸡蛋': 30});
-      expect(await store.isInitialized(), isTrue);
-      expect(await store.loadCounts(), {'米饭': 30, '鸡蛋': 30});
+      expect(await store.isInitialized('u_freq'), isTrue);
+      expect(await store.loadCounts('u_freq'), {'米饭': 30, '鸡蛋': 30});
       expect(api.datesFetched.length, 30);
     });
 
@@ -118,7 +165,7 @@ void main() {
       final c = _container(store: store, api: api, now: DateTime(2026, 9, 25, 12));
       await c.read(foodFreqProvider.notifier).ensureLoaded();
       expect(c.read(foodFreqProvider), {'鸡胸': 29});
-      expect(await store.isInitialized(), isFalse);
+      expect(await store.isInitialized('u_freq'), isFalse);
     });
 
     test('全部失败：state 保持空（列表原序），不落标记且允许本会话重试', () async {
@@ -132,7 +179,7 @@ void main() {
       final c = _container(store: store, api: api);
       await c.read(foodFreqProvider.notifier).ensureLoaded();
       expect(c.read(foodFreqProvider), isEmpty);
-      expect(await store.isInitialized(), isFalse);
+      expect(await store.isInitialized('u_freq'), isFalse);
       // 下次开弹层可再试（_started 已复位）
       api.failAll = false;
       await c.read(foodFreqProvider.notifier).ensureLoaded();
@@ -149,7 +196,7 @@ void main() {
       await c.read(recordControllerProvider).addRecord(
           '2026-09-25', {'name': '米饭', 'kcal': 230}, pendingKey: 'r1');
       expect(c.read(foodFreqProvider), {'米饭': 3});
-      expect(await store.loadCounts(), {'米饭': 3});
+      expect(await store.loadCounts('u_freq'), {'米饭': 3});
     });
 
     test('addRecord 失败 → 计数不变', () async {
@@ -203,7 +250,7 @@ void main() {
         ),
       ));
       await tester.pumpAndSettle(); // postFrame ensureLoaded → 30 日聚合 → 自动重排
-      expect(await store.isInitialized(), isTrue);
+      expect(await store.isInitialized('u_freq'), isTrue);
       final texts = tester
           .widgetList<Text>(find.byType(Text))
           .map((t) => t.data ?? '')
@@ -234,14 +281,16 @@ class _MemoryStore implements FoodFreqStore {
   _MemoryStore({this.initialized = false, this._counts});
   bool initialized;
   Map<String, int>? _counts;
+  // M7-T8 分账号键：桩不分桶（uid 形参收下即符合接口），账号隔离语义由
+  // 下方 PrefsFoodFreqStore 真桩用例钉。
   @override
-  Future<bool> isInitialized() async => initialized;
+  Future<bool> isInitialized(String uid) async => initialized;
   @override
-  Future<void> markInitialized() async => initialized = true;
+  Future<void> markInitialized(String uid) async => initialized = true;
   @override
-  Future<Map<String, int>> loadCounts() async => _counts ?? {};
+  Future<Map<String, int>> loadCounts(String uid) async => _counts ?? {};
   @override
-  Future<void> saveCounts(Map<String, int> counts) async =>
+  Future<void> saveCounts(String uid, Map<String, int> counts) async =>
       _counts = Map.of(counts);
 }
 
@@ -274,6 +323,12 @@ class _RecordsByDate implements HealthApi {
     if (addFails) throw ApiException('添加失败');
     return {'ok': true};
   }
+
+  /// M7-T8 分账号键：FoodFreqNotifier._resolveUid 读 profile['id']（此桩给
+  /// 稳定 uid；缺该方法时 noSuchMethod 抛错走 anon 兜底支，两用例档都覆盖）
+  @override
+  Future<Map<String, dynamic>> getProfile() async =>
+      {'id': 'u_freq', 'nickname': ''};
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>

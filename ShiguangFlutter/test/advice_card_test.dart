@@ -201,6 +201,28 @@ void main() {
     expect(find.textContaining('喝水'), findsNothing); // water 规则 isToday 门
   });
 
+  /* ---------- ①d 体重入参 falsy 闸（M7-T8 终审 Minor-2；≙ :357 `(state.body
+     && state.body.weightKg) || 55` 直测——UI 现值面两口径不可分辨，
+     domain/exercise.dart exerciseKcalOf 对 0 另有 falsy 回退 55，
+     故闸语义由纯单元钉） ---------- */
+
+  test('①d weightOf：0/null/缺body/非数值/在途 → 55；正常数值直取（falsy 口径）', () {
+    AsyncValue<Map<String, dynamic>> data(Map<String, dynamic> p) =>
+        AsyncData<Map<String, dynamic>>(p);
+    // ≙ :357 `weightKg: (state.body && state.body.weightKg) || 55`
+    expect(AdviceCard.weightOf(data(profileWith(weightKg: 0))), 55); // 0 falsy 支
+    expect(AdviceCard.weightOf(data(profileWith())), 55); // body 空 map
+    expect(
+        AdviceCard.weightOf(data(<String, dynamic>{
+          ...StubHealthApi.profileMap(),
+          'body': {'weightKg': '60'} // 非数值串（fixture 锁 num，防御位）
+        })),
+        55);
+    expect(AdviceCard.weightOf(const AsyncLoading<Map<String, dynamic>>()),
+        55); // 在途 ≙ H5 state.body 未就绪
+    expect(AdviceCard.weightOf(data(profileWith(weightKg: 60))), 60); // 真值直取
+  });
+
   /* ---------- ② 就绪态：summary loading → 不渲染（:351 if (!s) return） ---------- */
 
   testWidgets('②summary 在途：整卡不渲染（标题/行都无）；回包后出现', (tester) async {

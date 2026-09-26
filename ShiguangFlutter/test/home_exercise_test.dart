@@ -19,7 +19,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shiguang_flutter/app/theme.dart' show shiguangTheme;
+import 'package:shiguang_flutter/data/api_client.dart' show ApiException;
+import 'package:shiguang_flutter/domain/constants.dart' show exerciseLib;
 import 'package:shiguang_flutter/domain/dates.dart' show todayIso;
+import 'package:shiguang_flutter/features/exercise/exercise_controller.dart'
+    show exercisesProvider;
 import 'package:shiguang_flutter/features/exercise/exercise_sheet.dart'
     show exChipKey, exSaveKey;
 import 'package:shiguang_flutter/features/home/home_controller.dart'
@@ -298,5 +302,85 @@ void main() {
 
     expect(find.text('运动 · 1月1日'), findsOneWidget);
     expect(find.text('今日运动'), findsNothing);
+  });
+
+  /* ---------- ⑨ M7-T8 结转件（评审 T2 Minor① 等值闸 + T1 deferred 桩对齐） ---------- */
+
+  test('⑨a remove 失败回插闸：乐观窗口内并发写链重取把该行吞回 → 失败支不再插幽灵行（≙ H5 :1835/:1844 if(rec) 等值闸）',
+      () async {
+    final api = newApi(exercises: [x1()])
+      ..deleteExerciseGate = Completer<void>();
+    final c = ProviderContainer(
+      overrides: [healthApiProvider.overrideWithValue(api)],
+      retry: (_, _) => null,
+    );
+    addTearDown(c.dispose);
+    final sub = c.listen(exercisesProvider(todayIso()), (_, _) {});
+    addTearDown(sub.close);
+    await c.read(exercisesProvider(todayIso()).future); // 首取 [x1]
+    final notifier = c.read(exercisesProvider(todayIso()).notifier);
+    final msgs = <String>[];
+
+    final removeFut = notifier.remove(x1(), msgs.add); // 乐观删 → state []
+    await null; await null; // 放行 remove 同步前缀至 await deleteExercise
+    expect(c.read(exercisesProvider(todayIso())).value, isEmpty);
+
+    // 并发写链：add 成功支 :1826 _reload 重取——DELETE 未落地（桩挂在闸上），
+    // 回包含 x1 → 行被「吞回」（幽灵行温床：失败支若裸 push 即双份 x1）
+    await notifier.add(
+        exerciseLib.firstWhere((l) => l.key == 'pushup'), 10, 12, (_) {});
+    expect(
+        c.read(exercisesProvider(todayIso()))
+            .value!
+            .where((r) => r['id'] == 'x1')
+            .length,
+        1);
+
+    api.deleteExerciseError = ApiException('服务器错误');
+    api.deleteExerciseGate!.complete(); // 放行 → DELETE 抛 → 失败支
+    await removeFut;
+
+    // 闸命中（M7-T8 修前红：_reinsert 裸 push → x1 双行）；双 toast 文案链不变
+    expect(
+        c.read(exercisesProvider(todayIso()))
+            .value!
+            .where((r) => r['id'] == 'x1')
+            .length,
+        1,
+        reason: '失败回插须判「该行仍不在 state」，在场即吞（≙ H5 :1836/:1844 rec '
+            '缺席两支 skip push；并发重取吞回后本端对齐其下一拍抹平稳态）');
+    expect(msgs, ['已删除运动记录', '删除失败：服务器错误']); // :1842/:1850 照弹不受闸影响
+  });
+
+  test('⑨b 桩云语义对齐（T1 deferred 销账）：amount/kcal Number() 强转 + kcal 无上界（云 index.js:354/:362）',
+      () async {
+    final api = StubHealthApi();
+    Map<String, dynamic> body(Object amount, Object kcal) => <String, dynamic>{
+          'date': todayIso(),
+          'key': 'run',
+          'name': '跑步',
+          'emoji': '🏃',
+          'amount': amount,
+          'unit': 'km',
+          'kcal': kcal,
+        };
+    // 数字串：云 Number('5')/'600' 强转入库（旧桩 is num 闸把 '5' 落 0）
+    final r1 = await api.addExercise(body('5', '600'));
+    expect(r1['ok'], true);
+    expect(r1['amount'], 5);
+    expect(r1['kcal'], 600);
+    // 非数值串 ≙ Number('abc')=NaN||0 → kcal 0 → :355 !kcal 拒（ok:false 非 HTTP 错）
+    final r2 = await api.addExercise(body('abc', 'abc'));
+    expect(r2['ok'], false);
+    // amount 非数值而 kcal 有效：≙ :362 Number('abc')||0 落 0，行照样入库
+    final r2b = await api.addExercise(body('abc', 60));
+    expect(r2b['ok'], true);
+    expect(r2b['amount'], 0);
+    // 负值 ≙ Math.max(0,·) 地板 → 0 → 拒；**无上界**（旧桩 clamp 1<<31 自加已去）
+    final r3 = await api.addExercise(body(5, -300));
+    expect(r3['ok'], false);
+    final r4 = await api.addExercise(body(5, 5000000000)); // > 2^31
+    expect(r4['ok'], true);
+    expect(r4['kcal'], 5000000000);
   });
 }

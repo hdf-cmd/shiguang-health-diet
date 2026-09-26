@@ -13,6 +13,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../home/home_controller.dart' show healthApiProvider, todayProvider;
+// M7-T8 分账号键的 uid 源（文件级环 profile_providers ↔ … Dart 合法，
+// exercise_controller 同注先例）。
+import '../profile/profile_providers.dart' show profileProvider;
 import '../../domain/dates.dart';
 
 /// 按频次稳定降序。counts 缺项按 0；不修改入参列表。
@@ -55,11 +58,13 @@ List<String> recentIsoDates(DateTime end, int days) {
 
 /// 常吃计数持久层。生产用 SharedPreferences（[PrefsFoodFreqStore]），
 /// 测试注入内存实现——组合根模式同 M2 TokenStore。
+/// M7-T8（T4 池收口）：prefs 键分账号——uid 由 [FoodFreqNotifier] 经
+/// profileProvider 解析后传入（≙ actualDeficitKeyFor 的 `uid||'anon'` 档）。
 abstract class FoodFreqStore {
-  Future<Map<String, int>> loadCounts();
-  Future<void> saveCounts(Map<String, int> counts);
-  Future<bool> isInitialized();
-  Future<void> markInitialized();
+  Future<Map<String, int>> loadCounts(String uid);
+  Future<void> saveCounts(String uid, Map<String, int> counts);
+  Future<bool> isInitialized(String uid);
+  Future<void> markInitialized(String uid);
 }
 
 class PrefsFoodFreqStore implements FoodFreqStore {
@@ -67,13 +72,30 @@ class PrefsFoodFreqStore implements FoodFreqStore {
   Future<SharedPreferences>? _inst;
   Future<SharedPreferences> get _prefs => _inst ??= SharedPreferences.getInstance();
 
-  static const _kCounts = 'sg_food_freq_counts';
-  static const _kInit = 'sg_food_freq_init_v1';
+  // ===== M7-T8 分账号键（不迁移旧键）=====
+  // 新键 `sg_food_freq_counts_<uid>`（init 标记同法分账号——否则 B 账号读到
+  // A 的标记即直返空计数、30 天回填永不触发）。**注销旧全局键**
+  // `sg_food_freq_counts`/`sg_food_freq_init_v1`：不迁移其内容——ensureLoaded
+  // 的 30 天云端回填机制可自重建，迁移属 YAGNI；任一方法触盘时读到旧键即删
+  // （见 [_purgeLegacy] 注释登记）。
+  static const _kCountsLegacy = 'sg_food_freq_counts';
+  static const _kInitLegacy = 'sg_food_freq_init_v1';
+  static String _kCounts(String uid) =>
+      'sg_food_freq_counts_${uid.isEmpty ? 'anon' : uid}';
+  static String _kInit(String uid) =>
+      'sg_food_freq_init_v1_${uid.isEmpty ? 'anon' : uid}';
+
+  /// 旧全局键读到即删（键分账号后旧键永不再被读取，留着只占位/串号）。
+  Future<void> _purgeLegacy(SharedPreferences p) async {
+    if (p.containsKey(_kCountsLegacy)) await p.remove(_kCountsLegacy);
+    if (p.containsKey(_kInitLegacy)) await p.remove(_kInitLegacy);
+  }
 
   @override
-  Future<Map<String, int>> loadCounts() async {
+  Future<Map<String, int>> loadCounts(String uid) async {
     final p = await _prefs;
-    final raw = p.getString(_kCounts);
+    await _purgeLegacy(p);
+    final raw = p.getString(_kCounts(uid));
     if (raw == null || raw.isEmpty) return {};
     try {
       final m = Map<String, dynamic>.from(jsonDecode(raw) as Map);
@@ -84,16 +106,25 @@ class PrefsFoodFreqStore implements FoodFreqStore {
   }
 
   @override
-  Future<void> saveCounts(Map<String, int> counts) async =>
-      (await _prefs).setString(_kCounts, jsonEncode(counts));
+  Future<void> saveCounts(String uid, Map<String, int> counts) async {
+    final p = await _prefs;
+    await _purgeLegacy(p);
+    await p.setString(_kCounts(uid), jsonEncode(counts));
+  }
 
   @override
-  Future<bool> isInitialized() async =>
-      (await _prefs).getBool(_kInit) ?? false;
+  Future<bool> isInitialized(String uid) async {
+    final p = await _prefs;
+    await _purgeLegacy(p);
+    return p.getBool(_kInit(uid)) ?? false;
+  }
 
   @override
-  Future<void> markInitialized() async =>
-      (await _prefs).setBool(_kInit, true);
+  Future<void> markInitialized(String uid) async {
+    final p = await _prefs;
+    await _purgeLegacy(p);
+    await p.setBool(_kInit(uid), true);
+  }
 }
 
 /// 初始化窗口：近 30 天（老大拍板 B 方案）。
@@ -114,14 +145,31 @@ class FoodFreqNotifier extends Notifier<Map<String, int>> {
     return const {};
   }
 
+  /// 分账号键的 uid 源（M7-T8）：profileProvider `id`（≙ actualDeficit
+  /// :1521 同法，H5 currentUid()||'anon' 档）；档案拉取失败落 ''（anon）且
+  /// 不缓存失败值，下次再解析。
+  String? _uid;
+  Future<String> _resolveUid() async {
+    final cached = _uid;
+    if (cached != null) return cached;
+    try {
+      final p = await ref.read(profileProvider.future);
+      final id = p['id'];
+      return _uid = id == null ? '' : '$id';
+    } catch (_) {
+      return ''; // 档案失败：anon 档兜底（本会话可再解析）
+    }
+  }
+
   /// 幂等：已初始化/已加载即直返。失败容忍：部分日期取回即用但不打标记，
   /// 下次冷启再补齐；全失败返回空且不标记（本次按无频次原序显示）。
   Future<void> ensureLoaded() async {
     if (_started) return;
     _started = true;
+    final uid = await _resolveUid();
     final store = ref.read(foodFreqStoreProvider);
-    if (await store.isInitialized()) {
-      state = await store.loadCounts();
+    if (await store.isInitialized(uid)) {
+      state = await store.loadCounts(uid);
       return;
     }
     final api = ref.read(healthApiProvider);
@@ -144,8 +192,8 @@ class FoodFreqNotifier extends Notifier<Map<String, int>> {
     }
     final counts = aggregateFreqFromRecords(byDate);
     state = counts;
-    await store.saveCounts(counts);
-    if (failures == 0) await store.markInitialized();
+    await store.saveCounts(uid, counts);
+    if (failures == 0) await store.markInitialized(uid);
   }
 
   bool _started = false;
@@ -157,6 +205,6 @@ class FoodFreqNotifier extends Notifier<Map<String, int>> {
     final next = Map<String, int>.from(state)..[trimmed] = (state[trimmed] ?? 0) + 1;
     state = next;
     final store = ref.read(foodFreqStoreProvider);
-    await store.saveCounts(next);
+    await store.saveCounts(await _resolveUid(), next);
   }
 }

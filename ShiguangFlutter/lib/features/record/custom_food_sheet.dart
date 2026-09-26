@@ -29,8 +29,13 @@
 //   （:1266 逐字）；读取/编码失败→「图片处理失败」（:1270 逐字）。预览
 //   renderCfPreview :1203-1206：有图画图、空画 🍽️。
 //   H5 单按钮「添加图片」→ Flutter 简报裁定「拍照/从相册选择」双钮 + 清除钮
-//   （原生来源区分，R4 差异登记）；「我的食物库 fromLib 入口」Flutter 无管理页
-//   不实现（简报）。选择器不进 widget 测试：CustomFoodImagePicker 注入面，
+//   （原生来源区分，R4 差异登记）；
+// M7-T8 终裁登记（有意背离，列 M7 终审呈报项）：H5 fromLib 入口（app.js:1207
+// 形参，:1220 主钮文案改「存入食物库」、:1221 藏次钮）与其 handler 行为不一致
+// ——点击仍走 :1276 `saveCustomFood(true)` 照记一餐，**文案撒谎**。本端从行为
+// 不从文案：维持双钮完整形态（钮面文案与真实行为一致），不实现 fromLib 单钮；
+// 管理层入口见 food_lib_sheet.dart（T4 已立，旧注「Flutter 无管理页」已过时，
+// 本批随终裁一并勘正）。选择器不进 widget 测试：CustomFoodImagePicker 注入面，
 //   做法同 T5 AvatarPicker。
 // 文案与简报差异以 H5 源为准：次按钮「仅存入食物库，不记录」（index.html:557
 // 逐字，简报省略「，不记录」）；自动热量 p5/c40/f6=234（:1201 公式；简报②⑤
@@ -574,7 +579,8 @@ class _CustomFoodSheetState extends ConsumerState<_CustomFoodSheet> {
                 ),
                 const SizedBox(height: Tokens.sp4),
                 // 双保存（:555-557；主按钮标题随入参餐次 :1220。
-                // fromLib 分支「存入食物库」单钮形态 Flutter 无管理页，不实现）
+                // fromLib 单钮形态 T8 终裁不做——H5 该形态文案撒谎（:1220 vs
+                // :1276 行为），本端从行为不从文案，见文件头「有意背离」登记）
                 FilledButton(
                   key: cfSaveAddKey,
                   onPressed: _busy

@@ -16,6 +16,8 @@
 // 修复轮 1（评审 Important#1）：钉⑧ 增「空态在场时下方有可点添加钮」断言；
 // 新增钉⑩/⑩b —— #lib-add（index.html:574）→ closeFoodLib → openCustomFoodSheet
 // 链路可达（js/app.js:1347），钮双 tab/失败态常驻。
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -514,5 +516,55 @@ void main() {
     expect(api.deletedCustomIds.every((e) => !e.contains('cf_')), isTrue);
     expect(api.hiddenSubmissions.single,
         everyElement(isNot(contains('cf_'))));
+  });
+
+  /* ---------- 钉⑪ M7-T8 卫生批：在途即时置灰（T4 Minor②）+ lib-add 连点闸（T4 Minor⑤） ---------- */
+
+  testWidgets('钉⑪a 归类在途即时置灰：慢网挂回包，点下单帧泵后钮即 disabled=true（≙ H5 :1359 即时赋值）；成功链后复位',
+      (tester) async {
+    final api = StubHealthApi(libCustomFoods: customStore())
+      ..setMealsGate = Completer<void>();
+    await pumpSheet(tester, api);
+
+    await tapKey(tester, libMealKey('raw_1', 'lunch'));
+    await tester.pump(); // 仅一泵：回包挂在闸上，任何重取都未发生
+
+    // M7-T8 修前红：_busy 裸 mutate 无 setState → 本帧钮仍 disabled=false
+    expect(
+        tester.widget<LibMealChip>(find.byKey(libMealKey('raw_1', 'lunch'))).disabled,
+        isTrue,
+        reason: '在途当帧即灰（:1359 mealChip.disabled=true 即时观感）');
+    // 同钮重按被闸拦截（幂等：不双发）
+    await tapKey(tester, libMealKey('raw_1', 'lunch'));
+    expect(api.mealSetBodies, hasLength(1));
+
+    api.setMealsGate!.complete(); // 放行：toast + 重取 + finally 复位
+    await flush(tester);
+    expect(find.text('已归到正餐 · 搜索时只在对应餐次出现'), findsOneWidget);
+    expect(
+        tester.widget<LibMealChip>(find.byKey(libMealKey('raw_1', 'lunch'))).disabled,
+        isFalse,
+        reason: '链路终态复位（≙ H5 成功支 renderLibList 重建非灰钮）');
+  });
+
+  testWidgets('钉⑪b lib-add 连点闸：pop 窗口内同帧二击 onPressed（连点等价模拟，绕过路由 AbsorbPointer 的输入屏蔽）不穿透下方路由，表单恰开一次',
+      (tester) async {
+    final api = StubHealthApi(libCustomFoods: customStore());
+    await pumpSheet(tester, api);
+
+    await tester.ensureVisible(find.byKey(libAddKey));
+    await tester.pump();
+    final btn = tester.widget<FilledButton>(find.byKey(libAddKey));
+    btn.onPressed!(); // 第一击：pop(true) 起关闭动画
+    btn.onPressed!(); // 第二击：动画窗口内（层仍在 Navigator 栈）——M7-T8 修前
+    // 红：二次 pop 把模态路由再摘一层/打断转场断言，openFoodLibSheet 续链
+    // 语境被破坏，表单不开或宿主路由被吞
+    await tester.pumpAndSettle();
+    await tester.pumpAndSettle();
+
+    expect(find.text('自定义食物'), findsOneWidget); // 表单恰开一次（链路仍可达）
+    expect(find.byKey(cfNameKey), findsOneWidget);
+    expect(find.text('open-lib'), findsOneWidget,
+        reason: '弹层下方宿主路由未被第二发 pop 吞掉');
   });
 }

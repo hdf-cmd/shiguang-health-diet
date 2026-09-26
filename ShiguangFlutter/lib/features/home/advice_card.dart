@@ -15,9 +15,13 @@
 //                  provider 在途/失败 orElse 0 同义，T3 已接）
 //   records      ← recordsProvider(date)（:355 state.records；在途 ≙ H5 初值 []）
 //   isToday      ← date == todayIso()（:356）
-//   weightKg     ← profileProvider body.weightKg ?? 55（:357 `||55`——上游裁定
-//                  用 ??，0 值 falsy 支不引入，避 water_card T4 评审同类问题；
-//                  在途/失败 → 55 ≙ H5 state.body 未就绪）
+//   weightKg     ← profileProvider body.weightKg falsy 落 55（:357
+//                  `(state.body && state.body.weightKg) || 55`——M7-T8 终审
+//                  Minor-2 收口：本仓早期按上游裁定用 ??（0 值支不引入），本批
+//                  改回 ||55 等值口径 `w is num && w != 0`（0/缺键/非数均落
+//                  55；在途/失败 → 55 ≙ H5 state.body 未就绪）。注：UI 现值面
+//                  两口径不可分辨（快走支 exerciseKcalOf 内部对 0 另有 falsy
+//                  回退 55），差异在 ctx 字面语义，advice_card_test ①d 直测闸）
 //   waterGoalMl  ← waterGoalMlOf(profileProvider)（:358 → app.js:1948
 //                  `goal.waterMl || 1600` falsy 口径；M6-T7 F4 与 water_card
 //                  收敛为 profile_providers.dart 单一工具）
@@ -49,12 +53,16 @@ class AdviceCard extends ConsumerWidget {
   /// 当前页 date（首页语境=plateDateProvider，M7-T1 起可 ‹ › 翻动；≙ app.js:356 state.date）
   final String date;
 
-  /// ≙ :357 `(state.body && state.body.weightKg) || 55`（?? 版，见文件头注）
-  static num _weightOf(AsyncValue<Map<String, dynamic>> profile) {
+  /// ≙ :357 `(state.body && state.body.weightKg) || 55`（falsy 口径，
+  /// M7-T8 Minor-2 收口：0 亦落 55；null/缺键/非数同 55）。
+  /// 文件级私有改 @visibleForTesting：UI 现值面与 ?? 旧口径不可分辨
+  /// （domain exerciseKcalOf 对 0 另回退 55），闸语义由单测直测本函数钉死。
+  @visibleForTesting
+  static num weightOf(AsyncValue<Map<String, dynamic>> profile) {
     final p = profile.maybeWhen(data: (v) => v, orElse: () => null);
     final body = p?['body'];
     final w = body is Map ? body['weightKg'] : null;
-    return w is num ? w : 55;
+    return (w is num && w != 0) ? w : 55;
   }
 
   @override
@@ -71,47 +79,53 @@ class AdviceCard extends ConsumerWidget {
       exerciseKcal: ref.watch(exerciseKcalProvider(date)),
       records: ref.watch(recordsProvider(date)).value ?? const [],
       isToday: date == todayIso(),
-      weightKg: _weightOf(profile),
+      weightKg: weightOf(profile),
       // ≙ :358 `state.waterGoalMl`（app.js:1948 `goal.waterMl || 1600` 口径，
       // M6-T7 F4 收敛为 waterGoalMlOf 单一工具，round 对云整数值恒等）
       waterGoalMl: waterGoalMlOf(profile),
     );
     final tips = buildAdvice(ctx); // 最多 3 条（logic.js:212 slice(0,3)）
 
-    return Container(
-      key: adviceCardKey,
-      width: double.infinity,
-      padding: const EdgeInsets.all(Tokens.sp5),
-      decoration: BoxDecoration(
-        color: Tokens.surface,
-        borderRadius: BorderRadius.circular(Tokens.radiusLg),
-        boxShadow: Tokens.shadowCard,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // .card-title（index.html:107）：标题 + .more 副注
-          Row(
-            key: adviceTitleKey,
-            children: [
-              const Expanded(
-                child: Text(
-                  '每日建议',
-                  style: TextStyle(fontWeight: FontWeight.w700),
+    return Padding(
+      // 卡间距移入卡体条件构造（M7-T8 终审 Minor-3）：整卡不渲染时
+      // SizedBox.shrink 连此间距一并消失，调用方（home_screen）不再于本卡
+      // 前独立垫 sp3——加载期餐盘卡与水卡之间不再叠出 2×sp3 空档。
+      padding: const EdgeInsets.only(top: Tokens.sp3),
+      child: Container(
+        key: adviceCardKey,
+        width: double.infinity,
+        padding: const EdgeInsets.all(Tokens.sp5),
+        decoration: BoxDecoration(
+          color: Tokens.surface,
+          borderRadius: BorderRadius.circular(Tokens.radiusLg),
+          boxShadow: Tokens.shadowCard,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // .card-title（index.html:107）：标题 + .more 副注
+            Row(
+              key: adviceTitleKey,
+              children: [
+                const Expanded(
+                  child: Text(
+                    '每日建议',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
                 ),
-              ),
-              Text(
-                '根据今日记录实时生成',
-                style: const TextStyle(
-                  fontSize: Tokens.textSm,
-                  color: Tokens.ink3,
-                ),
-              ), // .more
-            ],
-          ),
-          const SizedBox(height: Tokens.sp3),
-          for (var i = 0; i < tips.length; i++) _row(i, tips[i]),
-        ],
+                Text(
+                  '根据今日记录实时生成',
+                  style: const TextStyle(
+                    fontSize: Tokens.textSm,
+                    color: Tokens.ink3,
+                  ),
+                ), // .more
+              ],
+            ),
+            const SizedBox(height: Tokens.sp3),
+            for (var i = 0; i < tips.length; i++) _row(i, tips[i]),
+          ],
+        ),
       ),
     );
   }

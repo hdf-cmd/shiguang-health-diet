@@ -56,14 +56,15 @@ class _AlwaysExpiredAdapter implements HttpClientAdapter {
 
 /// 本组用例不触记录弹层，内存空桩即可（避免碰 shared_preferences 平台通道）。
 class _NoopFoodFreqStore implements FoodFreqStore {
+  // uid 形参：M7-T8 分账号键位（noop 桩不分桶）
   @override
-  Future<Map<String, int>> loadCounts() async => {};
+  Future<Map<String, int>> loadCounts(String uid) async => {};
   @override
-  Future<void> saveCounts(Map<String, int> counts) async {}
+  Future<void> saveCounts(String uid, Map<String, int> counts) async {}
   @override
-  Future<bool> isInitialized() async => true;
+  Future<bool> isInitialized(String uid) async => true;
   @override
-  Future<void> markInitialized() async {}
+  Future<void> markInitialized(String uid) async {}
 }
 
 /// "已登录"本地态：access/refresh token 俱在，但云端视角已失效。

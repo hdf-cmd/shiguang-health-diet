@@ -166,12 +166,18 @@ class ExercisesNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
 
   /// :1848 `s.exercises.push(rec)`——末位回插而非复原位（H5 Array.push 原样，
   /// bug-for-bug）。
+  /// M7-T8（评审 T2 Minor①）：回插补 H5 :1835/:1836/:1844 `if (rec)` 的等值
+  /// 闸——回插前判该行是否仍**不在** state：
+  /// - 删链开局 find 不到行（H5 :1836 skip 删块、:1844 `if(rec)` skip push）
+  ///   ⇔ Flutter prev.any 未命中跳过乐观删，本闸同判「行仍在场→不再回插」；
+  /// - 乐观窗口内并发写链（add 成功支 :1826 loadExercises）把该行重取吞回 →
+  ///   本闸不再插幽灵行（H5 该窗理论双插、下一拍 loadExercises 抹平——本端
+  ///   对齐其抹平后稳态，超集防御登记）。
   void _reinsert(Map<String, dynamic> rec) {
-    final cur = <Map<String, dynamic>>[
-      ...(state.value ?? const <Map<String, dynamic>>[]),
-      rec,
-    ];
-    state = AsyncData(cur);
+    final cur = state.value ?? const <Map<String, dynamic>>[];
+    final id = '${rec['id']}';
+    if (cur.any((r) => '${r['id']}' == id)) return; // 闸：在场即吞（≙ !rec 支）
+    state = AsyncData(<Map<String, dynamic>>[...cur, rec]);
   }
 }
 

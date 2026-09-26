@@ -58,10 +58,11 @@ final waterOverrideProvider =
 );
 
 class WaterOverride extends Notifier<int?> {
-  WaterOverride(this.date);
-
-  /// family 实参（≙ 水卡当前页 date，语境=plateDateProvider）
-  final String date;
+  /// M7-T8（T3 Minor③ 销账）：family 实参 date 系形态必需（构造签名要求），
+  /// 但本类体内零读取——乐观杯数纯 UI 态，date 已由 provider key 承载
+  /// （异于 T2 ExercisesNotifier：其 date 为 getExercises 取数入参）。
+  /// 旧形态 `final String date` 字段属写入无读取 dead state，收口为无名形参。
+  WaterOverride(String date);
 
   @override
   int? build() => null;

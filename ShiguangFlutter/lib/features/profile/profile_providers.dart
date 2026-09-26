@@ -203,7 +203,11 @@ class ActualDeficitNotifier extends AsyncNotifier<Map<String, Object>?> {
     for (var i = 0; i < dates.length; i++) {
       final s = sums[i];
       final kcal = s?['kcal'];
-      if (s == null || !(kcal is num && kcal > 0)) continue; // :1536 未记录日不计
+      // :1536 `!s || !(s.kcal > 0)` 未记录日不计。M7-T8（T7 Minor②）登记：
+      // `kcal is num` 类型闸比 H5 JS 强算 falsy 口径严（kcal='300' 串在 H5
+      // 会真值入行）——contract fixture 锁 kcal 为 num、该形不可达，
+      // 防御方向有意取严。
+      if (s == null || !(kcal is num && kcal > 0)) continue;
       // :1537 exKcal=该日运动记录 kcal 合计（缺/坏项按 0 fold）
       final exKcal = exs[i].fold<num>(
           0, (a, r) => a + ((r is Map ? r['kcal'] : null) as num? ?? 0));

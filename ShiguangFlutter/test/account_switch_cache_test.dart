@@ -30,16 +30,17 @@ import 'harness.dart' show RecordingAdapter, StubResponse;
 
 /// 内存常吃计数桩：isInitialized 恒 false（不触云端 30 天初始化），
 /// record() 只写内存 + saveCounts，验证 provider 失效后状态回空。
+/// uid 形参 M7-T8 起为分账号键位（内存桩不分桶即可满足用例语义）。
 class _MemFreqStore implements FoodFreqStore {
   final Map<String, int> counts = {};
   @override
-  Future<Map<String, int>> loadCounts() async => counts;
+  Future<Map<String, int>> loadCounts(String uid) async => counts;
   @override
-  Future<void> saveCounts(Map<String, int> c) async {}
+  Future<void> saveCounts(String uid, Map<String, int> c) async {}
   @override
-  Future<bool> isInitialized() async => false;
+  Future<bool> isInitialized(String uid) async => false;
   @override
-  Future<void> markInitialized() async {}
+  Future<void> markInitialized(String uid) async {}
 }
 
 /// 账号数据剧本：体重/日汇总/周报/运动记录四个路由的返回体，按账号切换。

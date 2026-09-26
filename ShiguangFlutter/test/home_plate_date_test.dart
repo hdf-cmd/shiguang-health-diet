@@ -300,7 +300,9 @@ void main() {
     expect(api.summaryDates.last, isoDaysAgo(1)); // 翻牌后仍按新 date 重取
   });
 
-  /* ---------- ⑥ 问候头（app.js:287-294） ---------- */  test('⑥a 五档问候语 + 昵称拼接逐字（:289-290）', () {
+  /* ---------- ⑥ 问候头（app.js:287-294） ---------- */
+
+  test('⑥a 五档问候语 + 昵称拼接逐字（:289-290）', () {
     expect(greetingTextOf(0, null), '夜深了');
     expect(greetingTextOf(5, ''), '夜深了'); // '' falsy ≙ H5 nickname ?
     expect(greetingTextOf(6, null), '早上好');

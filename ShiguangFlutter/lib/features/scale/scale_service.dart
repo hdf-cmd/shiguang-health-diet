@@ -221,7 +221,10 @@ class ScaleService {
       }
       if (pending.isCompleted) {
         // 等待期间会话已被终止：立刻归还刚拿到的连接，不留悬空 GATT
-        unawaited(session.close());
+        // （终审 M7-T8 Minor-5：close() 抛（blue_plus_transport.dart:285-287
+        // s.cancel() 在 try 外）会让裸 unawaited 成孤儿 Future → unhandled
+        // error；与 _finish 的 I1(a) 定式同法补 catchError 吞掉）。
+        unawaited(session.close().catchError((Object _) {}));
         return await pending.future;
       }
       _session = session;
@@ -279,7 +282,11 @@ class ScaleService {
     _readTimer = null;
     final sub = _notifySub;
     _notifySub = null;
-    sub?.cancel();
+    // 终审 M7-T8 Minor-5：StreamSubscription.cancel() 返回的 Future 同样
+    // 可能以错误完成（插件层断连竞态），裸调用即孤儿错误——与 session.close
+    // 同法 unawaited+catchError 吞掉。
+    final unsub = sub?.cancel();
+    if (unsub != null) unawaited(unsub.catchError((Object _) {}));
     final session = _session;
     _session = null;
     // 终审 M1：close 仍可能抛——blue_plus_transport.dart:285-287 的

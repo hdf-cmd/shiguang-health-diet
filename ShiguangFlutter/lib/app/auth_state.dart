@@ -60,7 +60,9 @@ class AuthNotifier extends Notifier<AuthStatus> {
   /// `case Family():` 遍历 listFamily 逐个 invalidateSelf，已读源核实）。
   /// 边界说明：foodFreqProvider 失效只清内存计数；prefs 里的持久计数下次
   /// ensureLoaded 仍会读回（init 标记未清）——按终查处方只失效 provider，
-  /// 持久面不动（M4 冻结面）。healthApi/apiClient 为无状态通道，无需失效。
+  /// 持久面不动（M4 冻结面）。M7-T8 起该持久计数键已分账号
+  /// （`sg_food_freq_counts_` + uid，food_freq.dart），换号不再互读，本注仅指
+  /// 同账号重登场景。healthApi/apiClient 为无状态通道，无需失效。
   void _invalidateAccountScopedCaches() {
     ref
       ..invalidate(profileProvider) // M5-T5：昵称/头像/签名同属账号级缓存
