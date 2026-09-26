@@ -3,6 +3,9 @@
 // + 消息提醒卡（T7：总开关/测试餐点/测试喝水）+ 退出登录。
 // M5 Task 5：标题下插资料卡头部（_profileHead：头像/昵称/签名，点击开编辑
 // 弹层；T6 接线次序 = 资料头→体重卡→身体卡(T6)→提醒卡→退出）。
+// M6 Task 6 方案 A：提醒卡压缩——卡面一行化（标题+副文案+设置入口+开关，
+// 向 H5 remind-card 一行观感靠拢），M4 自加的两枚通栏测试钮收进「提醒设置」
+// 弹层「诊断」区；handler 直连零行为变更，层内 toast 走 OverlayEntry 通道。
 // 行为权威源 H5：
 // - index.html:459-482 记体重区：label「今日体重」、stepper −/＋（aria ±0.5kg）、
 //   保存、hint「点数字可直接输入…」、秤按钮「⚖️ 从体脂秤同步（光脚站上秤）」——文案逐字。
@@ -104,6 +107,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   /// 防快速连拨两次出现「乐观置位→失败回弹」交织出与云端不符的终态。
   bool _reminderBusy = false;
 
+  /// 「提醒设置」弹层在途的层内通知通道（M6-T6）：弹层 initState 置入、
+  /// dispose 清空；非空时 [_toast] 走该通道（OverlayEntry，goal_sheet T4
+  /// 07b 结论：SnackBar 会被弹层遮挡且向下层 Scaffold 广播出双份），
+  /// 各 handler 不感知——行为零变更，仅呈现层随宿主位置换通道。
+  void Function(String)? _reminderSheetToast;
+
   @override
   void initState() {
     super.initState();
@@ -161,6 +170,25 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
   }
 
+  /// 「提醒设置」弹层（M6-T6 方案 A）：卡面两枚诊断钮收进层内「诊断」区，
+  /// 按钮直连原 [_testMealReminder]/[_testWaterReminder]，行为零变更。
+  /// 样式沿用弹层族（profile_edit_sheet/goal_sheet 的 showModalBottomSheet 定式）。
+  Future<void> _openReminderSettings() {
+    return showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Tokens.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius:
+            BorderRadius.vertical(top: Radius.circular(Tokens.radiusSheet)),
+      ),
+      builder: (_) => _ReminderSettingsSheet(
+        onTestMeal: _testMealReminder,
+        onTestWater: _testWaterReminder,
+        bindToastSink: (sink) => _reminderSheetToast = sink,
+      ),
+    );
+  }
+
   @override
   void dispose() {
     // 离开「我的」tab 即终止进行中的会话（简报：cancel 时机=按钮/页面 dispose；
@@ -172,6 +200,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   void _toast(String msg) {
     if (!mounted) return;
+    // M6-T6：「提醒设置」弹层开着的提示走层内 OverlayEntry（见
+    // [_reminderSheetToast] 注释）；弹层外（开关直拨/体重/同步）仍页级 SnackBar。
+    final inSheet = _reminderSheetToast;
+    if (inSheet != null) {
+      inSheet(msg);
+      return;
+    }
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(msg)));
@@ -509,9 +544,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     _saveWeight(w);
   }
 
-  /// 消息提醒卡（index.html:227-237 remind-card 同构：标题+副文案行配右侧
-  /// 开关，下接两枚通栏 soft 按钮）。文案逐字抄 H5；开关 aria-label「消息
-  /// 提醒」→ Semantics。初值在途时开关禁用，防「未知态」下误翻。
+  /// 消息提醒卡（M6-T6 方案 A：index.html:227-233 remind-row 一行同构——标题
+  /// +副文案，右侧「设置」入口与开关；H5 本就没有测试钮，卡面两枚通栏钮是
+  /// Flutter M4 自加的诊断便利，压缩回一行=向 H5 观感靠拢，钮迁进弹层）。
+  /// 文案逐字不动；开关 aria-label「消息提醒」→ Semantics。初值在途时开关
+  /// 禁用，防「未知态」下误翻。
   Widget _remindCard() {
     return Container(
       padding: const EdgeInsets.all(Tokens.sp4),
@@ -520,51 +557,49 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         borderRadius: BorderRadius.circular(Tokens.radiusLg),
         boxShadow: Tokens.shadowCard,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Row(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('消息提醒 · 系统通知', // index.html:230 逐字
-                        style: TextStyle(
-                            fontSize: Tokens.textMd,
-                            fontWeight: FontWeight.w700,
-                            color: Tokens.ink)),
-                    const SizedBox(height: Tokens.sp1),
-                    const Text(
-                        '三餐定点 8:00/12:00/18:30 + 喝水每天 8 次随机（8:00–24:00），横幅弹出',
-                        // index.html:231 逐字
-                        style:
-                            TextStyle(fontSize: Tokens.textXs, color: Tokens.ink3)),
-                  ],
-                ),
-              ),
-              const SizedBox(width: Tokens.sp2),
-              Semantics(
-                label: '消息提醒', // index.html:233 aria-label 逐字
-                child: Switch(
-                  value: _remindOn ?? false,
-                  // 初值在途禁用；setEnabled 在途亦禁用（T8 缓办 C）
-                  onChanged: (_remindOn == null || _reminderBusy)
-                      ? null
-                      : _setReminders,
-                ),
-              ),
-            ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('消息提醒 · 系统通知', // index.html:230 逐字
+                    style: TextStyle(
+                        fontSize: Tokens.textMd,
+                        fontWeight: FontWeight.w700,
+                        color: Tokens.ink)),
+                const SizedBox(height: Tokens.sp1),
+                const Text(
+                    '三餐定点 8:00/12:00/18:30 + 喝水每天 8 次随机（8:00–24:00），横幅弹出',
+                    // index.html:231 逐字
+                    style:
+                        TextStyle(fontSize: Tokens.textXs, color: Tokens.ink3)),
+              ],
+            ),
           ),
-          const SizedBox(height: Tokens.sp3),
-          FilledButton.tonal( // index.html:235 逐字
-            onPressed: _testMealReminder,
-            child: const Text('发一条测试通知'),
+          const SizedBox(width: Tokens.sp2),
+          Semantics(
+            label: '提醒设置', // 弹层入口（简报 Step 1 ②）
+            button: true,
+            // container: true —— IconButton 内部自带语义节点，非容器 Semantics
+            // 的属性会并到子节点上导致 bySemanticsLabel 找不到独立 label（①实证）。
+            container: true,
+            child: IconButton(
+              onPressed: _openReminderSettings,
+              icon: const Icon(Icons.settings_outlined, color: Tokens.ink3),
+              // 卡高压缩：默认触摸目标 48 会把一行卡顶回两行高
+              visualDensity: VisualDensity.compact,
+            ),
           ),
-          const SizedBox(height: Tokens.sp3),
-          FilledButton.tonal( // index.html:236 逐字
-            onPressed: _testWaterReminder,
-            child: const Text('发一条喝水到点提醒（测试）'),
+          Semantics(
+            label: '消息提醒', // index.html:233 aria-label 逐字
+            child: Switch(
+              value: _remindOn ?? false,
+              // 初值在途禁用；setEnabled 在途亦禁用（T8 缓办 C）
+              onChanged: (_remindOn == null || _reminderBusy)
+                  ? null
+                  : _setReminders,
+            ),
           ),
         ],
       ),
@@ -611,4 +646,192 @@ class _HeadAvatar extends StatelessWidget {
         clipBehavior: Clip.antiAlias,
         child: Center(child: child),
       );
+}
+
+/// 「提醒设置」弹层（M6-T6 方案 A）：说明 + 分隔线 + 「诊断」小标题 + 两枚
+/// 通栏测试钮。钮直连页体原 handler（testMeal/testWater 链与 toast 文案零
+/// 变更）；两钮文本逐字 index.html:235-236（H5 无此钮，M4 自加诊断便利的
+/// 迁移位）。层内提示走 OverlayEntry（goal_sheet T4 07b 定式：SnackBar 会被
+/// 弹层遮挡并向下层 Scaffold 广播出双份）；通道经 [bindToastSink] 在开层时
+/// 注册进页体 _toast、关层时注销，页级提示随之回 SnackBar。
+/// 版式 R4 自主：标题行「提醒设置」+ ✕ 沿用弹层族定式（profile_edit:440-441、
+/// goal_sheet :296-299 同构）。
+class _ReminderSettingsSheet extends StatefulWidget {
+  const _ReminderSettingsSheet({
+    required this.onTestMeal,
+    required this.onTestWater,
+    required this.bindToastSink,
+  });
+
+  final Future<void> Function() onTestMeal;
+  final Future<void> Function() onTestWater;
+  final void Function(void Function(String)? sink) bindToastSink;
+
+  @override
+  State<_ReminderSettingsSheet> createState() => _ReminderSettingsSheetState();
+}
+
+class _ReminderSettingsSheetState extends State<_ReminderSettingsSheet> {
+  OverlayEntry? _toastEntry;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.bindToastSink(_toastInSheet); // 页体 _toast 改道层内
+  }
+
+  @override
+  void dispose() {
+    widget.bindToastSink(null); // 注销：页级通道复位 SnackBar（⑥用例钉）
+    _toastEntry?.remove(); // 层内 toast 随层销毁
+    super.dispose();
+  }
+
+  void _toastInSheet(String msg) {
+    final overlay = Overlay.of(context);
+    _toastEntry?.remove();
+    late final OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (_) => _ReminderToast(
+        msg: msg,
+        onDone: () {
+          if (entry.mounted) entry.remove();
+          if (identical(_toastEntry, entry)) _toastEntry = null;
+        },
+      ),
+    );
+    _toastEntry = entry;
+    overlay.insert(entry);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+            Tokens.sp5, Tokens.sp3, Tokens.sp5, Tokens.sp4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Text('提醒设置',
+                    style: TextStyle(
+                        fontSize: Tokens.textLg,
+                        fontWeight: FontWeight.w800,
+                        color: Tokens.ink)),
+                const Spacer(),
+                Semantics(
+                  label: '关闭', // 弹层族 ✕ aria 定式
+                  button: true,
+                  child: GestureDetector(
+                    onTap: () => Navigator.of(context).pop(),
+                    child: const Padding(
+                      padding: EdgeInsets.all(Tokens.sp1),
+                      child: Text('✕',
+                          style: TextStyle(
+                              fontSize: Tokens.textMd, color: Tokens.ink3)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: Tokens.sp3),
+            // 说明（与开关开启 toast「提醒已开启：每天定点弹系统通知」同族措辞，
+            // 简报 Step 2 指定文本）
+            const Text('开启后每天定点弹系统通知',
+                style: TextStyle(fontSize: Tokens.textSm, color: Tokens.ink2)),
+            const SizedBox(height: Tokens.sp3),
+            const Divider(height: 1, color: Tokens.line),
+            const SizedBox(height: Tokens.sp3),
+            const Text('诊断',
+                style: TextStyle(fontSize: Tokens.textSm, color: Tokens.ink3)),
+            const SizedBox(height: Tokens.sp2),
+            FilledButton.tonal( // index.html:235 逐字（M6-T6 自卡面迁入）
+              onPressed: widget.onTestMeal,
+              child: const Text('发一条测试通知'),
+            ),
+            const SizedBox(height: Tokens.sp3),
+            FilledButton.tonal( // index.html:236 逐字（M6-T6 自卡面迁入）
+              onPressed: widget.onTestWater,
+              child: const Text('发一条喝水到点提醒（测试）'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 弹层内浮层 toast（≙ H5 #toast：fixed 底部居中、盖在弹层之上、2.4s 自隐）。
+/// Ticker 驱动（无裸 Timer，测试 pumpAndSettle 语义安全），播完自删。
+/// 抄 goal_sheet.dart `_SheetToast` 定式——跨库私有类不可复用，若第三处再
+/// 需则迁 common/（T7 收官可顺手，此处不过度设计）。
+class _ReminderToast extends StatefulWidget {
+  const _ReminderToast({required this.msg, required this.onDone});
+
+  final String msg;
+  final VoidCallback onDone;
+
+  @override
+  State<_ReminderToast> createState() => _ReminderToastState();
+}
+
+class _ReminderToastState extends State<_ReminderToast>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 2400),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _c.forward().whenComplete(widget.onDone);
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final opacity = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 10),
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.0), weight: 78),
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.0), weight: 12),
+    ]).animate(_c);
+    return IgnorePointer(
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: Tokens.sp8),
+          child: FadeTransition(
+            opacity: opacity,
+            child: Material(
+              color: const Color(0xE632352D),
+              borderRadius: BorderRadius.circular(14),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: Tokens.sp4,
+                  vertical: Tokens.sp2,
+                ),
+                child: Text(
+                  widget.msg,
+                  style: const TextStyle(
+                    fontSize: Tokens.textSm,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
