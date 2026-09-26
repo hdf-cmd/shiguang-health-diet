@@ -157,8 +157,9 @@ void main() {
     expect(adapter.countOf('/user/body-metrics'), 2); // 真的重发了请求
     expect((await container.read(summaryProvider(date).future)).kcal, 500);
     expect((await container.read(weekReportProvider.future)).target, 2000);
-    // M6-T3：运动记录 family 整族失效——重取不带 A 的 x1。计数不锁死：
-    // keepAlive 家族带监听 invalidate 即刻重取（登出一次+换号一次=共 3 发），
+    // M6-T3/M7-T2：运动记录 family 整族失效——重取不带 A 的 x1。计数不锁死：
+    // exercisesProvider 现为 autoDispose AsyncNotifier.family，本用例有在体
+    // 监听（exSub），invalidate 即刻重建重发（登出一次+换号一次=共 3 发）；
     // 断「>1 必重发 + 值回 B 空列表」即可证缓存不残留。
     expect(await container.read(exercisesProvider(date).future), isEmpty);
     expect(container.read(exerciseKcalProvider(date)), 0);

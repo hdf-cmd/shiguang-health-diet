@@ -170,6 +170,24 @@ void main() {
     expect(api.exerciseDates, [isoDaysAgo(0), y]);
   });
 
+  /* ---------- ②b M7-T2 carried 收口：同一天回访必须重取（T1 头注登记债） ---------- */
+
+  testWidgets('②b ‹ 昨天再 › 回今天：运动链对同一 date 重发请求（≙ H5 每次切日期 loadExercises :223，非缓存翻牌）',
+      (tester) async {
+    final api = newApi();
+    await pumpHome(tester, api);
+    expect(api.exerciseDates, [isoDaysAgo(0)]); // 首屏取今日一次
+
+    await tester.tap(find.byKey(platePrevKey)); // → 昨天
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(plateNextKey)); // → 回今天（同一天回访）
+    await tester.pumpAndSettle();
+
+    // M6 keepAlive FutureProvider 在此为 [今天, 昨天]（回访吃缓存）——
+    // M7-T2 exercisesProvider autoDispose 化收口：切走即弃，回访必重取。
+    expect(api.exerciseDates, [isoDaysAgo(0), isoDaysAgo(1), isoDaysAgo(0)]);
+  });
+
   /* ---------- ③ 点 › 回今天；已在今天 → 未来闸 toast 零变更零请求 ---------- */
 
   testWidgets('③› 回今天后再触发前移：toast「已经到今天了」逐字、日期不变、零请求',

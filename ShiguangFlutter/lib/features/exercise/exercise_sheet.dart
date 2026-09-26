@@ -9,14 +9,17 @@
 // - 预览（:1761-1769）：「预计消耗 <b>N</b> kcal」，label 行 距离|数量|时长 +
 //   单位后缀（exerciseAmountLabel）；体重 profileProvider.body.weightKg ?? 55。
 //   R4 差异：手输非法值 H5 预览显示 NaN、Flutter 按 0 计（格式化差异不改行为）。
-// - 保存（:1807-1830）：amount 以输入框为准（Number()||state 兜底）；kcal 为 0
-//   →「请先设置运动量」不发请求不关层；正常 → 先关层（≙ :1818 乐观即关）再走
-//   addExerciseRecord（toast 经 host ScaffoldMessenger，成功/失败文案见控制器）。
+// - 保存（:1807-1830，M7-T2 乐观时序）：amount 以输入框为准（Number()||state
+//   兜底）；kcal 为 0 →「请先设置运动量」不发请求不关层（:1812 保存闸，
+//   temp 入列前 UI 侧终结）；正常 → 先关层再走 addExerciseRecord——控制器内
+//   temp 即插（:1813）、合计即涨、toast「已记录…」即弹（:1818，不等回包），
+//   await 后成功重取真值/失败摘 temp 补「记录失败：msg」。
 // - 删除确认（:1833 showConfirm）：confirmDeleteExercise 复刻 record_screen
 //   删餐确认 AlertDialog 样式；文案「确认删除」「删除后无法恢复，确定要删除这
 //   条运动吗？」逐字；取消/点外回 false 零请求（:1834）。
 // openExerciseSheet 的 [ref] 来自常驻调用页（T3 首页）：保存即关层，弹层自身
-// ref 随路由销毁，写链（invalidate）必须借 hostRef——这是简报签名带 ref 的原因。
+// ref 随路由销毁，写链（notifier 乐观 temp/重取）必须借 hostRef——这是简报
+// 签名带 ref 的原因。
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -52,7 +55,7 @@ const exPreviewKey = Key('ex-preview'); // :432 #exercise-kcal-preview
 Key exChipKey(String key) => Key('ex-chip-$key'); // :1759 data-xkey
 
 /// 打开记运动弹层（≙ openExerciseSheet，app.js:1770-1776）。
-/// [ref] 为调用页（常驻）WidgetRef，供保存链在弹层关闭后继续 invalidate。
+/// [ref] 为调用页（常驻）WidgetRef，供保存链在弹层关闭后继续驱动 notifier。
 Future<void> openExerciseSheet(
   BuildContext context,
   WidgetRef ref, {
@@ -203,8 +206,9 @@ class _ExerciseSheetState extends ConsumerState<_ExerciseSheet> {
       return;
     }
     final messenger = ScaffoldMessenger.of(context);
-    Navigator.of(context).pop(); // :1818 closeExerciseSheet（乐观即关，≙ H5 时序）
-    // hostRef：弹层自身已随 pop 销毁，写链 invalidate 走常驻调用页的 ref
+    Navigator.of(context).pop(); // :1817 closeExerciseSheet（temp 已在控制器内入列，
+    // 关层先于 toast 呈递 ≙ H5 :1817-1818 次序；弹层自身随 pop 销毁，写链
+    // （temp/重取/回滚）借常驻调用页的 hostRef 驱动 notifier）
     await addExerciseRecord(
         widget.hostRef, widget.date, lib, amount, (m) => _toast(messenger, m));
   }

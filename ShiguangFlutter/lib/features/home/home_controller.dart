@@ -81,8 +81,9 @@ String plateDateLabelOf(String date) {
 /// family，日期一变即各自起新流（≙ :221-223 的并行拉取）。此处若再手动
 /// 「invalidate 一梭子」，autoDispose family 会在同帧重复起流（多打请求，
 /// 桩 date 序列即失真的回归点），故刻意不做（简报 Step3 裁定）。
-/// 差异登记：exercisesProvider 非 autoDispose，同日二次回访吃缓存不再打请求
-/// （H5 每次切日期都重取）——T2 把它 Notifier 化后由重取语义收口。
+/// T1 carried 已在 M7-T2 收口：exercisesProvider 已 Notifier 化并 autoDispose
+/// （连同派生 exerciseKcalProvider），「切走再切回同一天」必重发 getExercises
+/// ——与 H5 每次切日期都 loadExercises（:223）同语义，同日回访不再吃缓存。
 Future<void> shiftPlateDate(
   WidgetRef ref,
   int dir,

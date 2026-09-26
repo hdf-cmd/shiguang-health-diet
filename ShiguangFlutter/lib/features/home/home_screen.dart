@@ -29,9 +29,9 @@
 // renderGreeting 五档/昵称/日期行逐字，恒用 DateTime.now()，不 watch
 // plateDateProvider）。页标题「今日盘子」系 M1 静态版遗留、shell/auth 等
 // 4 处既有用例的渲染哨兵，本任务不动（与 H5 首页无页标题的差异登记 T1 报告）。
-// 取数链：切日期后不手动 invalidate 一梭子——summary/records 系
-// autoDispose.family、exercises 系 family，皆随 watch 自然起新流
-// （≙ app.js:223 的并行拉取；见 home_controller.shiftPlateDate 注）。
+// 取数链：切日期后不手动 invalidate 一梭子——summary/records 与运动两族
+// （exercisesProvider/exerciseKcalProvider，M7-T2 起皆 autoDispose）随 watch
+// 自然起新流，同日回访亦重取（≙ app.js:221-223 每次切日期并行拉取）。
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -676,8 +676,9 @@ Key homeExDelKey(String id) => Key('home-ex-del-$id');
 /// ≙ loadExercises catch→[]，不阻断主流程）、按钮「＋ 记运动」开 T2 弹层
 /// （index.html:136 btn-add-exercise）。版式 R4 自主：对齐首页既有卡样式
 /// （Tokens.surface 圆角阴影），行结构复用 _mealRow 观感。
-/// 删除链走 T2 confirmDeleteExercise + deleteExerciseRecord，防重入守卫 ≙
-/// app.js:1832「确认框已开则 return」（T2 评审移交①）。
+/// 删除链走 T2 confirmDeleteExercise + deleteExerciseRecord（M7-T2 起为
+/// notifier.remove 乐观链：确认 → 行即摘+「已删除运动记录」即弹 → await →
+/// 失败回插），防重入守卫 ≙ app.js:1832「确认框已开则 return」（T2 评审移交①）。
 class HomeExerciseCard extends ConsumerStatefulWidget {
   const HomeExerciseCard({super.key, required this.date});
 
@@ -712,9 +713,11 @@ class _HomeExerciseCardState extends ConsumerState<HomeExerciseCard> {
     await deleteExerciseRecord(ref, widget.date, rec, _toast);
   }
 
-  /// meta 行（app.js:1750）：rep 记录「{amount} {repUnit}」/ km「{amount} km」/
-  /// 其余「{amount} 分钟」。云 GET 无 createdAt（T1 登记）→ isRepRecord 恒
-  /// false → 次数型刷新后退化按分钟显示，H5 同病 bug-for-bug（测试钉死）。
+  /// meta 行（app.js:1746 isRepRecord 两支）：rep 记录「{amount} {repUnit}」/
+  /// km「{amount} km」/其余「{amount} 分钟」。M7-T2 时序：temp 行自带
+  /// createdAt（:1813）→ 保存即显「N 次」；云 GET 不回 createdAt（T1 登记）→
+  /// 重取后回退分钟档——「即显次数、刷新退化」H5 同款，home_exercise_test 钉④
+  /// 锁死。本渲染器对 temp/云行同形（:1740-1754 无任何 temp 特殊文案）。
   static String _metaOf(Map<String, dynamic> r) {
     final amount = jsNumText((r['amount'] as num?) ?? 0); // JS Number 串形（5.0→5）
     final key = '${r['key'] ?? ''}';

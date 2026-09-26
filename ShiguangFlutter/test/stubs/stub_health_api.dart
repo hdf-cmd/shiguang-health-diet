@@ -155,9 +155,17 @@ class StubHealthApi implements HealthApi {
   final List<Map<String, dynamic>> exerciseBodies = <Map<String, dynamic>>[];
   ApiException? addExerciseError;
 
+  /// M7-T2：非空 → addExercise 先 await 它再走错误/成功支（钉「保存即态」：
+  /// 挂住回包，测试在零网络等待下断 temp 行/合计/toast/关层，≙ waterGate 定式）
+  Completer<void>? addExerciseGate;
+
   /// deleteExercise 收到的 id（按调用顺序收集）
   final List<String> deletedExerciseIds = <String>[];
   ApiException? deleteExerciseError;
+
+  /// M7-T2：非空 → deleteExercise 先 await 它再走错误/成功支（钉删除乐观链：
+  /// 挂住回包观测「行已摘+toast 已弹」窗口；addExerciseGate 同法）
+  Completer<void>? deleteExerciseGate;
 
   /* ---------- M6-T1 喝水目标：setWaterGoal（PUT /user/water-goal） ---------- */
 
@@ -497,6 +505,8 @@ class StubHealthApi implements HealthApi {
   @override
   Future<Map<String, dynamic>> addExercise(Map<String, dynamic> record) async {
     exerciseBodies.add(Map<String, dynamic>.from(record));
+    // M7-T2 钉①②：先挂闸（回包前测试可断乐观中间态），再走错误/云态支
+    if (addExerciseGate != null) await addExerciseGate!.future;
     if (addExerciseError != null) throw addExerciseError!;
     // 云语义（index.js:353-368）：kcal 取整后为 0 → 回 {ok:false,message}
     // 而非 HTTP 错，由调用层判 ok；有效时回平铺 {ok,id,...doc} 含 createdAt。
@@ -516,8 +526,7 @@ class StubHealthApi implements HealthApi {
     final key = '${record['key'] ?? ''}'; // ≙ String(body.key||'').slice(0,20)
     final name = '${record['name'] ?? ''}';
     final emoji = '${record['emoji'] ?? ''}';
-    return <String, dynamic>{
-      'ok': true,
+    final doc = <String, dynamic>{
       'id': 'x_stub_${exerciseBodies.length}',
       'uid': 'u_test',
       'date': date,
@@ -531,11 +540,23 @@ class StubHealthApi implements HealthApi {
       'kcal': kcal,
       'createdAt': DateTime.now().millisecondsSinceEpoch,
     };
+    // M7-T2 钉②：POST 成功即落库（≙ 云 add 写 sg_exercises），此后
+    // getExercises(date) 回包含真 id 行——「temp 被真值替换」的可观测面。
+    // 落库行按 GET 形状剥 createdAt（contract routes[exercises]：云端不回
+    // 该键，T1 登记），rep 型刷新后 isRepRecord 退化分钟档 ≙ H5 同款。
+    final stored = Map<String, dynamic>.of(doc)..remove('createdAt');
+    ((exercisesByDate ??= <String, List<Map<String, dynamic>>>{})[
+          date as String
+        ] ??=
+        <Map<String, dynamic>>[])
+        .add(stored);
+    return <String, dynamic>{'ok': true, ...doc};
   }
 
   @override
   Future<Map<String, dynamic>> deleteExercise(String id) async {
     deletedExerciseIds.add(id);
+    if (deleteExerciseGate != null) await deleteExerciseGate!.future;
     if (deleteExerciseError != null) throw deleteExerciseError!;
     exercisesByDate?.values.forEach(
       (list) => list.removeWhere((r) => r['id'] == id),

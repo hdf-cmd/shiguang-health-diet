@@ -10,12 +10,18 @@
 //   今日运动=第 5 行，在每日缺口之后）。
 // - 删除防重入：app.js:1832「确认框已开则 return」（T2 评审移交①）。
 // 退化钉死（T1 登记）：云 GET 无 createdAt → isRepRecord 恒 false → pushup
-// 样本按「10 分钟」显示（非「10 次」），bug-for-bug。
+// 样本按「10 分钟」显示（非「10 次」），bug-for-bug。M7-T2 钉④补全时序的另一
+// 半：保存即插的 temp 行自带 createdAt（app.js:1813）→ 即显「N 次」，重取回
+// 云真值后退化分钟档——「即显次数、刷新退化」的 H5 同款窗口在本文件锁死。
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shiguang_flutter/app/theme.dart' show shiguangTheme;
 import 'package:shiguang_flutter/domain/dates.dart' show todayIso;
+import 'package:shiguang_flutter/features/exercise/exercise_sheet.dart'
+    show exChipKey, exSaveKey;
 import 'package:shiguang_flutter/features/home/home_controller.dart'
     show healthApiProvider;
 import 'package:shiguang_flutter/features/home/home_screen.dart'
@@ -125,6 +131,52 @@ void main() {
     expect(find.text('消耗 193 kcal'), findsOneWidget); // :1742 reduce 合计
   });
 
+  /* ---------- M7-T2 钉④：temp 行即显「N 次」、刷新退化「N 分钟」 ---------- */
+
+  testWidgets('M7钉④ 保存俯卧撑 10 次（:1813 temp 自带 createdAt）：回包前卡片即显「10 次」+「-3 kcal」；gate 放行重取后（云无 createdAt）退化「10 分钟」——H5 同款时序钉死',
+      (tester) async {
+    final api = newApi()..addExerciseGate = Completer<void>();
+    await pumpHome(tester, api);
+
+    await tester.tap(find.text('＋ 记运动'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(exChipKey('pushup'))); // rep 档重置 10
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(exSaveKey));
+    await tester.pump(); // 单帧：回包未到（gate 挂住）
+
+    expect(find.text('10 次'), findsOneWidget); // temp.createdAt → isRepRecord 命中
+    expect(find.text('10 分钟'), findsNothing);
+    expect(find.text('俯卧撑'), findsOneWidget);
+    expect(find.text('-3 kcal'), findsOneWidget); // 0.0045×66.66×10=2.9997→3
+    expect(find.text('消耗 3 kcal'), findsOneWidget); // 合计含 temp（≙ :1814）
+    expect(find.text('已记录俯卧撑 · 消耗 3 kcal'), findsOneWidget); // :1818 即弹
+
+    api.addExerciseGate!.complete(); // 放行：落库 + then→loadExercises
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(find.text('10 次'), findsNothing); // 云 GET 无 createdAt → 退化
+    expect(find.text('10 分钟'), findsOneWidget); // ≙ 上方「退化钉死」注
+    expect(find.text('消耗 3 kcal'), findsOneWidget); // 真值同 kcal，合计不动
+    expect(find.text('-3 kcal'), findsOneWidget);
+  });
+
+  testWidgets('M7钉④b 退化态稳定：无 gate 直过（temp 一闪→重取）终态恒「10 分钟」，非渲染抖动回翻',
+      (tester) async {
+    final api = newApi();
+    await pumpHome(tester, api);
+    await tester.tap(find.text('＋ 记运动'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(exChipKey('pushup')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(exSaveKey)); // 无 gate：即时序上下一帧即回包
+    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(find.text('10 分钟'), findsOneWidget); // 退化态稳定
+    expect(find.text('10 次'), findsNothing);
+  });
+
   /* ---------- ③ 环接线（app.js:298-309） ---------- */
 
   testWidgets('③target1679+ex193：额度行 1872、环中心 1872（kcal=0）、运动消耗 193、note「额度 1872 = 基准 1679 + 运动 193 kcal」',
@@ -167,9 +219,10 @@ void main() {
     expect(find.textContaining('含今日运动'), findsNothing);
   });
 
-  /* ---------- ⑤ 删除链（✕ → T2 确认框 → deleteExerciseRecord） ---------- */
+  /* ---------- ⑤ 删除链（✕ → T2 确认框 → deleteExerciseRecord ≙ M7-T2 起
+     notifier.remove 乐观链：行即摘、toast 即弹，await 后失败回插） ---------- */
 
-  testWidgets('⑤✕→确认框「确认删除」文案逐字；取消零请求；确认后 delete(x1)+toast+列表回剩 12',
+  testWidgets('⑤✕→确认框「确认删除」文案逐字；取消零请求；确认后行即摘（零等待）+delete(x1)+toast+回剩 12',
       (tester) async {
     final api = newApi(exercises: [x1(), x2()]);
     await pumpHome(tester, api);
@@ -183,12 +236,17 @@ void main() {
 
     await tester.tap(find.byKey(homeExDelKey('x1')));
     await tester.pumpAndSettle();
+    final gate = Completer<void>();
+    api.deleteExerciseGate = gate; // 挂住回包：乐观窗口真实可观测
     await tester.tap(find.widgetWithText(TextButton, '确认删除'));
+    await tester.pump(); // 单帧：回包未到，断乐观即态（:1836-1842）
+    expect(find.text('消耗 12 kcal'), findsOneWidget); // 跑步行即刻消失，合计即扣
+    expect(find.text('-181 kcal'), findsNothing);
+    expect(find.text('已删除运动记录'), findsOneWidget); // :1842 即弹
+    gate.complete();
     await tester.pumpAndSettle();
     expect(api.deletedExerciseIds, ['x1']); // 云 DELETE /diet/exercises/x1
-    expect(find.text('已删除运动记录'), findsOneWidget); // :1842 逐字
-    expect(find.text('消耗 12 kcal'), findsOneWidget); // invalidate 重取：剩 x2
-    expect(find.text('-181 kcal'), findsNothing);
+    expect(find.text('消耗 12 kcal'), findsOneWidget); // then loadExercises 真值同态
   });
 
   /* ---------- ⑥ 防重入守卫（T2 移交①，app.js:1832「确认框已开则 return」） ---------- */

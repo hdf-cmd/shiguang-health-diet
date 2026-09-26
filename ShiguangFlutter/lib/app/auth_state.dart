@@ -66,7 +66,8 @@ class AuthNotifier extends Notifier<AuthStatus> {
       ..invalidate(profileWeightProvider)
       ..invalidate(summaryProvider) // family：整族失效
       ..invalidate(recordsProvider) // family：整族失效
-      ..invalidate(exercisesProvider) // M6-T3：运动记录 family：整族失效
+      ..invalidate(exercisesProvider) // M6-T3/M7-T2：运动记录 family（Notifier
+      // +autoDispose）整族失效；在体监听（Shell 未卸）即刻重取新账号真值
       ..invalidate(weekReportProvider)
       ..invalidate(monthReportProvider)
       ..invalidate(weightTrendProvider)
