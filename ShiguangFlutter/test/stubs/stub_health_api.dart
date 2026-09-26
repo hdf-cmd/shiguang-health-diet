@@ -38,6 +38,8 @@ class StubHealthApi implements HealthApi {
     this.deleteExerciseError,
     this.waterGoal,
     this.setWaterGoalError,
+    this.waterCupsByDate,
+    this.addWaterError,
   });
 
   /// 成功返回体（null 时按全零汇总/空记录处理）
@@ -158,6 +160,21 @@ class StubHealthApi implements HealthApi {
   final List<num> waterGoalBodies = <num>[];
   ApiException? setWaterGoalError;
 
+  /* ---------- M6-T4 水卡：addWater（POST /diet/water） ---------- */
+
+  /// 桩侧当日杯数状态（≙ 云 sg_water.cups，index.js:438-446）：addWater 按
+  /// date 读旧值 +delta 截断 [0,15] 后写回并回显 {water}。null/缺日期时以
+  /// summary.water 为旧值（测试注 summary 即等价当日已存杯数）。
+  Map<String, int>? waterCupsByDate;
+  ApiException? addWaterError;
+
+  /// addWater 收到的 (delta,date)（按调用顺序收集，断言 date=当前页 date）
+  final List<({int delta, String? date})> waterBodies =
+      <({int delta, String? date})>[];
+
+  /// 非空 → addWater 先 await 它再返回（验证乐观中间态，≙ addGate 定式）
+  Completer<void>? waterGate;
+
   /// deleteFoodRecord 收到的 id（按调用顺序收集）
   final List<String> deletedIds = <String>[];
   ApiException? deleteError;
@@ -190,8 +207,14 @@ class StubHealthApi implements HealthApi {
     num protein = 0,
     num fat = 0,
     num water = 0,
-  }) =>
-      {'kcal': kcal, 'target': target, 'carb': carb, 'protein': protein, 'fat': fat, 'water': water};
+  }) => {
+    'kcal': kcal,
+    'target': target,
+    'carb': carb,
+    'protein': protein,
+    'fat': fat,
+    'water': water,
+  };
 
   /// records 单条 → {id,meal,name,portion,kcal,emoji,image,protein,carb,fat}
   static Map<String, dynamic> recordMap({
@@ -200,19 +223,18 @@ class StubHealthApi implements HealthApi {
     required String name,
     required String portion,
     required num kcal,
-  }) =>
-      {
-        'id': id,
-        'meal': meal,
-        'name': name,
-        'portion': portion,
-        'kcal': kcal,
-        'emoji': '',
-        'image': '',
-        'protein': 0,
-        'carb': 0,
-        'fat': 0,
-      };
+  }) => {
+    'id': id,
+    'meal': meal,
+    'name': name,
+    'portion': portion,
+    'kcal': kcal,
+    'emoji': '',
+    'image': '',
+    'protein': 0,
+    'carb': 0,
+    'fat': 0,
+  };
 
   /// 周报 fixture 形状 → {days,kcal,target,rates}（contract diet-core.json weekReport）
   static Map<String, dynamic> weekReportMap({
@@ -222,13 +244,12 @@ class StubHealthApi implements HealthApi {
     num carb = 0,
     num protein = 0,
     num fat = 0,
-  }) =>
-      {
-        'days': days,
-        'kcal': kcal,
-        'target': target,
-        'rates': {'carb': carb, 'protein': protein, 'fat': fat},
-      };
+  }) => {
+    'days': days,
+    'kcal': kcal,
+    'target': target,
+    'rates': {'carb': carb, 'protein': protein, 'fat': fat},
+  };
 
   /// 月报 fixture 形状 → {weeks,kcal,target,days,total,rates,isWeek:false}
   /// （contract diet-core.json monthReport.responseSample）。与 weekReportMap
@@ -243,16 +264,15 @@ class StubHealthApi implements HealthApi {
     num carb = 78,
     num protein = 69,
     num fat = 73,
-  }) =>
-      {
-        'weeks': weeks,
-        'kcal': kcal,
-        'target': target,
-        'days': days,
-        'total': total,
-        'rates': {'carb': carb, 'protein': protein, 'fat': fat},
-        'isWeek': false,
-      };
+  }) => {
+    'weeks': weeks,
+    'kcal': kcal,
+    'target': target,
+    'days': days,
+    'total': total,
+    'rates': {'carb': carb, 'protein': protein, 'fat': fat},
+    'isWeek': false,
+  };
 
   /// 体重趋势 fixture 形状 → {points:[num], labels:[String]}
   /// （contract diet-core.json weightTrend.responseSample）。与 week/month 桩对称：
@@ -260,10 +280,15 @@ class StubHealthApi implements HealthApi {
   static Map<String, dynamic> weightTrendMap({
     List<num> points = const [67.2, 67, 66.8, 66.66, 66.6, 66.5, 66.4],
     List<String> labels = const [
-      '9.19', '9.20', '9.21', '9.22', '9.23', '9.24', '9.25'
+      '9.19',
+      '9.20',
+      '9.21',
+      '9.22',
+      '9.23',
+      '9.24',
+      '9.25',
     ],
-  }) =>
-      {'points': points, 'labels': labels};
+  }) => {'points': points, 'labels': labels};
 
   @override
   Future<Map<String, dynamic>> getDailySummary(String date) async {
@@ -291,7 +316,9 @@ class StubHealthApi implements HealthApi {
   }
 
   @override
-  Future<Map<String, dynamic>> addFoodRecord(Map<String, dynamic> record) async {
+  Future<Map<String, dynamic>> addFoodRecord(
+    Map<String, dynamic> record,
+  ) async {
     addBodies.add(Map<String, dynamic>.from(record));
     if (addGate != null) await addGate!.future;
     if (addError != null) throw addError!;
@@ -304,7 +331,11 @@ class StubHealthApi implements HealthApi {
     if (customFoodGate != null) await customFoodGate!.future;
     if (customFoodError != null) throw customFoodError!;
     // 云实返平铺（T2）：{ok,id,uid,name,...}；本任务只消费 ok 与否
-    return <String, dynamic>{'ok': true, 'id': 'cf_${customFoodBodies.length}', ...food};
+    return <String, dynamic>{
+      'ok': true,
+      'id': 'cf_${customFoodBodies.length}',
+      ...food,
+    };
   }
 
   @override
@@ -324,15 +355,15 @@ class StubHealthApi implements HealthApi {
   /// 契约 fixture 形状（diet-core.json routes[profile].responseSample 同键集；
   /// 值取 H5 静态默认 index.html:180-183「食/食光用户/把每一餐，记成时光」）。
   static Map<String, dynamic> profileMap() => <String, dynamic>{
-        'id': 'u_test',
-        'nickname': '食光用户',
-        'avatarText': '食',
-        'avatarData': null,
-        'signature': '把每一餐，记成时光',
-        'goal': {'dailyKcal': 1679, 'targetWeight': 55, 'waterMl': 1600},
-        'body': <String, dynamic>{},
-        'bodyUpdatedAt': 0,
-      };
+    'id': 'u_test',
+    'nickname': '食光用户',
+    'avatarText': '食',
+    'avatarData': null,
+    'signature': '把每一餐，记成时光',
+    'goal': {'dailyKcal': 1679, 'targetWeight': 55, 'waterMl': 1600},
+    'body': <String, dynamic>{},
+    'bodyUpdatedAt': 0,
+  };
 
   @override
   Future<Map<String, dynamic>> getProfile() async {
@@ -349,17 +380,24 @@ class StubHealthApi implements HealthApi {
     // 云端语义（api-diet index.js:213-232）：身体六字段族并进 body 嵌套返回面，
     // 其余键（nickname/signature）写顶层；客户端裸 bmi 不收，h/w 双在才重算。
     const bodyKeys = {
-      'heightCm', 'weightKg', 'age', 'gender', 'activity', 'deficit',
+      'heightCm',
+      'weightKg',
+      'age',
+      'gender',
+      'activity',
+      'deficit',
     };
     final bodyPatch = <String, dynamic>{
       for (final e in data.entries)
         if (bodyKeys.contains(e.key)) e.key: e.value,
     };
-    if (bodyPatch.containsKey('heightCm') && bodyPatch.containsKey('weightKg')) {
+    if (bodyPatch.containsKey('heightCm') &&
+        bodyPatch.containsKey('weightKg')) {
       final h = (bodyPatch['heightCm']! as num) / 100;
       final w = bodyPatch['weightKg']! as num;
-      bodyPatch['bmi'] =
-          double.parse((w / (h * h)).toStringAsFixed(1)); // ≙ +(W/pow(H/100,2)).toFixed(1)
+      bodyPatch['bmi'] = double.parse(
+        (w / (h * h)).toStringAsFixed(1),
+      ); // ≙ +(W/pow(H/100,2)).toFixed(1)
     }
     p.addAll(<String, dynamic>{
       for (final e in data.entries)
@@ -367,7 +405,9 @@ class StubHealthApi implements HealthApi {
     });
     if (bodyPatch.isNotEmpty) {
       final b = Map<String, dynamic>.of(
-          (p['body'] as Map?)?.cast<String, dynamic>() ?? const <String, dynamic>{});
+        (p['body'] as Map?)?.cast<String, dynamic>() ??
+            const <String, dynamic>{},
+      );
       b.addAll(bodyPatch);
       p['body'] = b;
     }
@@ -384,7 +424,8 @@ class StubHealthApi implements HealthApi {
     if (setGoalError != null) throw setGoalError!;
     final p = profile ??= profileMap();
     final g = Map<String, dynamic>.of(
-        (p['goal'] as Map?)?.cast<String, dynamic>() ?? const <String, dynamic>{});
+      (p['goal'] as Map?)?.cast<String, dynamic>() ?? const <String, dynamic>{},
+    );
     g['dailyKcal'] = dailyKcal;
     g['targetWeight'] = targetWeight;
     p['goal'] = g; // ≙ api-diet :246-252 云端 goal 列写回
@@ -444,13 +485,19 @@ class StubHealthApi implements HealthApi {
     if (addExerciseError != null) throw addExerciseError!;
     // 云语义（index.js:353-368）：kcal 取整后为 0 → 回 {ok:false,message}
     // 而非 HTTP 错，由调用层判 ok；有效时回平铺 {ok,id,...doc} 含 createdAt。
-    final kcal = (num.tryParse('${record['kcal']}') ?? 0).round().clamp(0, 1 << 31);
+    final kcal = (num.tryParse('${record['kcal']}') ?? 0).round().clamp(
+      0,
+      1 << 31,
+    );
     if (kcal == 0) {
       return <String, dynamic>{'ok': false, 'message': '消耗热量无效'};
     }
     final date = (record['date'] as String?)?.isNotEmpty == true
         ? record['date']
-        : DateTime.now().toUtc().toIso8601String().substring(0, 10); // ≙ 云 today()
+        : DateTime.now().toUtc().toIso8601String().substring(
+            0,
+            10,
+          ); // ≙ 云 today()
     final key = '${record['key'] ?? ''}'; // ≙ String(body.key||'').slice(0,20)
     final name = '${record['name'] ?? ''}';
     final emoji = '${record['emoji'] ?? ''}';
@@ -475,9 +522,27 @@ class StubHealthApi implements HealthApi {
   Future<Map<String, dynamic>> deleteExercise(String id) async {
     deletedExerciseIds.add(id);
     if (deleteExerciseError != null) throw deleteExerciseError!;
-    exercisesByDate?.values
-        .forEach((list) => list.removeWhere((r) => r['id'] == id));
+    exercisesByDate?.values.forEach(
+      (list) => list.removeWhere((r) => r['id'] == id),
+    );
     return <String, dynamic>{'ok': true};
+  }
+
+  @override
+  Future<Map<String, dynamic>> addWater(int delta, [String? date]) async {
+    waterBodies.add((delta: delta, date: date));
+    if (addWaterError != null) throw addWaterError!;
+    if (waterGate != null) await waterGate!.future;
+    // 云语义（api-diet index.js:436-447）：date 缺省=云 today()（UTC 日，同真
+    // HealthApi._todayUtc 口径）；cups=当日旧值+delta 截断 [0,15] 写回并回显。
+    // 旧值取 summary.water（测试注 seed），≙ 云读 sg_water 当日文档。
+    final key =
+        date ?? DateTime.now().toUtc().toIso8601String().substring(0, 10);
+    final current =
+        waterCupsByDate?[key] ?? ((summary?['water'] as num?) ?? 0).round();
+    final cups = (current + delta).clamp(0, 15);
+    (waterCupsByDate ??= <String, int>{})[key] = cups;
+    return <String, dynamic>{'water': cups};
   }
 
   @override
@@ -486,11 +551,13 @@ class StubHealthApi implements HealthApi {
     if (setWaterGoalError != null) throw setWaterGoalError!;
     // 云语义（index.js:255-260）：Math.max(800, Math.min(3000, Number(x)||1600))
     // 截断后回显 {ok,waterGoalMl}；200ml 对齐是 H5 步进器职责，云端不归一。
-    final ml = (waterGoalMl).clamp(800, 3000);
+    // ||1600 falsy 支：入参 0 → 1600（评审遗留修正——原桩对 0 回 800 与云不符）。
+    final ml = waterGoalMl == 0 ? 1600 : waterGoalMl.clamp(800, 3000);
     waterGoal = ml;
     final p = profile ??= profileMap();
     final g = Map<String, dynamic>.of(
-        (p['goal'] as Map?)?.cast<String, dynamic>() ?? const <String, dynamic>{});
+      (p['goal'] as Map?)?.cast<String, dynamic>() ?? const <String, dynamic>{},
+    );
     g['waterMl'] = ml; // ≙ index.js:258 profiles.update({waterMl})
     p['goal'] = g;
     return <String, dynamic>{'ok': true, 'waterGoalMl': ml};

@@ -13,6 +13,10 @@
 // exercise(133)，运动卡为 home 末位卡；Flutter 首页现无建议/喝水卡（T4/T5
 // 落地），运动卡按序置于三餐卡后=末位，advice/water 后续落地时应插在餐盘卡
 // 与运动卡之间，与 H5 相对位一致。
+// M6-T4：餐盘卡与三餐卡之间插 WaterCard——T3 卡序裁定落位：H5 相对序
+// plate→(advice=T5 位)→water→exercise 保持；三餐卡系 M2 自有布局、H5 首页
+// 无对应物（task-3-report §4），运动卡末位不动；建议卡 T5 落地时插在餐盘卡
+// 与水卡之间。
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -29,6 +33,7 @@ import '../exercise/exercise_sheet.dart'
     show confirmDeleteExercise, openExerciseSheet;
 import 'home_controller.dart';
 import 'plate_ring.dart';
+import 'water_card.dart' show WaterCard;
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -58,11 +63,14 @@ class HomeScreen extends ConsumerWidget {
       child: ListView(
         padding: const EdgeInsets.all(Tokens.sp4),
         children: [
-          const Text('今日盘子',
-              style: TextStyle(
-                  fontSize: Tokens.textXl,
-                  fontWeight: FontWeight.w800,
-                  color: Tokens.ink)),
+          const Text(
+            '今日盘子',
+            style: TextStyle(
+              fontSize: Tokens.textXl,
+              fontWeight: FontWeight.w800,
+              color: Tokens.ink,
+            ),
+          ),
           const SizedBox(height: Tokens.sp4),
           if (error != null)
             _card(
@@ -70,9 +78,13 @@ class HomeScreen extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(error,
-                      style: const TextStyle(
-                          color: Tokens.danger, fontSize: Tokens.textMd)),
+                  Text(
+                    error,
+                    style: const TextStyle(
+                      color: Tokens.danger,
+                      fontSize: Tokens.textMd,
+                    ),
+                  ),
                   const SizedBox(height: Tokens.sp2),
                   Align(
                     alignment: Alignment.centerRight,
@@ -90,6 +102,9 @@ class HomeScreen extends ConsumerWidget {
             )
           else ...[
             _plateCard(summary, ex),
+            const SizedBox(height: Tokens.sp3),
+            // 水卡（index.html:111-131；卡序复核见文件头 M6-T4 注）
+            WaterCard(date: date),
             const SizedBox(height: Tokens.sp3),
             _mealsCard(records),
             const SizedBox(height: Tokens.sp3),
@@ -146,16 +161,19 @@ class HomeScreen extends ConsumerWidget {
                     // note（app.js:306-309 两支逐字；M6-T3 起 ex>0 支可真实到达，
                     // ex=0 支为 M3 已落文案）。加载期无 target 不显。
                     if (s != null) ...[
-                      const SizedBox(height: Tokens.sp2), // .goal-note margin-top
+                      const SizedBox(
+                        height: Tokens.sp2,
+                      ), // .goal-note margin-top
                       Text(
                         key: const ValueKey('ring-note'),
                         ex > 0
                             ? '额度 ${target + ex} = 基准 $target + 运动 $ex kcal'
                             : '基准目标 $target kcal · 记运动后额度自动上调',
                         style: const TextStyle(
-                            fontSize: Tokens.textXs,
-                            color: Tokens.ink3,
-                            height: 1.6), // line-height 1.6
+                          fontSize: Tokens.textXs,
+                          color: Tokens.ink3,
+                          height: 1.6,
+                        ), // line-height 1.6
                       ),
                     ],
                   ],
@@ -173,7 +191,10 @@ class HomeScreen extends ConsumerWidget {
                 '营养素目标 = 基准 $target × 供能比 50%/25%/25% ÷ (4/4/9) kcal，'
                 '不含运动额度；热量额度含运动，两者基数不同',
                 style: const TextStyle(
-                    fontSize: Tokens.textXs, color: Tokens.ink3, height: 1.6),
+                  fontSize: Tokens.textXs,
+                  color: Tokens.ink3,
+                  height: 1.6,
+                ),
               ),
             ),
         ],
@@ -184,20 +205,23 @@ class HomeScreen extends ConsumerWidget {
   /// .goal-line（screens.css:164-165）：`标签 数字 kcal`，数字 b 语义
   /// （ink 色 w600 tabular-nums）
   Widget _goalLine(String label, String value) {
-    return Text.rich(TextSpan(
-      style: const TextStyle(fontSize: Tokens.textSm, color: Tokens.ink2),
-      children: [
-        TextSpan(text: '$label '),
-        TextSpan(
-          style: const TextStyle(
+    return Text.rich(
+      TextSpan(
+        style: const TextStyle(fontSize: Tokens.textSm, color: Tokens.ink2),
+        children: [
+          TextSpan(text: '$label '),
+          TextSpan(
+            style: const TextStyle(
               color: Tokens.ink,
               fontWeight: FontWeight.w600,
-              fontFeatures: [FontFeature.tabularFigures()]),
-          text: value,
-        ),
-        const TextSpan(text: ' kcal'),
-      ],
-    ));
+              fontFeatures: [FontFeature.tabularFigures()],
+            ),
+            text: value,
+          ),
+          const TextSpan(text: ' kcal'),
+        ],
+      ),
+    );
   }
 
   /// 三餐卡：早餐/午餐/晚餐各行，真实记录渲染「名（portion）… kcal」，空则「未记录」。
@@ -225,7 +249,7 @@ class HomeScreen extends ConsumerWidget {
             for (final (label, meal) in const [
               ('早餐', 'breakfast'),
               ('午餐', 'lunch'),
-              ('晚餐', 'dinner')
+              ('晚餐', 'dinner'),
             ])
               _mealRow(label, _recordsOf(list, meal)),
         ],
@@ -233,8 +257,10 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
-  static List<Map<String, dynamic>> _recordsOf(List<Map<String, dynamic>> list, String meal) =>
-      list.where((r) => r['meal'] == meal).toList(growable: false);
+  static List<Map<String, dynamic>> _recordsOf(
+    List<Map<String, dynamic>> list,
+    String meal,
+  ) => list.where((r) => r['meal'] == meal).toList(growable: false);
 
   Widget _mealRow(String label, List<Map<String, dynamic>> recs) {
     return Padding(
@@ -244,22 +270,34 @@ class HomeScreen extends ConsumerWidget {
         children: [
           SizedBox(
             width: 44,
-            child: Text(label,
-                style: const TextStyle(color: Tokens.ink2, fontSize: Tokens.textSm)),
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: Tokens.ink2,
+                fontSize: Tokens.textSm,
+              ),
+            ),
           ),
           Expanded(
             child: recs.isEmpty
                 ? const Padding(
                     padding: EdgeInsets.symmetric(vertical: Tokens.sp1),
-                    child: Text('未记录',
-                        style: TextStyle(color: Tokens.ink3, fontSize: Tokens.textSm)),
+                    child: Text(
+                      '未记录',
+                      style: TextStyle(
+                        color: Tokens.ink3,
+                        fontSize: Tokens.textSm,
+                      ),
+                    ),
                   )
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       for (final r in recs)
                         Padding(
-                          padding: const EdgeInsets.symmetric(vertical: Tokens.sp1),
+                          padding: const EdgeInsets.symmetric(
+                            vertical: Tokens.sp1,
+                          ),
                           child: Row(
                             children: [
                               Expanded(
@@ -268,16 +306,19 @@ class HomeScreen extends ConsumerWidget {
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
-                                      color: Tokens.ink, fontSize: Tokens.textSm),
+                                    color: Tokens.ink,
+                                    fontSize: Tokens.textSm,
+                                  ),
                                 ),
                               ),
                               const SizedBox(width: Tokens.sp2),
                               Text(
                                 '${_n((r['kcal'] as num?) ?? 0)} kcal',
                                 style: const TextStyle(
-                                    color: Tokens.ink2,
-                                    fontSize: Tokens.textSm,
-                                    fontWeight: FontWeight.w700),
+                                  color: Tokens.ink2,
+                                  fontSize: Tokens.textSm,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                             ],
                           ),
@@ -323,8 +364,10 @@ class _PlateRingSkeleton extends StatelessWidget {
             border: Border.all(color: Tokens.line, width: 7),
           ),
           child: const Center(
-            child: Text('加载中',
-                style: TextStyle(fontSize: Tokens.textXs, color: Tokens.ink3)),
+            child: Text(
+              '加载中',
+              style: TextStyle(fontSize: Tokens.textXs, color: Tokens.ink3),
+            ),
           ),
         ),
       ),
@@ -350,7 +393,9 @@ class _MealSkeletonRow extends StatelessWidget {
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   color: Tokens.surfaceSoft,
-                  borderRadius: BorderRadius.all(Radius.circular(Tokens.radiusSm)),
+                  borderRadius: BorderRadius.all(
+                    Radius.circular(Tokens.radiusSm),
+                  ),
                 ),
               ),
             ),
@@ -431,32 +476,44 @@ class _HomeExerciseCardState extends ConsumerState<HomeExerciseCard> {
       padding: const EdgeInsets.symmetric(vertical: Tokens.sp1),
       child: Row(
         children: [
-          Text('${r['emoji'] ?? ''}',
-              style: const TextStyle(fontSize: Tokens.textLg)), // .thumb
+          Text(
+            '${r['emoji'] ?? ''}',
+            style: const TextStyle(fontSize: Tokens.textLg),
+          ), // .thumb
           const SizedBox(width: Tokens.sp2),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        color: Tokens.ink, fontSize: Tokens.textSm)), // .name
-                Text(_metaOf(r),
-                    style: const TextStyle(
-                        fontSize: Tokens.textXs, color: Tokens.ink3)), // .meta
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Tokens.ink,
+                    fontSize: Tokens.textSm,
+                  ),
+                ), // .name
+                Text(
+                  _metaOf(r),
+                  style: const TextStyle(
+                    fontSize: Tokens.textXs,
+                    color: Tokens.ink3,
+                  ),
+                ), // .meta
               ],
             ),
           ),
           const SizedBox(width: Tokens.sp2),
           Text(
-              // 「-{kcal} kcal」 :1750
-              '-${jsNumText((r['kcal'] as num?) ?? 0)} kcal',
-              style: const TextStyle(
-                  color: Tokens.ink2,
-                  fontSize: Tokens.textSm,
-                  fontWeight: FontWeight.w700)),
+            // 「-{kcal} kcal」 :1750
+            '-${jsNumText((r['kcal'] as num?) ?? 0)} kcal',
+            style: const TextStyle(
+              color: Tokens.ink2,
+              fontSize: Tokens.textSm,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
           const SizedBox(width: Tokens.sp1),
           Semantics(
             label: '删除$name', // aria-label 删除${r.name} :1751 逐字
@@ -467,9 +524,10 @@ class _HomeExerciseCardState extends ConsumerState<HomeExerciseCard> {
               behavior: HitTestBehavior.opaque,
               child: const Padding(
                 padding: EdgeInsets.all(Tokens.sp1),
-                child: Text('✕',
-                    style:
-                        TextStyle(fontSize: Tokens.textMd, color: Tokens.ink3)),
+                child: Text(
+                  '✕',
+                  style: TextStyle(fontSize: Tokens.textMd, color: Tokens.ink3),
+                ),
               ),
             ),
           ),
@@ -502,21 +560,31 @@ class _HomeExerciseCardState extends ConsumerState<HomeExerciseCard> {
           Row(
             children: [
               Expanded(
-                child: Text(title,
-                    style: const TextStyle(fontWeight: FontWeight.w700)),
+                child: Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
               ),
-              Text('消耗 $total kcal', // .more（index.html:134）
-                  style: const TextStyle(
-                      fontSize: Tokens.textSm, color: Tokens.ink3)),
+              Text(
+                '消耗 $total kcal', // .more（index.html:134）
+                style: const TextStyle(
+                  fontSize: Tokens.textSm,
+                  color: Tokens.ink3,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: Tokens.sp3),
           if (list.value == null && list.isLoading)
             const _ExerciseSkeletonRow() // 首载骨架（与餐盘/三餐卡同口径）
           else if (recs.isEmpty)
-            Text('今天还没运动，点下方「记运动」', // :1754 逐字
-                style: const TextStyle(
-                    fontSize: Tokens.textSm, color: Tokens.ink3))
+            Text(
+              '今天还没运动，点下方「记运动」', // :1754 逐字
+              style: const TextStyle(
+                fontSize: Tokens.textSm,
+                color: Tokens.ink3,
+              ),
+            )
           else
             for (final r in recs) _row(r),
           const SizedBox(height: Tokens.sp3), // :137 btn margin-top --sp-3
