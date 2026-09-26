@@ -46,7 +46,7 @@ Key adviceRowKey(int i) => Key('advice-row-$i');
 class AdviceCard extends ConsumerWidget {
   const AdviceCard({super.key, required this.date});
 
-  /// 当前页 date（首页语境=todayProvider；≙ app.js:356 state.date）
+  /// 当前页 date（首页语境=plateDateProvider，M7-T1 起可 ‹ › 翻动；≙ app.js:356 state.date）
   final String date;
 
   /// ≙ :357 `(state.body && state.body.weightKg) || 55`（?? 版，见文件头注）

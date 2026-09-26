@@ -64,7 +64,7 @@ const _cupFillGradient = LinearGradient(
 class WaterCard extends ConsumerStatefulWidget {
   const WaterCard({super.key, required this.date});
 
-  /// 当前页 date（首页语境=todayProvider；喝一杯/撤销请求均带此 date，
+  /// 当前页 date（首页语境=plateDateProvider，M7-T1 起可 ‹ › 翻动；喝一杯/撤销请求均带此 date，
   /// ≙ app.js:443/460 HealthAPI.addWater(±1, state.date)）
   final String date;
 

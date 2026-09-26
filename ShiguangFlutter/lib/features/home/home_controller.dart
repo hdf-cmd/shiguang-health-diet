@@ -4,7 +4,10 @@
 // （ApiClient ← auth_state.apiClientProvider），main() 显式构造注入，
 // 测试只 override healthApiProvider 即可全链路换桩（见 test/stubs/stub_health_api.dart）。
 
+// riverpod 3.x：StateProvider 收敛在 legacy 导出（未废弃，@publicInLegacy，
+// 与 report_controller.dart:6-7 同法）。
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart' show StateProvider;
 
 import '../../app/auth_state.dart' show apiClientProvider;
 import '../../data/health_api.dart';
@@ -37,3 +40,61 @@ final recordsProvider = FutureProvider.autoDispose
       .map((e) => Map<String, dynamic>.from(e))
       .toList(growable: false);
 });
+
+/* ---------- M7-T1 首页日期状态机（≙ H5 state.date + renderPlateDate/shiftDate） ---------- */
+
+/// 首页/记录页共享日期（≙ H5 state.date，app.js:215-224）。初值=今天；
+/// 跨午夜不自愈 ≙ H5 仅交互时重算 todayIso()（同款行为，登记不修：H5 停留
+/// 首页过午夜后 ‹ › 仍以旧 today 为闸，本仓不挂午夜定时器，见 spec §3.1）。
+/// 消费方：home 五卡（本任务）、水卡 per-date（T3）、记录页 7 天行（T6）。
+final plateDateProvider = StateProvider<String>((ref) => todayIso());
+
+/// 餐盘日期胶囊三态（≙ app.js:209-211 renderPlateDate 的 HTML 拆分：
+/// 主文案 + `<small>` 副文案；H5 间距由 .plate-date small{margin-left:4px}
+/// 承担，故两态直拼即等于 #plate-date.textContent）。
+/// 返回 (主, 副) 供 UI 分别排版（--text-sm/600 与 --text-xs/ink3/400）。
+(String, String) plateDatePartsOf(String date) {
+  final t = todayIso();
+  if (date == t) return ('今天', '· 右滑看历史'); // 「右滑看历史」系文案，非手势（本任务不移植卡内滑动）
+  final now = DateTime.now();
+  // JS: const yd = new Date(); yd.setDate(yd.getDate()-1) —— 日历日减一
+  final yIso = localIso(DateTime(now.year, now.month, now.day - 1));
+  // JS: new Date(iso + 'T00:00:00') —— 无 Z 按本地解析，Dart 同语义
+  final d = DateTime.parse('${date}T00:00:00');
+  if (date == yIso) return ('昨天', '${d.month}/${d.day}');
+  // JS weeks 表下标=getDay()（日=0…六=6）；Dart weekday%7 同序（Sun 7→0）
+  const weeks = ['日', '一', '二', '三', '四', '五', '六'];
+  return ('${d.month}月${d.day}日', '周${weeks[d.weekday % 7]}');
+}
+
+/// 胶囊完整文案（主+副直拼 ≙ H5 #plate-date.textContent 单串形态）
+String plateDateLabelOf(String date) {
+  final (main, small) = plateDatePartsOf(date);
+  return '$main$small';
+}
+
+/// 前后翻一天（≙ app.js:215-224 shiftDate(delta)）。dir：-1=更早（‹），
+/// +1=更近（›）。未来闸逐字 :219 `next > todayIso()` → toast「已经到今天了」
+/// 并 return（**零状态变更、零请求**）；往过去无下限（H5 同款）。
+///
+/// 取数不在此处发起：五卡 watch plateDateProvider 且 provider 皆 date 的
+/// family，日期一变即各自起新流（≙ :221-223 的并行拉取）。此处若再手动
+/// 「invalidate 一梭子」，autoDispose family 会在同帧重复起流（多打请求，
+/// 桩 date 序列即失真的回归点），故刻意不做（简报 Step3 裁定）。
+/// 差异登记：exercisesProvider 非 autoDispose，同日二次回访吃缓存不再打请求
+/// （H5 每次切日期都重取）——T2 把它 Notifier 化后由重取语义收口。
+Future<void> shiftPlateDate(
+  WidgetRef ref,
+  int dir,
+  void Function(String) toast,
+) async {
+  final cur = ref.read(plateDateProvider);
+  final d = DateTime.parse('${cur}T00:00:00');
+  final next = localIso(DateTime(d.year, d.month, d.day + dir));
+  if (next.compareTo(todayIso()) > 0) {
+    toast('已经到今天了'); // :219 逐字
+    return;
+  }
+  ref.read(plateDateProvider.notifier).state = next; // :220
+}
+

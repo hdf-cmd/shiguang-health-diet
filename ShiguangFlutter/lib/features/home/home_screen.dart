@@ -1,7 +1,8 @@
 // ShiguangFlutter/lib/features/home/home_screen.dart
 // 首页（M2 Task 8：接真实数据；M3 Task 7：餐盘环 + 加载/空态区分）。
 // 原 M1 静态版 home_static_screen.dart 演进而来。
-// 数据源：home_controller.dart 的 summaryProvider/recordsProvider（date=todayProvider）。
+// 数据源：home_controller.dart 的 summaryProvider/recordsProvider
+// （date=plateDateProvider，M7-T1 起可被 plate-head ‹ › 翻动）。
 // H5 行为对照 js/app.js:1926-1931（refresh 先拉 summary 再渲染）、js/app.js:595（记录拉取）；
 // 目标值恒取云函数 summary.target（契约 dailySummary.target，M1 硬编码 1975 清除——M1 终审 I1）。
 // M3-T7（终审 Minor M1 核销）：加载期显式静态骨架（plate-ring-skeleton /
@@ -20,6 +21,17 @@
 // M6-T5：建议卡 AdviceCard 落位（index.html:106-109 .card.advice-home）——
 // 卡位复核：H5 实序 plate(70)→advice(106)→water(111)→exercise(133)，
 // advice 在餐盘卡内环/营养条整体之后、水卡之前，即 T4 预留位，按序插入。
+// M7-T1：①日期状态机 plateDateProvider（≙ H5 state.date）——五卡日期源由
+// todayProvider 改 watch plateDateProvider，餐盘卡顶插 plate-head
+// `‹ [日期胶囊] ›`（index.html:71-75，文案 ≙ app.js:209-211 三态逐字，
+// › 在今天 visibility 保位隐藏 ≙ :213，未来闸 toast「已经到今天了」≙ :219）；
+// ②页头加问候头（≙ index.html:61-67 .home-head + app.js:287-294
+// renderGreeting 五档/昵称/日期行逐字，恒用 DateTime.now()，不 watch
+// plateDateProvider）。页标题「今日盘子」系 M1 静态版遗留、shell/auth 等
+// 4 处既有用例的渲染哨兵，本任务不动（与 H5 首页无页标题的差异登记 T1 报告）。
+// 取数链：切日期后不手动 invalidate 一梭子——summary/records 系
+// autoDispose.family、exercises 系 family，皆随 watch 自然起新流
+// （≙ app.js:223 的并行拉取；见 home_controller.shiftPlateDate 注）。
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -34,10 +46,63 @@ import '../exercise/exercise_controller.dart'
     show deleteExerciseRecord, exerciseKcalProvider, exercisesProvider;
 import '../exercise/exercise_sheet.dart'
     show confirmDeleteExercise, openExerciseSheet;
+import '../profile/profile_providers.dart' show profileProvider;
 import 'advice_card.dart' show AdviceCard;
 import 'home_controller.dart';
 import 'plate_ring.dart';
 import 'water_card.dart' show WaterCard;
+
+/* ---------- M7-T1 plate-head（≙ index.html:71-75 + app.js:201-224） ---------- */
+
+/// 日期胶囊（index.html:73 #plate-date）
+@visibleForTesting
+const plateDateKey = Key('plate-date');
+
+/// ‹ 前一天（index.html:72 #plate-prev，恒在）
+@visibleForTesting
+const platePrevKey = Key('plate-prev');
+
+/// › 后一天（index.html:74 #plate-next，date==今天 时保位隐藏）
+@visibleForTesting
+const plateNextKey = Key('plate-next');
+
+/// .plate-nav 圆钮尺寸（screens.css:143 width/height:30px）
+const _plateNavSize = 30.0;
+
+/* ---------- M7-T1 问候头（≙ index.html:61-67 + app.js:287-294） ---------- */
+
+/// 问候语行（index.html:63 #home-greeting）
+@visibleForTesting
+const greetingKey = Key('home-greeting');
+
+/// 问候头日期行（index.html:64 #home-date）
+@visibleForTesting
+const greetingDateKey = Key('home-date');
+
+/// 问候语五档（app.js:288-290 逐字）：h<6 夜深了 / <11 早上好 / <14 中午好 /
+/// <18 下午好 / else 晚上好；有昵称拼「{greet}，{nickname}」（:290 全角逗号），
+/// 空昵称 ≙ H5 falsy → 裸问候语。
+@visibleForTesting
+String greetingTextOf(int hour, String? nickname) {
+  final greet = hour < 6
+      ? '夜深了'
+      : hour < 11
+      ? '早上好'
+      : hour < 14
+      ? '中午好'
+      : hour < 18
+      ? '下午好'
+      : '晚上好';
+  return (nickname == null || nickname.isEmpty) ? greet : '$greet，$nickname';
+}
+
+/// 问候头日期行（app.js:291-293 逐字）：`M月D日 · 星期X`
+/// weeks 表下标 ≙ JS getDay()（日=0…六=6），Dart weekday%7 同序。
+@visibleForTesting
+String greetingDateLineOf(DateTime d) {
+  const weeks = ['日', '一', '二', '三', '四', '五', '六'];
+  return '${d.month}月${d.day}日 · 星期${weeks[d.weekday % 7]}';
+}
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -55,7 +120,9 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final date = ref.watch(todayProvider);
+    // M7-T1：日期源切 plateDateProvider（≙ H5 state.date，可被 ‹ › 翻动）；
+    // todayProvider 仍供记录页/身体卡等非首页语境使用。
+    final date = ref.watch(plateDateProvider);
     final summary = ref.watch(summaryProvider(date));
     final records = ref.watch(recordsProvider(date));
     // M6-T3 环接线（app.js:298 ex=state.exerciseKcal||0；在途/失败 orElse 0
@@ -67,6 +134,9 @@ class HomeScreen extends ConsumerWidget {
       child: ListView(
         padding: const EdgeInsets.all(Tokens.sp4),
         children: [
+          // 问候头（index.html:61-67 .home-head .hello；app.js:287-294）。
+          // 恒用 DateTime.now()，不吃 plateDateProvider（‹ › 翻日期不改问候）。
+          _greetingHead(ref),
           const Text(
             '今日盘子',
             style: TextStyle(
@@ -82,6 +152,10 @@ class HomeScreen extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // plate-head 在 error 态照常在场（≙ index.html:71-75 系静态
+                  // markup、renderPlateDate :201 不读 summary）：取数失败仍可用
+                  // ‹ › 翻日期重试历史日，不被整张卡一起吞掉。
+                  const _PlateHead(),
                   Text(
                     error,
                     style: const TextStyle(
@@ -126,10 +200,50 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
+  /// 问候头（≙ index.html:61-67 .home-head .hello：h2#home-greeting +
+  /// p#home-date；app.js:287-294 renderGreeting 逐字）。
+  /// 昵称源 profileProvider（≙ :1947 renderGreeting(profile.nickname)；
+  /// 在途/失败无数据 → 裸问候语 ≙ :1914 首次 renderGreeting() 无参调用）。
+  /// 时钟恒 DateTime.now()：不 watch plateDateProvider（‹ › 翻日期不改问候，
+  /// 亦不加定时器——H5 仅 loadMainBundle 调一次，档位刷新时机差异登记 R4）。
+  Widget _greetingHead(WidgetRef ref) {
+    final now = DateTime.now();
+    final p = ref.watch(
+      profileProvider,
+    ).maybeWhen(data: (v) => v, orElse: () => null);
+    final nick = p?['nickname'];
+    return Padding(
+      padding: const EdgeInsets.only(top: 12, bottom: 4), // .home-head padding 12px 0 4px
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            key: greetingKey,
+            greetingTextOf(now.hour, nick is String ? nick : null),
+            style: const TextStyle(
+              fontSize: Tokens.textXl,
+              fontWeight: FontWeight.w700,
+              color: Tokens.ink,
+              letterSpacing: -0.01, // .hello h2 letter-spacing -.01em
+            ),
+          ),
+          const SizedBox(height: 4), // .hello p margin-top 4px
+          Text(
+            key: greetingDateKey,
+            greetingDateLineOf(now),
+            style: const TextStyle(
+              fontSize: Tokens.textXs,
+              color: Tokens.ink3,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// 餐盘卡（index.html:70-104 .card.plate-card，surface 白底——M2 深色占位卡
-  /// 替换之）。结构 = .plate-top（左环右 aside，screens.css:150）+ nutrient-note
-  /// （index.html:103）。plate-head 日期导航 ‹ 今天 › 与卡内营养素条不在本期
-  /// （板块日期切换非 M3 范围）。
+  /// 替换之）。结构 = plate-head（index.html:71-75，M7-T1 落地）+ .plate-top
+  /// （左环右 aside，screens.css:150）+ nutrient-note（index.html:103）。
   /// 加载期（summary 未回）：环位显静态骨架、aside 数字显"—"——与"加载完成
   /// 且无记录"的零值态（真实 0/预算数字）可分辨（M2 终审 Minor M1）。
   /// [ex] 今日运动消耗（M6-T3 接线，app.js:298）；加载期不显 0 而显 —（同口径）。
@@ -154,6 +268,7 @@ class HomeScreen extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const _PlateHead(),
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -353,6 +468,139 @@ class HomeScreen extends ConsumerWidget {
       child: child,
     );
   }
+}
+
+/* ---------- M7-T1 plate-head（≙ index.html:71-75 + app.js:201-224） ---------- */
+
+/// 餐盘卡日期导航行：`‹ [日期胶囊] ›`（.plate-head：居中、gap --sp-3、
+/// margin-bottom --sp-2，screens.css:141）。
+/// 胶囊三态文案 ≙ app.js:209-211（home_controller.plateDatePartsOf）；
+/// › 在 date==今天 时保位隐藏 ≙ :213 style.visibility='hidden'（占格不消失、
+/// 不可点，Visibility maintain* 组合即 CSS visibility 语义）；‹ 恒在（:225）。
+/// 未来闸 toast「已经到今天了」≙ :219（shiftPlateDate 内）。
+/// 不移植面（本任务裁定）：卡内左右滑动通道（app.js:227-259）——「右滑看历史」
+/// 仅系胶囊小字文案，‹ › 按钮即完整可达路径。
+class _PlateHead extends ConsumerWidget {
+  const _PlateHead();
+
+  void _toast(BuildContext context, String msg) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final date = ref.watch(plateDateProvider);
+    final (main, small) = plateDatePartsOf(date);
+    final isToday = date == todayIso();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: Tokens.sp2), // .plate-head margin-bottom
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center, // .plate-head justify-content
+        children: [
+          _plateNavButton(
+            key: platePrevKey,
+            glyph: '‹',
+            aria: '前一天', // index.html:72 aria-label 逐字
+            onTap: () => shiftPlateDate(ref, -1, (m) => _toast(context, m)),
+          ),
+          const SizedBox(width: Tokens.sp3), // gap --sp-3
+          // 胶囊：主文案 + small 副文案（.plate-date / .plate-date small）
+          Semantics(
+            label: plateDateLabelOf(date), // ≙ #plate-date.textContent 单串
+            excludeSemantics: true,
+            child: Container(
+              key: plateDateKey,
+              padding: const EdgeInsets.symmetric(
+                horizontal: Tokens.sp2,
+                vertical: Tokens.sp1,
+              ),
+              decoration: BoxDecoration(
+                color: Tokens.surfaceSoft,
+                borderRadius: BorderRadius.circular(Tokens.radiusSheet),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    main,
+                    style: const TextStyle(
+                      fontSize: Tokens.textSm,
+                      fontWeight: FontWeight.w600,
+                      color: Tokens.ink,
+                    ),
+                  ),
+                  const SizedBox(width: 4), // .plate-date small margin-left:4px
+                  Text(
+                    small,
+                    style: const TextStyle(
+                      fontSize: Tokens.textXs,
+                      fontWeight: FontWeight.w400,
+                      color: Tokens.ink3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: Tokens.sp3),
+          Visibility(
+            // CSS visibility:hidden 等价组合：保 state/size（占格不塌）、
+            // 默认 maintainInteractivity=false → 隐藏态不可点、不入语义树。
+            visible: !isToday,
+            maintainState: true,
+            maintainAnimation: true,
+            maintainSize: true,
+            child: _plateNavButton(
+              key: plateNextKey,
+              glyph: '›',
+              aria: '后一天', // index.html:74 aria-label 逐字
+              onTap: () => shiftPlateDate(ref, 1, (m) => _toast(context, m)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// .plate-nav 圆钮（screens.css:142-147：30×30 圆、--surface-soft 底、
+/// --ink-2 字、font-size:18px、line-height:1）。
+Widget _plateNavButton({
+  required Key key,
+  required String glyph,
+  required String aria,
+  required VoidCallback onTap,
+}) {
+  return Semantics(
+    key: key,
+    label: aria,
+    button: true,
+    child: GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: _plateNavSize,
+        height: _plateNavSize,
+        decoration: const BoxDecoration(
+          color: Tokens.surfaceSoft,
+          shape: BoxShape.circle,
+        ),
+        child: Center(
+          child: Text(
+            glyph,
+            style: const TextStyle(
+              fontSize: 18,
+              height: 1,
+              color: Tokens.ink2,
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 /// 加载期餐盘环占位：168×168 空环底轨几何（Tokens.line 描边）+「加载中」。

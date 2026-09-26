@@ -54,6 +54,13 @@ class StubHealthApi implements HealthApi {
   int summaryCalls = 0;
   int recordsCalls = 0;
 
+  /// M7-T1：按调用顺序收到的 date（入参原样）。首页 plate-head ‹ › 切日期后，
+  /// 五卡应以新 date 重新取数——只数次数看不出「请求的是哪一天」（用例
+  /// home_plate_date_test 的 date 序列断言）。
+  final List<String> summaryDates = <String>[];
+  final List<String> recordDates = <String>[];
+  final List<String> exerciseDates = <String>[];
+
   /* ---------- T9 记录页：search / add / delete ---------- */
 
   /// searchFoods 成功返回体（null → 空数组，模拟"没找到"）
@@ -298,6 +305,7 @@ class StubHealthApi implements HealthApi {
   @override
   Future<Map<String, dynamic>> getDailySummary(String date) async {
     summaryCalls++;
+    summaryDates.add(date);
     if (summaryError != null) throw summaryError!;
     if (summaryGate != null) await summaryGate!.future;
     return summary ?? summaryMap();
@@ -306,6 +314,7 @@ class StubHealthApi implements HealthApi {
   @override
   Future<List<dynamic>> getMealRecords(String date) async {
     recordsCalls++;
+    recordDates.add(date);
     if (recordsError != null) throw recordsError!;
     if (recordsGate != null) await recordsGate!.future;
     return records ?? const <dynamic>[];
@@ -480,6 +489,7 @@ class StubHealthApi implements HealthApi {
   @override
   Future<List<dynamic>> getExercises(String date) async {
     exerciseCalls++;
+    exerciseDates.add(date);
     if (exerciseError != null) throw exerciseError!;
     return exercisesByDate?[date] ?? const <dynamic>[];
   }
