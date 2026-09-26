@@ -283,11 +283,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     fontWeight: FontWeight.w800,
                     color: Tokens.ink)),
             const SizedBox(height: Tokens.sp3),
-            _profileHead(), // M5-T5：资料卡（T6 身体卡接线次序：本行之后是体重卡）
+            _profileHead(), // M5-T5：资料卡
             const SizedBox(height: Tokens.sp3),
+            const BodyProfileCard(), // M5-T6：身体参数卡
+            const SizedBox(height: Tokens.sp3),
+            // 体重卡次序（老大 09-26 反馈+R4）：档案在前、今日记录在后，
+            // 语义链=我是谁→我什么身板→今天记一笔→系统设置。
             _weightCard(weight),
-            const SizedBox(height: Tokens.sp3),
-            const BodyProfileCard(), // M5-T6：身体参数卡（次序=资料头→体重卡→本卡→提醒卡）
             const SizedBox(height: Tokens.sp3),
             _remindCard(),
             const SizedBox(height: Tokens.sp3),
