@@ -34,12 +34,14 @@ final swrCacheProvider = Provider<SwrCache>((ref) => SwrCache());
 |---|---|---|
 | `builtin` | getBuiltinFoods（食物库内置 tab + 记录页内置搜索的库源） | 无写路径（云端硬编码）——会话内永不失效 |
 | `custom` | listCustomFoods（食物库自定义 tab） | addCustomFood/deleteCustomFood/setCustomFoodMeals |
-| `summary.<date>` | summaryProvider(date) | 记餐/删餐/喝水/记运动/删运动（全部走既有 invalidate 点，见下） |
-| `records.<date>` | recordsProvider(date) | 同上 |
-| `exercises.<date>` | exercisesProvider(date) | addExercise/remove 回滚链 |
+| `summary.<date>` | summaryProvider(date) | 记餐/删餐（record_controller 双删链）；setGoal 整族；重试钮（先删键再 invalidate） |
+| `records.<date>` | recordsProvider(date) | 记餐/删餐（同上）；重试钮 |
+| `exercises.<date>` | exercisesProvider(date) | addExercise/remove 回滚链（_reload 成功回写/失败清键） |
 | `weightTrend` | weightTrendProvider | logWeight（体重卡保存链） |
 
 （喝水不单设键——water 字段在 summary 内，随 `summary.<date>` 同进同出；`waterOverrideProvider` 本地乐观态维持现状不缓存。）
+
+> **终审勘误（09-27，SDD 台账 Ruling 汇总）**：原表把「喝水/记运动/删运动」列为 summary/records 失效点系作者误设——运动消耗是端侧 exerciseKcalProvider fold 派生（advice.dart:176 / plate_ring.dart:81），运动写不碰 summary 云面；喝水走 waterOverride 本地态、H5 亦不重拉 summary（T2 裁定），三行已按实际实现改记。custom 行原括注「每次开层重取」与 H5 app.js:1308 逐字铁律冲突（T4 裁定：开层命中短路、切 tab 真重取为唯一自洽解）。
 
 **SWR 语义（每个接入 provider 统一模式）**：build 时 `cache.read(key)` 命中 → 先 `state = AsyncData(cached)` 且**继续发网络请求**，回包后 `state = AsyncData(fresh)` + 回写缓存；未命中 → 走现行 loading→data。失败支：有缓存 → 保缓存不炸 error 卡（后台静默失败不打扰，下次操作再试，登记差异）；无缓存 → 现行 error。
 
