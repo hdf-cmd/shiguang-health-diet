@@ -7,7 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart' show StateProvider;
 
 import '../../domain/report.dart';
-import '../home/home_controller.dart' show healthApiProvider;
+import '../home/home_controller.dart'
+    show healthApiProvider, SwrFamilyNotifier;
 import 'weight_trend.dart';
 
 /// 报告区间（H5 segmented data-range：week/month，index.html:153-154）
@@ -40,8 +41,24 @@ final monthReportProvider =
 /// 点"月"走 loadMonthReport 不碰趋势（app.js:269-274）；点"周"走
 /// loadReportPage（app.js:260-266,280），趋势与周报**并发重取**——该重取由
 /// report_screen 分段回调里 `ref.invalidate(weightTrendProvider)` 触发（T8 缓办 B）。
-final weightTrendProvider =
-    FutureProvider.autoDispose<WeightTrend>((ref) async {
-  final m = await ref.watch(healthApiProvider).getWeightTrend();
-  return WeightTrend.fromMap(m);
-});
+/// M9-T3：转类形态 AsyncNotifier 并接 [SwrFamilyNotifier] 播种（键 `weightTrend`，
+/// 非 family——arg 恒为键名本身）。对外引用名与 `AsyncValue<WeightTrend>` 消费面
+/// 不变（report_screen/weight_log_card 零改动）；进页重开首帧先显缓存旧趋势，
+/// 后台刷新，失败保旧。
+final weightTrendProvider = AsyncNotifierProvider.autoDispose
+    <WeightTrendNotifier, WeightTrend>(WeightTrendNotifier.new);
+
+/// M9-T3 播种载体：复用 home 的 [SwrFamilyNotifier] 基类（build 播种链与
+/// identical 守卫同款），非 family 语境下 arg 恒为缓存键 'weightTrend'。
+class WeightTrendNotifier extends SwrFamilyNotifier<WeightTrend, String> {
+  WeightTrendNotifier() : super('weightTrend');
+
+  @override
+  String cacheKey(String arg) => arg;
+
+  @override
+  Future<WeightTrend> fetch(String _) async {
+    final m = await ref.watch(healthApiProvider).getWeightTrend();
+    return WeightTrend.fromMap(m);
+  }
+}

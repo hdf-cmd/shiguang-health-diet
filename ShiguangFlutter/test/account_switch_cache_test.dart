@@ -13,6 +13,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shiguang_flutter/app/auth_state.dart';
 import 'package:shiguang_flutter/app/root_container.dart';
+import 'package:shiguang_flutter/data/swr_cache.dart';
 import 'package:shiguang_flutter/data/token_store.dart';
 import 'package:shiguang_flutter/domain/dates.dart' show localIso, todayIso;
 import 'package:shiguang_flutter/features/exercise/exercise_controller.dart'
@@ -122,6 +123,9 @@ void main() {
     final summarySub = container.listen(summaryProvider(date), (_, _) {});
     addTearDown(summarySub.close);
     expect((await container.read(summaryProvider(date).future)).kcal, 1200);
+    // M9-T3 钉①：A 号 summary 已播种进 SWR 缓存（换号前非空，换号后必 null）
+    expect(container.read(swrCacheProvider).read<Object>('summary.$date'),
+        isNotNull);
     final weekSub = container.listen(weekReportProvider, (_, _) {});
     addTearDown(weekSub.close);
     expect((await container.read(weekReportProvider.future)).target, 1679);
@@ -159,6 +163,14 @@ void main() {
     await container.read(authStateProvider.notifier).submit(
         username: 'b', password: 'Test1234!@', isRegister: false);
     expect(container.read(authStateProvider), AuthStatus.authed);
+    // M9-T3 钉②（T2 评审结转硬项）：换号波次头部 clear() 全清 SWR 会话缓存——
+    // submit 同步返回即断言两键归 null（波次内重建触发的重取尚未回包，此刻
+    // 可见态=「以空缓存起步」，B 号首帧不可能吃到 A 号播种值）。后续 B 值
+    // 断言（summary 500/exercises 空）即「B 首访走网络拿 B 真值」的落点。
+    expect(container.read(swrCacheProvider).read<Object>('summary.$date'),
+        isNull);
+    expect(container.read(swrCacheProvider).read<Object>('exercises.$date'),
+        isNull);
     expect((await store.read())!.accessToken, 'tok-b');
 
     // 断言：旧账号缓存全部失效——重读触发新请求，值是 B 的。
@@ -167,6 +179,9 @@ void main() {
     expect(await container.read(profileWeightProvider.future), 88.8);
     expect(adapter.countOf('/user/body-metrics'), 2); // 真的重发了请求
     expect((await container.read(summaryProvider(date).future)).kcal, 500);
+    // M9-T3 钉③：summary 重读确实发了新请求（计数不锁死：signOut 与 submit
+    // 两波失效各有在体监听即刻重取，>1 即证「换号后必走网络」非缓存翻牌）
+    expect(adapter.countOf('/diet/summary'), greaterThan(1));
     expect((await container.read(weekReportProvider.future)).target, 2000);
     // M6-T3/M7-T2：运动记录 family 整族失效——重取不带 A 的 x1。计数不锁死：
     // exercisesProvider 现为 autoDispose AsyncNotifier.family，本用例有在体

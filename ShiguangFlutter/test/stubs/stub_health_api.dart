@@ -452,6 +452,28 @@ class StubHealthApi implements HealthApi {
     'isWeek': false,
   };
 
+  /// M9-T3：运动记录单条 fixture 形状（contract diet-core.json
+  /// routes[exercises].responseFields：id/key/name/emoji/amount/unit/kcal 七键，
+  /// 云端不回 createdAt —— T1 登记，rep 型 isRepRecord 对云行恒 false）。
+  static Map<String, dynamic> exerciseMap({
+    required String id,
+    required String name,
+    String key = 'run',
+    String emoji = '🏃',
+    num amount = 30,
+    String unit = 'min',
+    num kcal = 0,
+  }) =>
+      <String, dynamic>{
+        'id': id,
+        'key': key,
+        'name': name,
+        'emoji': emoji,
+        'amount': amount,
+        'unit': unit,
+        'kcal': kcal,
+      };
+
   /// 体重趋势 fixture 形状 → {points:[num], labels:[String]}
   /// （contract diet-core.json weightTrend.responseSample）。与 week/month 桩对称：
   /// 默认可被 WeightTrend.fromMap 解析；7 点递减使 delta 稳定为 -0.80。

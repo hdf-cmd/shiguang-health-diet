@@ -21,39 +21,45 @@
 // 改 autoDispose——切走再切回同一天必重发请求 ≙ H5 每次切日期都 loadExercises
 // （app.js:223），与 summary/records 两族同法；keepAlive 派生 provider 会钉死
 // autoDispose 依赖（常驻监听不释放），exerciseKcalProvider 必须同批 autoDispose。
-import 'dart:async' show FutureOr;
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/api_client.dart' show ApiException;
 import '../../data/health_api.dart' show HealthApi;
+import '../../data/swr_cache.dart';
 import '../../domain/constants.dart' show Exercise;
 import '../../domain/exercise.dart' show exerciseKcalOf;
 import '../../domain/js_compat.dart' show jsOr;
-import '../home/home_controller.dart' show healthApiProvider;
+import '../home/home_controller.dart'
+    show healthApiProvider, SwrFamilyNotifier;
 import '../profile/profile_providers.dart' show profileProvider;
 
 /// 某日运动记录（≙ H5 state.exercises 的 family(date) 形态）。
 /// M7-T2 起为 AsyncNotifier.family（spec §3.2，工程首个 Notifier 类形态，
 /// 水卡 T3 复用同款）：乐观写链在 [ExercisesNotifier.add]/[remove]；
 /// autoDispose 收口「同日回访重取」（见文件头注）。
+/// M9-T3：改挂 [SwrFamilyNotifier] 播种基类（键 `exercises.$date`）——重开
+/// 首帧先显缓存旧值、后台刷新；首访失败仍抛（现行口径，基类 catch 只覆盖
+/// 「有缓存」分支）；add/remove 后的 _reload 成功回写、失败清键（降级空
+/// 列表不得成为下次播种的脏源）。
 final exercisesProvider = AsyncNotifierProvider.autoDispose
     .family<ExercisesNotifier, List<Map<String, dynamic>>, String>(
   ExercisesNotifier.new,
 );
 
-class ExercisesNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
-  ExercisesNotifier(this.date);
+class ExercisesNotifier
+    extends SwrFamilyNotifier<List<Map<String, dynamic>>, String> {
+  ExercisesNotifier(super.date);
 
-  /// family 实参（≙ 取数刻的 state.date）
-  final String date;
+  /// family 实参（≙ 取数刻的 state.date）——基类以 arg 承载，本文件沿用
+  /// date 命名（add 的 body 「date': date」等多处读取）。
+  String get date => arg;
 
   @override
-  FutureOr<List<Map<String, dynamic>>> build() {
-    // build 内 watch 建立依赖（M6 同法；写链副作用走 read，二者分开）
-    final api = ref.watch(healthApiProvider);
-    return _fetchAll(api);
-  }
+  String cacheKey(String date) => 'exercises.$date';
+
+  @override
+  Future<List<Map<String, dynamic>>> fetch(String date) =>
+      _fetchAll(ref.watch(healthApiProvider));
 
   Future<List<Map<String, dynamic>>> _fetch() =>
       _fetchAll(ref.read(healthApiProvider));
@@ -70,10 +76,16 @@ class ExercisesNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
 
   /// ≙ app.js:1730-1737 loadExercises：重取失败 catch→[] 降级为空，不抛出
   /// （不阻断主流程；toast 已由写链先行给出，此处仅静默回落）。
+  /// M9-T3：成功回写缓存（下次重开播种的就是云真值）；失败**连带清键**——
+  /// 降级空列表若留在缓存里，下次重开先显「今天没运动」的假象即脏源。
   Future<void> _reload() async {
+    final cache = ref.read(swrCacheProvider);
     try {
-      state = AsyncData(await _fetch());
+      final fresh = await _fetch();
+      cache.write('exercises.$date', fresh);
+      state = AsyncData(fresh);
     } catch (_) {
+      cache.invalidate('exercises.$date'); // 降级不存脏（M9 失效矩阵行3）
       state = AsyncData(const <Map<String, dynamic>>[]); // :1732-1733
     }
   }

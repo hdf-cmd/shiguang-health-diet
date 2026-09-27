@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/api_client.dart';
 import '../data/auth_api.dart';
+import '../data/swr_cache.dart' show swrCacheProvider;
 import '../data/token_store.dart';
 // 终审 I1：登出/换号失效全部账号数据 provider，需引用各 feature 的 provider。
 // app→features 的单向依赖本就存在（root_container.dart 同层同法拼装），
@@ -64,6 +65,11 @@ class AuthNotifier extends Notifier<AuthStatus> {
   /// （`sg_food_freq_counts_` + uid，food_freq.dart），换号不再互读，本注仅指
   /// 同账号重登场景。healthApi/apiClient 为无状态通道，无需失效。
   void _invalidateAccountScopedCaches() {
+    // M9-T3（T2 评审结转硬项）：会话级 SWR 缓存换号必全清——invalidate 只重建
+    // provider 元素，元素重建播种读的是 SwrCache 本体；A 号的 summary/records/
+    // exercises/weightTrend 键若留着，B 号首帧即显 A 数（跨号脏源）。置于波次
+    // 头部：后续 invalidate 引发的重取全部以空缓存起步（首访走网络+回写新号真值）。
+    ref.read(swrCacheProvider).clear();
     ref
       ..invalidate(profileProvider) // M5-T5：昵称/头像/签名同属账号级缓存
       ..invalidate(profileWeightProvider)
