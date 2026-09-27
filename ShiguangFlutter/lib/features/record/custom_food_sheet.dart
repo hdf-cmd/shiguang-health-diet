@@ -48,6 +48,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
+import '../../data/swr_cache.dart' show swrCacheProvider;
 import '../../domain/constants.dart';
 import '../../domain/dates.dart';
 import '../common/food_thumb.dart';
@@ -333,6 +334,10 @@ class _CustomFoodSheetState extends ConsumerState<_CustomFoodSheet> {
           'image': _imageData,
         });
         _addedToLib = true;
+        // M9-T4 写路径「先删键再刷新」：食物库会话缓存键随入库失效
+        // （口径同 food_lib_sheet 归类/删除链、weight_log_card :145 定式；
+        // 键名两处约定，不交叉 import 防环）。
+        ref.read(swrCacheProvider).invalidate('foods.custom');
       }
       if (mounted) Navigator.of(context).pop(); // :1242 入库成功即关（先于记入，
       // 使「记入失败」不再提供重复入库的重入口——与 H5 close-then-add 同形）

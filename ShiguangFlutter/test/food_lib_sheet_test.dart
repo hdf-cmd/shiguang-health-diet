@@ -16,6 +16,11 @@
 // 修复轮 1（评审 Important#1）：钉⑧ 增「空态在场时下方有可点添加钮」断言；
 // 新增钉⑩/⑩b —— #lib-add（index.html:574）→ closeFoodLib → openCustomFoodSheet
 // 链路可达（js/app.js:1347），钮双 tab/失败态常驻。
+// M9-T4（perf 批 A1/A2/A3）：新增 M9-T4钉（首开单帧骨架+并行预取各 1 次；关层
+// 重开会话缓存直显零新请求）与钉b（写路径先删键再刷新）；钉①「内置不预取」
+// 语义按本任务有意变更为「随并行预取取一次」，行渲染/sub/文案逐字各钉未弱化；
+// 关层 ✕ 走 ensureSemantics + bySemanticsLabel(RegExp(r'^关闭'))（goal_edit ④
+// 定式：label 并子 Text「✕」须前锚；handle 须用例体内 dispose）。
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -23,6 +28,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shiguang_flutter/app/theme.dart' show shiguangTheme;
 import 'package:shiguang_flutter/data/api_client.dart' show ApiException;
+import 'package:shiguang_flutter/data/swr_cache.dart' show swrCacheProvider;
 import 'package:shiguang_flutter/domain/dates.dart' show localIso;
 import 'package:shiguang_flutter/features/home/home_controller.dart'
     show healthApiProvider, plateDateProvider;
@@ -210,7 +216,8 @@ void main() {
   /* ---------- 钉① 默认自定义 tab + sub 文案 + 行族渲染 ---------- */
 
   testWidgets('钉① 开层默认自定义 tab；sub「自定义 N 条 · 点餐次标签可改归类」；'
-      '行 meta「150g · 543 kcal · 蛋白 43g / 碳水 66g / 脂肪 12g」逐字；内置不预取',
+      '行 meta「150g · 543 kcal · 蛋白 43g / 碳水 66g / 脂肪 12g」逐字；'
+      '内置随并行预取取一次（M9-T4/A3 有意改 H5「不预取」原语义）',
       (tester) async {
     final api = StubHealthApi(
         libCustomFoods: customStore(), libBuiltins: builtinStore());
@@ -229,7 +236,9 @@ void main() {
     await reveal(tester, find.text('90 kcal · 蛋白 0g / 碳水 0g / 脂肪 0g'));
     expect(find.text('90 kcal · 蛋白 0g / 碳水 0g / 脂肪 0g'), findsOneWidget,
         reason: 'grams=0 → 前缀省略（:1315 三元falsy支）');
-    expect(api.builtinCalls, 0); // 内置 tab 未开不取数
+    expect(api.builtinCalls, 1,
+        reason: 'M9-A3 并行预取：内置首开即随自定义拉一次（原钉「未开不取数」'
+        '被本任务有意替换；切 tab 命中缓存零新请求仍由钉②守住）');
     expect(api.listFoodsCalls, 1);
   });
 
@@ -603,5 +612,103 @@ void main() {
     expect(api.addBodies, hasLength(1));
     expect(api.addBodies.single['date'], y,
         reason: '记餐落 plate 日期（H5 :1244 addFoodRecord({date: state.date})）');
+  });
+
+  /* ---------- M9-T4 钉：会话缓存重开直显 + 并行预取 + 骨架（A1/A2/A3） ---------- */
+
+  testWidgets('M9-T4钉 首开单帧有骨架、双列表并行各拉1次；关层重开缓存直显'
+      '——首帧无骨架、零新请求（foods.* 无 TTL，写路径才失效——spec §1 口径）',
+      (tester) async {
+    final api = StubHealthApi(
+      libCustomFoods: <Map<String, dynamic>>[
+        StubHealthApi.cfFoodMap(id: 'cf1', name: '妈妈牌红烧肉'),
+      ],
+      libBuiltins: <Map<String, dynamic>>[
+        for (var i = 1; i <= 35; i++)
+          StubHealthApi.builtinFoodMap(id: 'b$i', name: '内$i'),
+      ], // 35 条契约形状
+    );
+    await useBigSurface(tester);
+    // bySemanticsLabel 需语义树在场（✕ 钮 ≙ :567 aria-label '关闭'，goal_edit ④
+    // 定式：handle 须在用例体内 dispose——期末校验早于 addTearDown）
+    final semantics = tester.ensureSemantics();
+    final container = ProviderContainer(
+      overrides: [healthApiProvider.overrideWithValue(api)],
+      retry: (_, _) => null,
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp(theme: shiguangTheme(), home: const _Host()),
+    ));
+    await tester.pumpAndSettle();
+
+    // 首开：未回包单帧 → 骨架在场（M9-A2 替换旧「加载中…」文本）
+    await tester.tap(find.text('open-lib'));
+    await tester.pump(); // 仅一帧：若走网络必有骨架
+    expect(find.byKey(const ValueKey('lib-skeleton')), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('自定义 1 条'), findsOneWidget); // H5 哨兵逐字
+    await tapKey(tester, libSegKey('builtin'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('内置 35 条 · 已移除 0'), findsOneWidget); // :1324 口径
+    expect(api.listFoodsCalls, 1, reason: '并行预取：自定义首开拉 1 次');
+    expect(api.builtinCalls, 1, reason: '并行预取：内置同轮也拉 1 次（M9-A3）');
+
+    // 关层再开：双键缓存命中——首帧无骨架、直显、零新请求
+    // （label 与子 Text「✕」并节点 ⇒ RegExp 前缀，goal_edit_sheet :196 同式）
+    await tester.tap(find.bySemanticsLabel(RegExp(r'^关闭')).last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('open-lib'));
+    await tester.pump(); // 仅一帧：若走网络必有骨架
+    expect(find.byKey(const ValueKey('lib-skeleton')), findsNothing,
+        reason: '重开 0ms 直显（M9-A1 会话缓存，跨弹层开关存活）');
+    expect(find.textContaining('自定义 1 条'), findsOneWidget);
+    expect(api.listFoodsCalls, 1,
+        reason: 'foods.custom 命中即短路——无 TTL，写路径才删键（spec §1）');
+    expect(api.builtinCalls, 1, reason: 'foods.builtin 同上');
+    await tester.pumpAndSettle(); // 收尾：模态转场落定
+    semantics.dispose();
+  });
+
+  testWidgets('M9-T4钉b 写路径「先删键再刷新」：删除成功链后 foods.custom 键随新列表'
+      '（无 raw_1）；重开弹层直显已是最新数据', (tester) async {
+    final api = StubHealthApi(libCustomFoods: customStore());
+    await useBigSurface(tester);
+    final semantics = tester.ensureSemantics(); // 钉b 同法：关层用 ✕ 语义钮
+    final container = ProviderContainer(
+      overrides: [healthApiProvider.overrideWithValue(api)],
+      retry: (_, _) => null,
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp(theme: shiguangTheme(), home: const _Host()),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('open-lib'));
+    await tester.pumpAndSettle(); // 首开取数入键
+
+    await tapKey(tester, libDelKey('raw_1'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('确认删除'));
+    await flush(tester);
+    await tester.pumpAndSettle(); // 删键 → _render 重取 → 新列表回写
+    final cached =
+        container.read(swrCacheProvider).read<List<dynamic>>('foods.custom');
+    expect(cached, isNotNull);
+    expect(cached!.map((f) => (f as Map)['id']), isNot(contains('raw_1')),
+        reason: '成功链删键后重取回写——键面不留旧行（对照 weight_log_card :145 定式）');
+
+    // 关层重开：直显的即是删后 2 条（若写链漏删键，重开首帧仍会显 3 条旧缓存）
+    await tester.tap(find.bySemanticsLabel(RegExp(r'^关闭')).last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('open-lib'));
+    await tester.pump(); // 一帧：缓存命中零请求直显
+    expect(find.text('鸡胸肉盖饭'), findsNothing);
+    expect(subText(tester), '自定义 2 条 · 点餐次标签可改归类');
+    expect(api.listFoodsCalls, 2, reason: '开1 + 删后重取1；重开命中零新请求');
+    await tester.pumpAndSettle();
+    semantics.dispose();
   });
 }

@@ -41,14 +41,27 @@
 // 头注「有意背离」登记；本条列入 M7 终审呈报项。toast 走层内 OverlayEntry
 // （SheetToast 公共件，M6-T7 F5 定式：SnackBar 会被弹层遮挡并向下层 Scaffold
 // 广播双份）。
+// M9-T4（perf 批 A1/A2/A3）数据层三改：
+// ① 会话缓存——原 `_builtinCache` State 字段（≙ libBuiltinCache :1290，随弹层
+//   销毁）删除，双列表数据升为 SwrCache 键 `foods.custom`/`foods.builtin`
+//   （spec §1 口径：foods.* 无 TTL，命中即零请求，写路径才删键）→ 重开 0ms 直显；
+// ② 并行预取——initState 首帧后 Future.wait 双路（M9-A3），各自命中缓存短路，
+//   当前 tab（custom）先渲染不等待另一路；
+// ③ 骨架——#lib-list 加载态「加载中…」文本换 3 行 SkeletonBar(height:64)
+//   卡形（key lib-skeleton，M9-A2）。
+// 注意保留的 H5 语义：自定义 tab 每次 renderLibList 真重取（:1308，钉②观测
+// listFoodsCalls 递增——缓存只免「开层首帧等待」，不免切回重取）；内置 tab
+// :1322 ||短路由「单层一次」升为「会话一次」；失败支文案与重试链不动。
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
+import '../../data/swr_cache.dart' show swrCacheProvider;
 import '../../domain/js_compat.dart' show jsNumText, jsOr;
 import '../common/food_thumb.dart';
+import '../common/skeleton.dart' show SkeletonBar;
 import '../common/sheet_toast.dart';
 import '../home/home_controller.dart' show healthApiProvider, plateDateProvider;
 import '../record/custom_food_sheet.dart' show cfMealMap, openCustomFoodSheet;
@@ -76,6 +89,17 @@ const libRetryKey = Key('lib-retry'); // :1339 #lib-retry
 
 @visibleForTesting
 const libAddKey = Key('lib-add'); // index.html:574 #lib-add（层底常驻钮）
+
+@visibleForTesting
+const libSkeletonKey = Key('lib-skeleton'); // M9-A2：加载态骨架区（替「加载中…」）
+
+/// M9-A1：会话缓存键（spec §1 表列：foods.* 无 TTL，写路径才删键）。
+/// 写链删键口径同 weight_log_card :145（先删键再刷新）。
+@visibleForTesting
+const foodsCustomCacheKey = 'foods.custom';
+
+@visibleForTesting
+const foodsBuiltinCacheKey = 'foods.builtin';
 
 /// kind 三档（:1316 渲染序）→ 钮文案（早餐/正餐/零食，逐字）
 const _kindLabels = <String, String>{
@@ -135,12 +159,13 @@ class _FoodLibSheet extends ConsumerStatefulWidget {
 class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
   // openFoodLib :1293：每次开层复位自定义 tab（弹层态随路由销毁，天然一致）
   String _tab = 'custom';
-  bool _loading = true;
+  bool _loading = true; // M9-A1：initState 按缓存命中与否定初值（命中=false）
   String? _error; // ≙ renderLibList catch 支文案（已 ||网络异常 兜底）
   List<dynamic> _custom = const <dynamic>[];
 
-  /// ≙ let libBuiltinCache（:1290）：null=未取过；内置 tab 只发一次请求
-  List<dynamic>? _builtinCache;
+  /// ≙ 原 let libBuiltinCache（:1290）——M9-A1 升为 SwrCache 键
+  /// `foods.builtin`（会话级，跨弹层开关存活），本字段仅为当前渲染快照。
+  List<dynamic> _builtin = const <dynamic>[];
 
   /// 在途动作集（≙ 被点钮 disabled=true，:1359/:1371/:1389；失败复位）
   final Set<String> _busy = <String>{};
@@ -166,7 +191,19 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
   @override
   void initState() {
     super.initState();
-    _render(); // ≙ openFoodLib 尾行 renderLibList()
+    // M9-A1：开层先吃会话缓存——custom 命中即首帧直显（0ms，无骨架）；
+    // miss 保持 _loading=true → 首帧骨架，待 _prefetch 回包覆盖。
+    final cache = ref.read(swrCacheProvider);
+    final custom = cache.read<List<dynamic>>(foodsCustomCacheKey);
+    if (custom != null) {
+      _custom = custom;
+      _sub = '自定义 ${custom.length} 条 · 点餐次标签可改归类';
+      _loading = false;
+    }
+    final builtin = cache.read<List<dynamic>>(foodsBuiltinCacheKey);
+    if (builtin != null) _builtin = builtin;
+    // ≙ openFoodLib 尾行 renderLibList()（M9-A3 改为首帧后双路并行预取）
+    WidgetsBinding.instance.addPostFrameCallback((_) => _prefetch());
   }
 
   @override
@@ -192,36 +229,110 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
     overlay.insert(entry);
   }
 
-  /// renderLibList（:1303-1341）：先「加载中…」占位，再按 tab 取数渲染。
-  Future<void> _render() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  /// M9-A3：首帧完成即双列表并行预取。各路以 SwrCache.read 短路——键在=本会话
+  /// 已取过，**不发请求**（foods.* 无 TTL，写路径才失效，spec §1 口径）；
+  /// miss=拉+回写。互不等待：当前 tab（custom）回包先渲染，内置后台备妥，
+  /// 切 tab 零等待（钉 M9-T4「各拉 1 次」观测面）。
+  Future<void> _prefetch() async {
+    await Future.wait([
+      _fetchTab('custom'),
+      _fetchTab('builtin'),
+    ]);
+  }
+
+  /// 预取单路：命中短路；miss 取数回写并应用。失败：当前 tab → error 支
+  /// （≙ 原 renderLibList catch）；非当前 tab → 静默（不留键，切过去再拉）。
+  Future<void> _fetchTab(String tab) async {
+    final cache = ref.read(swrCacheProvider);
+    final key = tab == 'custom' ? foodsCustomCacheKey : foodsBuiltinCacheKey;
+    if (cache.read<List<dynamic>>(key) != null) return; // 命中=零请求
+    final isCurrent = tab == _tab;
+    if (isCurrent) {
+      setState(() {
+        _loading = true; // initState miss 时已 true；retry 复用本路时复位骨架
+        _error = null;
+      });
+    }
     try {
-      if (_tab == 'custom') {
-        final list =
-            await ref.read(healthApiProvider).listCustomFoods();
-        if (!mounted) return;
-        setState(() {
+      final list = tab == 'custom'
+          ? await ref.read(healthApiProvider).listCustomFoods()
+          : await ref.read(healthApiProvider).getBuiltinFoods();
+      cache.write(key, list); // 回写即使本层将销毁（mounted=false）也成立
+      if (!mounted || tab != _tab) return;
+      setState(() {
+        if (tab == 'custom') {
           _custom = list;
-          _loading = false;
           _sub = '自定义 ${list.length} 条 · 点餐次标签可改归类'; // :1309 逐字
-        });
-      } else {
-        final list = _builtinCache ??
-            await ref
-                .read(healthApiProvider)
-                .getBuiltinFoods(); // :1322 ||短路（cache 在场不重取）
-        _builtinCache = list;
-        if (!mounted) return;
-        final hiddenCount =
-            list.where((f) => f is Map && f['hidden'] == true).length;
+        } else {
+          _builtin = list;
+          _sub = _builtinSub(list); // :1324 逐字
+        }
+        _loading = false;
+        _error = null;
+      });
+    } on ApiException catch (e) {
+      if (mounted && tab == _tab) {
         setState(() {
+          _error = jsOr(e.message, '网络异常'); // :1338 e.message||'网络异常'
           _loading = false;
-          _sub = '内置 ${list.length} 条 · 已移除 $hiddenCount'; // :1324 逐字
         });
       }
+    } catch (_) {
+      if (mounted && tab == _tab) {
+        setState(() {
+          _error = '网络异常';
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  static String _builtinSub(List<dynamic> list) {
+    final hiddenCount =
+        list.where((f) => f is Map && f['hidden'] == true).length;
+    return '内置 ${list.length} 条 · 已移除 $hiddenCount'; // :1324 逐字
+  }
+
+  /// renderLibList（:1303-1341 · M9 重写）：tab 切换 / 写后重取 / 失败重试统一
+  /// 入口。SWR 渲染序：缓存或既有快照在场→先显后拉（不排骨架）；全无→骨架
+  /// 等回包。自定义每次真重取（:1308 语义保留，钉②④⑩b 观测面）；内置命中
+  /// 短路零请求（:1322 ||短路升为会话级）。失败仍走 error 支（本入口有用户
+  /// 显式动作在场，不静默——≙ 原行为，钉⑩b）。
+  Future<void> _render() async {
+    final cache = ref.read(swrCacheProvider);
+    final isCustom = _tab == 'custom';
+    final cached = cache.read<List<dynamic>>(
+        isCustom ? foodsCustomCacheKey : foodsBuiltinCacheKey);
+    final shown = cached ?? (isCustom ? _custom : _builtin);
+    setState(() {
+      _error = null;
+      if (isCustom) {
+        _custom = shown;
+        if (cached != null) _sub = '自定义 ${cached.length} 条 · 点餐次标签可改归类';
+      } else {
+        _builtin = shown;
+        if (cached != null) _sub = _builtinSub(cached);
+      }
+      _loading = shown.isEmpty && cached == null; // 卡形骨架（M9-A2）
+    });
+    if (!isCustom && cached != null) return; // 内置短路（:1322）：不发请求也不
+    // 改态——上面已按缓存渲染（含 toggle 本地翻转后的最新旗标）。
+    try {
+      final list = isCustom
+          ? await ref.read(healthApiProvider).listCustomFoods()
+          : await ref.read(healthApiProvider).getBuiltinFoods();
+      cache.write(isCustom ? foodsCustomCacheKey : foodsBuiltinCacheKey, list);
+      if (!mounted || _tab != (isCustom ? 'custom' : 'builtin')) return;
+      setState(() {
+        if (isCustom) {
+          _custom = list;
+          _sub = '自定义 ${list.length} 条 · 点餐次标签可改归类'; // :1309 逐字
+        } else {
+          _builtin = list;
+          _sub = _builtinSub(list);
+        }
+        _loading = false;
+      });
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -240,7 +351,7 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
   void _selectTab(String tab) {
     if (tab == _tab) return;
     setState(() => _tab = tab); // #lib-seg 点按 :1348-1353
-    _render();
+    _render(); // 命中短路/先显后拉的判定都在 _render 内（M9）
   }
 
   /// 归类点按链（:1356-1365）
@@ -253,6 +364,9 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
           .read(healthApiProvider)
           .setCustomFoodMeals(id, cfMealMap[kind] ?? const <String>[]);
       if (!mounted) return;
+      // M9：写路径「先删键再刷新」（对照 weight_log_card :145 定式）——
+      // 否则 :1363 重取的 _render 会先拿旧缓存显出来。
+      ref.read(swrCacheProvider).invalidate(foodsCustomCacheKey);
       // :1362 三态文案：breakfast→早餐 / snack→零食 / 其余(lunch 档，含 dinner)→正餐
       _toast('已归到${_kindLabels[kind] ?? '正餐'} · 搜索时只在对应餐次出现');
       await _render(); // :1363 成功后重取
@@ -307,6 +421,7 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
     try {
       await ref.read(healthApiProvider).deleteCustomFood(id);
       if (!mounted) return;
+      ref.read(swrCacheProvider).invalidate(foodsCustomCacheKey); // M9 写路径删键
       _toast('已删除'); // :1374 逐字
       await _render(); // :1375
     } on ApiException catch (e) {
@@ -328,7 +443,7 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
       final wasHidden = item['hidden'] == true;
       // :1385-1388：现 hidden 集全量 + 本条摘除/追加（全量替换语义）
       final ids = <String>[
-        for (final f in _builtinCache ?? const <dynamic>[])
+        for (final f in _builtin)
           if (f is Map && f['hidden'] == true) '${f['id']}',
       ];
       if (wasHidden) {
@@ -338,11 +453,13 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
       }
       await ref.read(healthApiProvider).setHiddenFoods(ids);
       if (!mounted) return;
-      item['hidden'] = !wasHidden; // :1392 本地 cache 翻转（不发重取）
-      final hiddenCount =
-          (_builtinCache ?? const <dynamic>[]).where((f) => f is Map && f['hidden'] == true).length;
-      setState(() =>
-          _sub = '内置 ${(_builtinCache ?? const <dynamic>[]).length} 条 · 已移除 $hiddenCount'); // :1393 renderLibList（cache 支零请求）
+      item['hidden'] = !wasHidden; // :1392 本地 cache 翻转（不发重取）——
+      // M9：_builtin 与 SwrCache 键 `foods.builtin` 同 List 同 Map 引用，
+      // 翻转即会话缓存更新，跨弹层开关一致（foods.builtin 不删键：钉⑥口径）
+      final hiddenCount = _builtin
+          .where((f) => f is Map && f['hidden'] == true)
+          .length;
+      setState(() => _sub = '内置 ${_builtin.length} 条 · 已移除 $hiddenCount'); // :1393 renderLibList（cache 支零请求）
       _toast(wasHidden
           ? '已恢复「${item['name']}」' // :1394 逐字
           : '已移除「${item['name']}」');
@@ -450,12 +567,21 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
     );
   }
 
-  /// #lib-list 区四态（:1305 加载中 / :1319 空态 / :1325 行族 / :1337 失败+重试）
+  /// #lib-list 区四态（M9-A2：:1305 加载中换 3 行卡形骨架 / :1319 空态 /
+  /// :1325 行族 / :1337 失败+重试——error 支文案逻辑不动）
   Widget _body() {
     if (_loading) {
-      return const Center(
-          child: Text('加载中…',
-              style: TextStyle(fontSize: Tokens.textMd, color: Tokens.ink3)));
+      // 骨架条替「加载中…」文本（钉 M9-T4 首帧观测面：key lib-skeleton）；
+      // 纯静态不排持续帧——pumpAndSettle 不死等（SkeletonBar 头注口径）
+      return Column(
+        key: libSkeletonKey,
+        children: [
+          for (var i = 0; i < 3; i++) ...[
+            if (i > 0) const SizedBox(height: Tokens.sp2),
+            const SkeletonBar(height: 64), // 卡形行（≙ 行族 Container 高度量级）
+          ],
+        ],
+      );
     }
     if (_error != null) {
       return Center(
@@ -491,7 +617,7 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
         itemBuilder: (_, i) => _customRow(_custom[i]),
       );
     }
-    final list = _builtinCache ?? const <dynamic>[];
+    final list = _builtin;
     return ListView.separated(
       itemCount: list.length,
       separatorBuilder: (_, _) => const SizedBox(height: Tokens.sp2),
