@@ -299,18 +299,20 @@ class _ExerciseSheetState extends ConsumerState<_ExerciseSheet> {
                                   width: l.key == _chosen ? 1.5 : 1,
                                 ),
                               ),
-                              child: Text('${l.emoji} ${l.name}',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: Tokens.textSm,
-                                    fontWeight: l.key == _chosen
-                                        ? FontWeight.w700
-                                        : FontWeight.w500,
-                                    color: l.key == _chosen
-                                        ? Tokens.primaryDeep
-                                        : Tokens.ink2,
-                                  )),
+                              child: FittedBox(
+                                // 等宽网格下长名（力量训练）缩放适配而非截断
+                                fit: BoxFit.scaleDown,
+                                child: Text('${l.emoji} ${l.name}',
+                                    style: TextStyle(
+                                      fontSize: Tokens.textSm,
+                                      fontWeight: l.key == _chosen
+                                          ? FontWeight.w700
+                                          : FontWeight.w500,
+                                      color: l.key == _chosen
+                                          ? Tokens.primaryDeep
+                                          : Tokens.ink2,
+                                    )),
+                              ),
                             ),
                           ),
                         ),
