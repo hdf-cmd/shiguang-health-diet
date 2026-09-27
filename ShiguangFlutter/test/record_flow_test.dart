@@ -11,13 +11,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shiguang_flutter/data/swr_cache.dart' show swrCacheProvider;
 import 'package:shiguang_flutter/domain/dates.dart' show todayIso;
-import 'package:shiguang_flutter/domain/models.dart' show Per100;
+import 'package:shiguang_flutter/domain/models.dart' show Per100, Summary;
 import 'package:shiguang_flutter/domain/portion.dart' show portionMacros;
 import 'package:shiguang_flutter/features/home/home_controller.dart'
     show healthApiProvider;
 import 'package:shiguang_flutter/features/record/record_controller.dart'
-    show defaultMealAt;
+    show defaultMealAt, recordControllerProvider;
 import 'package:shiguang_flutter/features/record/record_screen.dart'
     show RecordScreen;
 
@@ -339,5 +340,55 @@ void main() {
     await openSheetAndSearch(tester, '豆腐脑');
     expect(find.text('没找到「豆腐脑」'), findsOneWidget);
     expect(find.text('换个说法，或添加自定义食物'), findsOneWidget);
+  });
+
+  /* ---------- M9 终审 I-1 钉①：addRecord 成功链「写删键」缓存面锁 ---------- */
+
+  test('M9终审I-1钉① addRecord 成功链先删键：records/summary 两键缓存面均归 null'
+      '（对照 record_controller.dart :94-95 _syncDay 双删；摘任一删键行本钉即红）',
+      () async {
+    final api = StubHealthApi(records: [
+      StubHealthApi.recordMap(
+          id: 'rec_l_1', meal: 'lunch', name: '米饭', portion: '200g', kcal: 232),
+    ]);
+    final container = ProviderContainer(
+      overrides: [healthApiProvider.overrideWithValue(api)],
+      retry: (_, _) => null,
+    );
+    addTearDown(container.dispose);
+    final date = todayIso();
+    final cache = container.read(swrCacheProvider);
+    // 预置「写前旧数」两键（≙ 读播种面的回写形态：RecordsNotifier/SummaryNotifier
+    // 各自的 cache.write 同款值型）。本用例不挂 widget、两 family 元素不在场，
+    // _syncDay 的 provider-invalidate 无在体可重建 → 删键后零重取回写竞态，
+    // 锁的就是成功链「先删键」的纯缓存面（M9-T4钉b/T9结转钉同族口径）。
+    cache.write(
+        'records.$date',
+        <Map<String, dynamic>>[
+          StubHealthApi.recordMap(
+              id: 'rec_old', meal: 'lunch', name: '写前旧餐', portion: '1 份', kcal: 1),
+        ]);
+    cache.write('summary.$date', Summary.fromMap(StubHealthApi.summaryMap(kcal: 232)));
+    expect(cache.read<Object>('records.$date'), isNotNull);
+    expect(cache.read<Object>('summary.$date'), isNotNull);
+
+    final ok = await container.read(recordControllerProvider).addRecord(
+          date,
+          <String, dynamic>{
+            'date': date,
+            'meal': 'lunch',
+            'name': '鸡蛋',
+            'portion': '禽蛋 · 1 个约 50g',
+            'kcal': 72,
+          },
+          pendingKey: 'u_egg',
+        );
+    expect(ok, isTrue);
+    expect(api.addBodies, hasLength(1)); // 成功链确实走过网络层（非半途抛错）
+
+    expect(cache.read<Object>('records.$date'), isNull,
+        reason: 'addRecord 成功链必须删 records.\$date 键（record_controller.dart:94）');
+    expect(cache.read<Object>('summary.$date'), isNull,
+        reason: 'addRecord 成功链必须删 summary.\$date 键（record_controller.dart:95）');
   });
 }

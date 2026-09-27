@@ -242,6 +242,11 @@ class StubHealthApi implements HealthApi {
   /// 再走错误/成功支（挂住回包观测 disabled 即时态，≙ customFoodGate 定式）
   Completer<void>? setMealsGate;
 
+  /// M9 终审 M-b 钉：非空 → listCustomFoods 先 await 它再返回（挂住归类成功
+  /// 链后的 _render 重取，观测「删键窗口」的缓存面——foods.custom 此刻必为
+  /// null；≙ setMealsGate 定式）
+  Completer<void>? listFoodsGate;
+
   /// setCustomFoodMeals 收到的 (id, 白名单过滤后 meals)（按调用顺序收集；
   /// 回归钉「管理链路 id 恒裸值不含 cf_」的观测面）
   final List<({String id, List<String> meals})> mealSetBodies =
@@ -308,6 +313,7 @@ class StubHealthApi implements HealthApi {
   Future<List<dynamic>> listCustomFoods() async {
     listFoodsCalls++;
     if (listFoodsError != null) throw listFoodsError!;
+    if (listFoodsGate != null) await listFoodsGate!.future; // M-b 钉删键窗口
     return List<dynamic>.of(libCustomFoods ?? const <Map<String, dynamic>>[]);
   }
 

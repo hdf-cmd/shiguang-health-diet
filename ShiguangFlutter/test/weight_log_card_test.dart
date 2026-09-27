@@ -7,11 +7,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shiguang_flutter/data/swr_cache.dart' show swrCacheProvider;
 import 'package:shiguang_flutter/domain/dates.dart' show todayIso;
 import 'package:shiguang_flutter/features/home/home_controller.dart'
     show healthApiProvider;
 import 'package:shiguang_flutter/features/profile/weight_log_card.dart'
     show WeightLogCard;
+import 'package:shiguang_flutter/features/report/weight_trend.dart'
+    show WeightTrend;
 import 'package:shiguang_flutter/features/scale/scale_service.dart';
 
 import 'harness.dart';
@@ -212,5 +215,29 @@ void main() {
     await tester.tap(find.text('⚖️ 从体脂秤同步（光脚站上秤）'));
     await tester.pump();
     expect(t.scanAndConnectCalls, 2);
+  });
+
+  /* ---------- M9 终审 I-1 钉②：logWeight 保存成功链「写删键」缓存面锁 ---------- */
+
+  testWidgets('M9终审I-1钉② 点保存→桩回包成功链：weightTrend 键删除'
+      '（对照 weight_log_card.dart :145；摘该删键行本钉即红）', (tester) async {
+    final api = newApi();
+    final container = await pumpCard(tester, api);
+    final cache = container.read(swrCacheProvider);
+    // 预置写前旧趋势（≙ 读播种面 WeightTrendNotifier 的回写值型）。本挂具
+    // 只挂体重卡、趋势图元素不在场：_saveWeight 的 ref.invalidate
+    // (weightTrendProvider) 无在体可重建 → settle 后也无重取回写竞态，
+    // 断言窗口稳定（M9-T4钉b/T9结转钉同族缓存面口径）。
+    cache.write('weightTrend', WeightTrend.fromMap(StubHealthApi.weightTrendMap()));
+    expect(cache.read<Object>('weightTrend'), isNotNull);
+
+    await tester.tap(find.text('保存')); // 播种位 66.66 → 校验过 → logWeight 回包
+    await tester.pumpAndSettle();
+
+    expect(api.weightLogs, hasLength(1)); // 成功链确已走完（非校验拒发）
+    expect(find.textContaining('已记录 66.66 kg · 趋势已更新'), findsOneWidget);
+    expect(cache.read<Object>('weightTrend'), isNull,
+        reason: 'logWeight 成功链必须删 weightTrend 键——旧趋势留键会在趋势卡'
+            '重建时播种「已记录」前的旧点（:143-145 评审 I1 口径）');
   });
 }

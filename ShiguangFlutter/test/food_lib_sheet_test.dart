@@ -105,7 +105,7 @@ class _HostState extends ConsumerState<_Host> {
   }
 }
 
-Future<void> pumpSheet(WidgetTester tester, StubHealthApi api,
+Future<ProviderContainer> pumpSheet(WidgetTester tester, StubHealthApi api,
     {String? plateDate}) async {
   await useBigSurface(tester);
   final container = ProviderContainer(
@@ -125,6 +125,7 @@ Future<void> pumpSheet(WidgetTester tester, StubHealthApi api,
   await tester.pumpAndSettle();
   await tester.tap(find.text('open-lib'));
   await tester.pumpAndSettle(); // 滑入 + 首载（此间无 toast，可 settle）
+  return container; // M9 终审 M-b 钉：缓存面断言需直读 swrCacheProvider
 }
 
 /// 「toast 可能在场」的常规 pump 对（层内 SheetToast 不可 pumpAndSettle 的替代）
@@ -790,5 +791,37 @@ void main() {
         reason: 'foods.* 无 TTL，写路径才删键——二次重开命中零新请求（不涨）');
     await tester.pumpAndSettle();
     semantics.dispose();
+  });
+
+  /* ---------- M9 终审 M-b 钉：setCustomFoodMeals 归类成功链删键的缓存面锁 ---------- */
+
+  testWidgets('M9终审M-b钉 _setMeal 成功链删 foods.custom 键：重取挂闸窗口内键面为'
+      'null（对照 food_lib_sheet.dart :368；摘删键行本钉即红）；放行后随新 meals 回写',
+      (tester) async {
+    final api = StubHealthApi(libCustomFoods: customStore());
+    final container = await pumpSheet(tester, api);
+    final cache = container.read(swrCacheProvider);
+    expect(cache.read<List<dynamic>>(foodsCustomCacheKey), isNotNull,
+        reason: '首开取数已入键（≙ 写前旧数在场）');
+
+    // 挂闸卡住归类成功链的 _render 重取（listFoodsGate 桩新增）：
+    // 删键发生在 setCustomFoodMeals 回包后、重取回包前——本窗口即锁体。
+    api.listFoodsGate = Completer<void>();
+    await tapKey(tester, libMealKey('raw_1', 'lunch'));
+    await flush(tester); // 两泵：setMeals 回包→删键→toast→_render 起请求挂闸
+
+    expect(api.mealSetBodies.single.id, 'raw_1'); // 成功链确已走完云写
+    expect(api.listFoodsCalls, 2, reason: '删键后 _render 已发起重取（挂在闸上）');
+    expect(cache.read<List<dynamic>>(foodsCustomCacheKey), isNull,
+        reason: 'setCustomFoodMeals 成功链必须先删键再刷新'
+            '（:366-368 口径——否则重取首帧拿旧缓存显出来）');
+
+    api.listFoodsGate!.complete(); // 放行：重取回写新列表
+    await tester.pumpAndSettle();
+    final rewritten = cache.read<List<dynamic>>(foodsCustomCacheKey);
+    expect(rewritten, isNotNull, reason: '删键非终态：重取回写随新数据归位');
+    final raw1 = rewritten!.cast<Map>().firstWhere((f) => f['id'] == 'raw_1');
+    expect(raw1['meals'], ['lunch', 'dinner'],
+        reason: '回写的是归类后的新行（键面无旧 meals 残留）');
   });
 }

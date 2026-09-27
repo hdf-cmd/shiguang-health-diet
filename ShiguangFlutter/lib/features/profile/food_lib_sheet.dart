@@ -455,6 +455,8 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
       item['hidden'] = !wasHidden; // :1392 本地 cache 翻转（不发重取）——
       // M9：_builtin 与 SwrCache 键 `foods.builtin` 同 List 同 Map 引用，
       // 翻转即会话缓存更新，跨弹层开关一致（foods.builtin 不删键：钉⑥口径）
+      // 终审登记：本同步靠「同 List 同 Map 引用别名」成立——若未来取数面
+      // （_fetchTab/_render 回写）加防御拷贝，别名断裂，须改为显式删键/回写。
       final hiddenCount = _builtin
           .where((f) => f is Map && f['hidden'] == true)
           .length;
