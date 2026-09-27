@@ -21,6 +21,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
+import '../../data/swr_cache.dart' show swrCacheProvider;
 import '../../domain/dates.dart' show todayIso;
 import '../home/home_controller.dart' show healthApiProvider;
 import '../report/report_controller.dart' show weightTrendProvider;
@@ -139,6 +140,9 @@ class _WeightLogCardState extends ConsumerState<WeightLogCard> {
       _toast('已记录 $shown kg · 趋势已更新'); // app.js:944 逐字
       ref.invalidate(profileWeightProvider); // 卡上当前体重跟着更新（renderBodyCard 等价）
       ref.invalidate(profileProvider); // M5-T6 身体卡/资料卡体重同步
+      // M9-T3 评审 I1：写路径成功链必须删键（对照 record_controller._syncDay
+      // 双删口径）——记重后旧趋势若留键，下次元素重建会播种「已记录」前的旧点。
+      ref.read(swrCacheProvider).invalidate('weightTrend');
       ref.invalidate(weightTrendProvider); // M8-① 同页趋势卡随之重取（H5「趋势已更新」语义坐实）
     } on ApiException catch (e) {
       _toast('保存失败：${e.message}'); // app.js:946

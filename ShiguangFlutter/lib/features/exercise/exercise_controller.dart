@@ -59,12 +59,12 @@ class ExercisesNotifier
 
   @override
   Future<List<Map<String, dynamic>>> fetch(String date) =>
-      _fetchAll(ref.watch(healthApiProvider));
+      _fetchAll(ref.watch(healthApiProvider), date); // M9-T3 评审 M2：直用形参，不经 date getter 间接读
 
   Future<List<Map<String, dynamic>>> _fetch() =>
-      _fetchAll(ref.read(healthApiProvider));
+      _fetchAll(ref.read(healthApiProvider), date);
 
-  Future<List<Map<String, dynamic>>> _fetchAll(HealthApi api) async =>
+  Future<List<Map<String, dynamic>>> _fetchAll(HealthApi api, String date) async =>
       _mapRows(await api.getExercises(date));
 
   /// 契约映射：云端不回 createdAt（T1 登记）→ isRepRecord 对云行恒 false、

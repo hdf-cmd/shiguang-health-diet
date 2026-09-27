@@ -86,7 +86,7 @@ void main() {
     // 降级空列表必须连带清键——否则旧真值 [e1] 留着下次播种即脏源。
     final sub = c.listen(exercisesProvider(date), (_, _) {});
     addTearDown(sub.close);
-    await flushLoop(); // 元素重建（上轮 invalidate 后首次挂监听）回稳态
+    await flushLoop(); // 元素重建（本测试内 c.read 结束后 autoDispose 已弃元素，此处首次挂监听）回稳态
     api.exerciseError = ApiException('boom'); // GET 坏，DELETE 仍好
     final rec = c.read(exercisesProvider(date)).value!.single;
     await c.read(exercisesProvider(date).notifier).remove(rec, (_) {});
