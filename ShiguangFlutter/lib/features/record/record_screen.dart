@@ -15,6 +15,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
+import '../../data/swr_cache.dart' show swrCacheProvider;
 import '../../domain/constants.dart';
 import '../../domain/dates.dart' show localIso;
 import '../home/home_controller.dart' show plateDateProvider;
@@ -266,7 +267,11 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
                   color: Tokens.danger, fontSize: Tokens.textMd)),
           const SizedBox(height: Tokens.sp2),
           TextButton(
-            onPressed: () => ref.invalidate(recordsProvider(date)),
+            // M9-T2：重试先删 SWR 键再 invalidate（强制走网络，不吃播种）
+            onPressed: () {
+              ref.read(swrCacheProvider).invalidate('records.$date');
+              ref.invalidate(recordsProvider(date));
+            },
             child: const Text('重试'),
           ),
         ],

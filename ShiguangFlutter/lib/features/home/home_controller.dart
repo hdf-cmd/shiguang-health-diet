@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/legacy.dart' show StateProvider;
 
 import '../../app/auth_state.dart' show apiClientProvider;
 import '../../data/health_api.dart';
+import '../../data/swr_cache.dart';
 import '../../domain/dates.dart';
 import '../../domain/models.dart';
 
@@ -21,25 +22,89 @@ final healthApiProvider =
 /// 查看非今日时由调用方直接把 date 传给 family provider，不覆盖本 provider。
 final todayProvider = Provider<String>((ref) => todayIso());
 
+/// M9-A1（spec §1）：SWR 播种基类——build 命中缓存时**同步**先置
+/// AsyncData(cached)（首帧即有数据，白屏 400ms→0ms），继续 await 网络，
+/// 成功覆盖+回写、失败保旧静默（呈现时序分叉=老大 09-27 知情批准）。
+/// Riverpod 3.4.3 坑沿用：family 用构造参 N.new（无 FamilyAsyncNotifier
+/// 基类，实参走构造器字段，ExercisesNotifier 同法）；build 内 watch 全前置
+/// （fetch 首行即 watch healthApiProvider，同步段完成注册后才 await）。
+abstract class SwrFamilyNotifier<T extends Object, Arg>
+    extends AsyncNotifier<T> {
+  SwrFamilyNotifier(this.arg);
+
+  /// family 实参（本仓恒为 date 串）
+  final Arg arg;
+
+  String cacheKey(Arg arg);
+  Future<T> fetch(Arg arg);
+
+  @override
+  Future<T> build() async {
+    final cache = ref.read(swrCacheProvider);
+    final key = cacheKey(arg);
+    final cached = cache.read<T>(key);
+    if (cached == null) {
+      final fresh = await fetch(arg); // 首访：现行 loading→data
+      cache.write(key, fresh);
+      return fresh;
+    }
+    // 播种仅对「无旧态」的新元素有意义（首帧即显旧数）；重建刷新时元素已
+    // 持同一 cached 实例，再赋值会即时通知 watcher 用旧值多算一代（M9 全量
+    // 回归 actual_deficit ⑥c 实证），故 identical 命中即跳过。
+    if (!(state.hasValue && identical(state.value, cached))) {
+      state = AsyncData<T>(cached); // 播种（build 返回值稍后覆盖，无竞态）
+    }
+    try {
+      final fresh = await fetch(arg);
+      cache.write(key, fresh);
+      return fresh;
+    } catch (_) {
+      return cached; // 失败有缓存：静默保旧（spec §1 差异登记）
+    }
+  }
+}
+
 /// 某日热量汇总（HealthAPI.getDailySummary → 契约 dailySummary：
 /// {kcal,target,carb,protein,fat,water}，target 由云函数派生，端上不硬编码）。
-final summaryProvider =
-    FutureProvider.autoDispose.family<Summary, String>((ref, date) async {
-  final m = await ref.watch(healthApiProvider).getDailySummary(date);
-  return Summary.fromMap(m);
-});
+final summaryProvider = AsyncNotifierProvider.autoDispose
+    .family<SummaryNotifier, Summary, String>(SummaryNotifier.new);
+
+class SummaryNotifier extends SwrFamilyNotifier<Summary, String> {
+  SummaryNotifier(super.date);
+
+  @override
+  String cacheKey(String date) => 'summary.$date';
+
+  @override
+  Future<Summary> fetch(String date) async {
+    final m = await ref.watch(healthApiProvider).getDailySummary(date);
+    return Summary.fromMap(m);
+  }
+}
 
 /// 某日三餐记录（HealthAPI.getMealRecords → 契约 mealRecords 数组：
 /// {id,meal,name,portion,kcal,...}；元素防御性过滤为非 Map 即丢，
 /// 云端返回恒为对象数组，见 contract/fixtures/diet-core.json）。
-final recordsProvider = FutureProvider.autoDispose
-    .family<List<Map<String, dynamic>>, String>((ref, date) async {
-  final list = await ref.watch(healthApiProvider).getMealRecords(date);
-  return list
-      .whereType<Map>()
-      .map((e) => Map<String, dynamic>.from(e))
-      .toList(growable: false);
-});
+final recordsProvider = AsyncNotifierProvider.autoDispose
+    .family<RecordsNotifier, List<Map<String, dynamic>>, String>(
+        RecordsNotifier.new);
+
+class RecordsNotifier
+    extends SwrFamilyNotifier<List<Map<String, dynamic>>, String> {
+  RecordsNotifier(super.date);
+
+  @override
+  String cacheKey(String date) => 'records.$date';
+
+  @override
+  Future<List<Map<String, dynamic>>> fetch(String date) async {
+    final list = await ref.watch(healthApiProvider).getMealRecords(date);
+    return list
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList(growable: false);
+  }
+}
 
 /* ---------- M7-T3 水卡乐观态 per-date 化（M6 遗留「跨日遮蔽」债根治） ---------- */
 

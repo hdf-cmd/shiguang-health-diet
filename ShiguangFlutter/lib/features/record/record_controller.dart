@@ -7,6 +7,7 @@
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/swr_cache.dart' show swrInvalidate;
 import '../home/home_controller.dart';
 import 'food_freq.dart';
 
@@ -90,6 +91,8 @@ class RecordController {
   }
 
   void _syncDay(String date) {
+    swrInvalidate(_ref, 'records.$date'); // M9：写后删键，防回访播种写前旧数
+    swrInvalidate(_ref, 'summary.$date');
     _ref.invalidate(recordsProvider(date));
     _ref.invalidate(summaryProvider(date));
   }

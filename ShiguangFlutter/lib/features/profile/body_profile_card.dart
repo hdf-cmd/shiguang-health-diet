@@ -39,6 +39,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
+import '../../data/swr_cache.dart' show swrCacheProvider;
 import '../../domain/constants.dart' show activity;
 import '../../domain/js_compat.dart' show jsFixed1, jsNumText;
 import '../../domain/metabolism.dart' show computeMetabolism;
@@ -131,6 +132,9 @@ Future<void> saveBodyProfile(WidgetRef ref, Map<String, Object?> bodyMap,
     }
   }
   ref.invalidate(profileProvider);
+  // M9：目标体重/每日基准变更后删 summary 族全部 SWR 键，再整族 invalidate
+  // ——防重挂元素以旧 target 播种（首页环目标联动面）。
+  ref.read(swrCacheProvider).invalidatePrefix('summary.');
   ref.invalidate(summaryProvider); // family 整族失效（首页环目标联动）
 }
 

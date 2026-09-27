@@ -42,6 +42,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
+import '../../data/swr_cache.dart' show swrCacheProvider;
 import '../../domain/constants.dart' show exerciseLib;
 import '../../domain/dates.dart' show dateLabelOf, todayIso;
 import '../../domain/exercise.dart' show isRepRecord;
@@ -164,7 +165,11 @@ class HomeScreen extends ConsumerWidget {
                     alignment: Alignment.centerRight,
                     child: TextButton(
                       onPressed: () {
-                        // 重试 = invalidate summary 重新取数（非本地翻牌）
+                        // 重试 = invalidate summary 重新取数（非本地翻牌）。
+                        // M9-T2：先删 SWR 键再 invalidate——重试必须绕开旧
+                        // 缓存强制走网络（error 卡只在首访失败出现，删键
+                        // 亦防「首访成功后又失败」边角面的播种残留）。
+                        ref.read(swrCacheProvider).invalidate('summary.$date');
                         ref.invalidate(summaryProvider(date));
                       },
                       child: const Text('重试'),
