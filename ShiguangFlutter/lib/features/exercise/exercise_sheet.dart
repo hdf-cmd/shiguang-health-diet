@@ -265,43 +265,58 @@ class _ExerciseSheetState extends ConsumerState<_ExerciseSheet> {
               ),
               const SizedBox(height: Tokens.sp3),
               // chips（:423 #exercise-chips，exerciseLib 全量，emoji+名）
-              Wrap(
-                spacing: Tokens.sp2,
-                runSpacing: Tokens.sp2,
-                children: [
-                  for (final l in exerciseLib)
-                    GestureDetector(
-                      key: exChipKey(l.key),
-                      onTap: () => _choose(l.key),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: Tokens.sp3, vertical: Tokens.sp2),
-                        decoration: BoxDecoration(
-                          color: l.key == _chosen
-                              ? Tokens.primarySoft
-                              : Tokens.surface2, // ≙ .ex-chip.active
-                          borderRadius:
-                              BorderRadius.circular(Tokens.radiusSm),
-                          border: Border.all(
-                            color: l.key == _chosen
-                                ? Tokens.primary
-                                : Tokens.line, // 选中态主色描边
-                            width: l.key == _chosen ? 1.5 : 1,
+              // M8-⑤（老大 09-27 真机反馈「参差不齐」）：H5 系流式 chips 按
+              // 内容撑宽，10 项排 4/3/2 参差——Flutter 版改一行 4 枚等宽网格
+              // （4+4+2），版式 R4 自主；点选/选中态/键全不动。
+              LayoutBuilder(
+                builder: (context, c) {
+                  const gap = Tokens.sp2;
+                  final chipW = (c.maxWidth - gap * 3) / 4;
+                  return Wrap(
+                    spacing: gap,
+                    runSpacing: gap,
+                    children: [
+                      for (final l in exerciseLib)
+                        GestureDetector(
+                          key: exChipKey(l.key),
+                          onTap: () => _choose(l.key),
+                          child: SizedBox(
+                            width: chipW,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  vertical: Tokens.sp2),
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: l.key == _chosen
+                                    ? Tokens.primarySoft
+                                    : Tokens.surface2, // ≙ .ex-chip.active
+                                borderRadius:
+                                    BorderRadius.circular(Tokens.radiusSm),
+                                border: Border.all(
+                                  color: l.key == _chosen
+                                      ? Tokens.primary
+                                      : Tokens.line, // 选中态主色描边
+                                  width: l.key == _chosen ? 1.5 : 1,
+                                ),
+                              ),
+                              child: Text('${l.emoji} ${l.name}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: Tokens.textSm,
+                                    fontWeight: l.key == _chosen
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                    color: l.key == _chosen
+                                        ? Tokens.primaryDeep
+                                        : Tokens.ink2,
+                                  )),
+                            ),
                           ),
                         ),
-                        child: Text('${l.emoji} ${l.name}',
-                            style: TextStyle(
-                              fontSize: Tokens.textSm,
-                              fontWeight: l.key == _chosen
-                                  ? FontWeight.w700
-                                  : FontWeight.w500,
-                              color: l.key == _chosen
-                                  ? Tokens.primaryDeep
-                                  : Tokens.ink2,
-                            )),
-                      ),
-                    ),
-                ],
+                    ],
+                  );
+                },
               ),
               const SizedBox(height: Tokens.sp3),
               // 数量行（:424-431 label + −/输入/单位/＋）
