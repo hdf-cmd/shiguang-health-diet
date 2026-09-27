@@ -106,6 +106,33 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    // M9-T7 钉：同元素参数变更时，中心数从上一终值插值（切日/记餐跳变
+    // 不再从 0 重扫）；首帧仍 begin=0（H5 app.js:324 静态初值 "0" 口径）。
+    // 依据 Flutter 3.47.5 TweenAnimationBuilder 语义：tween.begin 仅首次
+    // build 生效，end 变更后自动从当前动画值续起（implicit_animations.dart
+    // didUpdateWidget `begin = tween.evaluate(_animation)`）。本钉锁住该
+    // 行为，升级 Flutter/替换组件时若回退成从 0 重扫，本测试必红。
+    testWidgets('值变更：中心数从上一终值插值中段非 0 起；首帧仍从 0（H5 口径）',
+        (tester) async {
+      // 新挂载首帧：begin=0（remain=967）
+      await tester.pumpWidget(ringHarness(const PlateRing(
+          kcal: 0, target: 967, carb: 60, protein: 45, fat: 30)));
+      expect(ringNum(tester), '0'); // 首帧静态初值 0，等价 SVG 初始满 dashoffset
+      await tester.pumpAndSettle();
+      expect(ringNum(tester), '967');
+
+      // 同元素 remain 967→500（kcal 0→467）：500ms 动画中段采样必落在
+      // (500,967)——既非瞬跳 500、更非从 0 重扫
+      await tester.pumpWidget(ringHarness(const PlateRing(
+          kcal: 467, target: 967, carb: 60, protein: 45, fat: 30)));
+      await tester.pump(const Duration(milliseconds: 250));
+      final mid = int.parse(ringNum(tester));
+      expect(mid, greaterThan(500));
+      expect(mid, lessThan(967));
+      await tester.pumpAndSettle();
+      expect(ringNum(tester), '500');
+    });
+
     testWidgets('内环三段（有宏量）渲染无异常；全 0 宏量同样安全', (tester) async {
       await tester.pumpWidget(ringHarness(const PlateRing(
           kcal: 712, target: 1679, carb: 60, protein: 45, fat: 30)));

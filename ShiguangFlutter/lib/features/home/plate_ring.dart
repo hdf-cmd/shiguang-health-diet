@@ -110,7 +110,12 @@ class PlateRing extends StatelessWidget {
           ),
           // 中心：数字滚动 500ms outCubic、逐帧取整（app.js:324 animateNum
           // →380-387 `Math.round(proxy.v)`；IntTween 每帧 lerp 后 round() 等价；
-          // begin=0 ⇔ H5 静态初值 "0"）
+          // begin=0 ⇔ H5 静态初值 "0"）。
+          // M9-T7 核销：tween.begin 仅首挂载生效——Flutter 3.47.5
+          // TweenAnimationBuilder 在 end 变更后自动从当前动画值续起
+          // （implicit_animations.dart didUpdateWidget
+          // `begin = tween.evaluate(_animation)`），切日/记餐不会从 0 重扫；
+          // 语义由 plate_ring_test「值变更：中心数从上一终值插值」钉锁定。
           Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.center,
