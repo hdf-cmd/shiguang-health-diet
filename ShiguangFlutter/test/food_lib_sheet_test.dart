@@ -38,7 +38,7 @@ import 'package:shiguang_flutter/features/profile/food_lib_sheet.dart';
 import 'package:shiguang_flutter/features/profile/profile_screen.dart'
     show ProfileScreen;
 import 'package:shiguang_flutter/features/record/custom_food_sheet.dart'
-    show cfKcalKey, cfNameKey, cfSaveAddKey;
+    show cfKcalKey, cfNameKey, cfSaveAddKey, cfSaveOnlyKey;
 import 'package:shiguang_flutter/features/scale/scale_service.dart';
 
 import 'harness.dart';
@@ -708,6 +708,86 @@ void main() {
     expect(find.text('鸡胸肉盖饭'), findsNothing);
     expect(subText(tester), '自定义 2 条 · 点餐次标签可改归类');
     expect(api.listFoodsCalls, 2, reason: '开1 + 删后重取1；重开命中零新请求');
+    await tester.pumpAndSettle();
+    semantics.dispose();
+  });
+
+  /* ---------- T9 结转钉（T4 评审 m1）：addCustomFood 删键的缓存面锁 ---------- */
+
+  testWidgets('T9结转钉 层内添加自定义食物→关表单：成功链删 foods.custom 键且删键零重取'
+      '（listFoodsCalls 不涨）；重开取新见新条并回写；再重开首帧直显新条零新请求',
+      (tester) async {
+    final api = StubHealthApi(libCustomFoods: customStore()); // 3 条起步
+    await useBigSurface(tester);
+    final semantics = tester.ensureSemantics(); // 关层 ✕ 走语义钮（M9-T4钉 定式）
+    final container = ProviderContainer(
+      overrides: [healthApiProvider.overrideWithValue(api)],
+      retry: (_, _) => null,
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp(theme: shiguangTheme(), home: const _Host()),
+    ));
+    await tester.pumpAndSettle();
+
+    // 首开：custom 取数入键（foods.custom=3 条）
+    await tester.tap(find.text('open-lib'));
+    await tester.pumpAndSettle();
+    expect(api.listFoodsCalls, 1);
+    expect(
+        container.read(swrCacheProvider).read<List<dynamic>>(foodsCustomCacheKey),
+        isNotNull);
+
+    // 层内添加：#lib-add 关管理层→开表单（钉⑩ 链路）→ 填写→「仅存入食物库」
+    await tapKey(tester, libAddKey);
+    await tester.pumpAndSettle(); // 管理层 pop 动画
+    await tester.pumpAndSettle(); // 续链开表单
+    expect(find.byKey(cfNameKey), findsOneWidget);
+    await tester.enterText(find.byKey(cfNameKey), '加班河粉');
+    await tester.enterText(find.byKey(cfKcalKey), '210');
+    await tester.pump();
+    // ≙ 云 POST /foods/custom 落库的观测面：桩存储同步追加新条（桩
+    // addCustomFood 只记 body 不落库，此处手工写入模拟「保存后云端已有」，
+    // 本钉锁的是端上删键链，非桩仿真度）。置首行——行序系桩侧模拟面与端上
+    // 行为无关，首行在 ListView 构建区内，「首帧见新条」可原语直证免滚。
+    api.libCustomFoods!.insert(
+        0,
+        StubHealthApi.cfFoodMap(
+            id: 'cf_1', name: '加班河粉', kcal: 210, portion: '1 份'));
+
+    await tapKey(tester, cfSaveOnlyKey);
+    await tester.pumpAndSettle(); // addCustomFood 成功链：入库→pop→onSaved→toast
+    expect(find.text('已存入食物库，搜索可用'), findsOneWidget); // :1250 逐字
+
+    // 缓存面锁本体：成功链删 foods.custom（custom_food_sheet.dart
+    // _save :「invalidate('foods.custom')」）——该删键若被摘除，本断言即红
+    expect(
+        container.read(swrCacheProvider).read<List<dynamic>>(foodsCustomCacheKey),
+        isNull,
+        reason: 'addCustomFood 成功链必须删键（T4 评审 m1 锁；对照 M9-T4钉b 删链锁）');
+    expect(api.listFoodsCalls, 1,
+        reason: '删键=纯缓存面操作，表单关闭链不发 listFoods 重取（不涨）');
+
+    // 重开：键已删→必重取→见新条（若漏删键，此处仍直显 3 条旧缓存且零请求）
+    await tester.tap(find.text('open-lib'));
+    await tester.pumpAndSettle();
+    expect(subText(tester), '自定义 4 条 · 点餐次标签可改归类');
+    expect(find.text('加班河粉'), findsOneWidget);
+    expect(api.listFoodsCalls, 2, reason: '重开 miss 重取 1 次，回写新 4 条入键');
+
+    // 关层再重开：重取回写的新键会话命中——首帧无骨架直显新条，零新请求
+    await tester.tap(find.bySemanticsLabel(RegExp(r'^关闭')).last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('open-lib'));
+    await tester.pump(); // 仅一帧
+    expect(find.byKey(libSkeletonKey), findsNothing,
+        reason: '首帧直显（foods.custom 已被 miss 重取回写为 4 条新数据）');
+    expect(subText(tester), '自定义 4 条 · 点餐次标签可改归类');
+    expect(find.text('加班河粉'), findsOneWidget,
+        reason: '新条置首行，在懒构建区内——首帧原语直证「见新条」');
+    expect(api.listFoodsCalls, 2,
+        reason: 'foods.* 无 TTL，写路径才删键——二次重开命中零新请求（不涨）');
     await tester.pumpAndSettle();
     semantics.dispose();
   });

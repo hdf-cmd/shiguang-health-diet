@@ -102,6 +102,16 @@ ThemeData shiguangTheme() {
     // primaryDeep 94% 深绿底白字、radius 14（与 SheetToast 同语言）、floating
     // 天然浮在底部导航之上；动效沿用 SnackBar 自带滑入淡出，时长/队列语义
     // 由各调用点 ScaffoldMessenger 保持不变（视觉层 R4 自主，行为零变更）。
+    // M9-B5（T9 结论登记，对简报的实位修正）：简报拟在主题实位仅补曲线
+    // enterAnimationCurve: Curves.easeOutBack / exitAnimationCurve:
+    // Curves.easeInCubic（微过冲入场）——本端 SDK 不可行，**非不做而是无处可写**：
+    // SnackBarThemeData 无任何曲线暴露字段（本地 C:\flutter 3.47.5
+    // snack_bar_theme.dart grep 零命中 Curve；api.flutter.dev 构造参数表同无
+    // enterAnimationCurve/exitAnimationCurve，亦无 enterDuration/exitDuration）。
+    // 入/出曲线硬编码于 snack_bar.dart M3 常量（_snackBarM3HeightCurve=
+    // easeInOutQuart + Interval 淡入 0.4–1.0 / 淡出 0.72–1.0）。微过冲只能走
+    // 35 调用点 helper 化（animationControllerBuilder/自建 Overlay）——口径同
+    // 简报「helper 化收敛留后续池不做」，本批主题零改动，登记后续池。
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
       backgroundColor: const Color(0xF0234D30),

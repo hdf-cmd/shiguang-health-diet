@@ -2,9 +2,12 @@
 // M9-B4：弹层样板收口（10 处 showModalBottomSheet 的 shape/背景/标题行+✕
 // 复制收敛；顶部 drag handle；isScrollControlled+最大高 78%）。
 // ✕ 钮结构与标题文本逐字保留——既有测试选择器零破坏是收口底线。
-// [closeKey]：简报签名的**登记扩展**——goal_sheet/water_card 的 goalCloseKey、
-// goal_edit 的 goalEditCloseKey 等既有测试用 find.byKey 点 ✕（H5 id 同名键），
-// 收口后键位由 helper 承载，各层原键常量原样透传，测试选择器零改动。
+// [closeKey]：简报签名的**登记扩展**（T9 续正，T8 评审 minor）——既有测试
+// find.byKey 点 ✕ 实际引用的只有 goal_sheet/water_card 的 goalCloseKey 与
+// goal_edit 的 goalEditCloseKey（H5 id 同名键）；exercise 的 ex-close 与
+// custom_food 的 sheet-close 两键测试零引用（grep 为空），键位保留系
+// H5 id 平齐，非测试依赖。收口后键位由 helper 承载，各层原键常量原样
+// 透传，测试选择器零改动。
 import 'package:flutter/material.dart';
 
 import '../../app/theme.dart';
