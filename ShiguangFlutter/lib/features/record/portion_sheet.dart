@@ -6,8 +6,9 @@
 // 换算=domain/portion.dart portionMacros，镜像 js/logic.js:125-134）、
 // 确认按钮「确认添加」（index.html:502）、记入 body（765-768，portion=`${g}${unit}`）、
 // 成功 toast「已添加 X Ng」（764）。
-// 与 H5 差异（简报规定）：步进器输入改为滑杆——步进 5、下限贴近 1（取 5 的
-// 整步格）、上限沿用 H5 bumpBodyVal 的 2000 封顶（js/app.js:739-741）。
+// 与 H5 差异（交互层 R4 自主）：M2 简报定滑杆、老大 09-27 真机反馈改回
+// ± 步进钮（一档 5）——步进 5、下限取 5 的整步格、上限沿用 H5 bumpBodyVal
+// 的 2000 封顶（js/app.js:739-741）；记入 body/预览换算数据语义零变。
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -93,9 +94,11 @@ class _PortionSheetState extends ConsumerState<PortionSheet> {
   bool get _pending =>
       ref.read(recordControllerProvider).isInFlight(_pendingKey);
 
+  /// ± 步进一档 5（老大 09-27 真机反馈：滑杆改加减）；边界/整步格沿用 _snap
+  void _bump(double delta) => setState(() => _grams = _snap(_grams + delta));
+
   /// 确认记入：body 对齐 js/app.js:765-768（portion=`${g}${unit}`，宏量按克换算）
-  Future<void> _save() async {
-    final controller = ref.read(recordControllerProvider);
+  Future<void> _save() async {    final controller = ref.read(recordControllerProvider);
     if (controller.isInFlight(_pendingKey)) return; // 连点丢弃（H5 btn.disabled）
     final g = _grams.round();
     if (g < 10) {
@@ -139,6 +142,31 @@ class _PortionSheetState extends ConsumerState<PortionSheet> {
     }
   }
 
+  /// ± 步进钮（与体重卡 _stepBtn 同款观感：44×44 描边圆角，primaryDeep 字）
+  Widget _stepBtn(String label, VoidCallback onTap, String hint) {
+    return Semantics(
+      label: hint,
+      button: true,
+      child: SizedBox(
+        width: 44,
+        height: 44,
+        child: OutlinedButton(
+          onPressed: _pending ? null : onTap,
+          style: OutlinedButton.styleFrom(
+            side: const BorderSide(color: Tokens.line),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(Tokens.radiusSm)),
+          ),
+          child: Text(label,
+              style: const TextStyle(
+                  fontSize: Tokens.textLg,
+                  fontWeight: FontWeight.w700,
+                  color: Tokens.primaryDeep)),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final r = portionMacros(_per100, _grams.round());
@@ -154,37 +182,26 @@ class _PortionSheetState extends ConsumerState<PortionSheet> {
         children: [
           Row(
             children: [
-              const Icon(Icons.horizontal_rule,
-                  color: Tokens.ink3, size: Tokens.textMd),
+              _stepBtn('−', () => _bump(-_kStepG), '减少 5$_unit'), // 档位键同权重卡定式
               Expanded(
-                child: Slider(
-                  key: const ValueKey('portion-slider'),
-                  value: _grams,
-                  min: _kMinG,
-                  max: _kMaxG,
-                  divisions: ((_kMaxG - _kMinG) / _kStepG).round(),
-                  label: '${_grams.round()}$_unit',
-                  activeColor: Tokens.primary,
-                  onChanged: (v) => setState(() => _grams = _snap(v)),
+                child: Center(
+                  child: Text(
+                    '${_grams.round()}$_unit',
+                    style: const TextStyle(
+                        fontSize: Tokens.textXl,
+                        fontWeight: FontWeight.w800,
+                        color: Tokens.primaryDeep),
+                  ),
                 ),
               ),
-              SizedBox(
-                width: 64,
-                child: Text(
-                  '${_grams.round()}$_unit',
-                  textAlign: TextAlign.right,
-                  style: const TextStyle(
-                      fontSize: Tokens.textLg,
-                      fontWeight: FontWeight.w800,
-                      color: Tokens.primaryDeep),
-                ),
-              ),
+              _stepBtn('＋', () => _bump(_kStepG), '增加 5$_unit'),
             ],
           ),
-          // 换算提示（js/app.js:724 语义）
+          // 换算提示（js/app.js:724 语义；滑杆改 ± 系老大 09-27 真机反馈，
+          // 文案随之从「拖动滑杆」改「点 −/＋」——交互层 R4 自主，数据语义零变）
           const SizedBox(height: Tokens.sp1),
           Text(
-            '拖动滑杆调整$_unit数，营养按每 100$_unit 换算',
+            '点 −/＋ 调整$_unit数（一档 ${_kStepG.round()}$_unit），营养按每 100$_unit 换算',
             textAlign: TextAlign.center,
             style: const TextStyle(fontSize: Tokens.textSm, color: Tokens.ink3),
           ),

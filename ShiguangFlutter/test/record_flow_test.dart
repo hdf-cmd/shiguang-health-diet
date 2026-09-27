@@ -221,7 +221,7 @@ void main() {
   });
 
   /* ---------- ③ per100 食物：份量弹层 按克加 ---------- */
-  testWidgets('③per100「按克加」：初始=baseG 实时预览；滑杆变化预览随之变化；确认后 body 宏量=portionMacros',
+  testWidgets('③per100「按克加」：初始=baseG 实时预览；± 步进预览随之变化；确认后 body 宏量=portionMacros',
       (tester) async {
     final api = StubHealthApi(foods: [kRiceFood]);
     await tester.pumpWidget(harness(api, initialMeal: 'lunch'));
@@ -238,10 +238,11 @@ void main() {
     expect(find.text('200g ≈ 232 kcal · 蛋白 5.2g / 碳水 51.8g / 脂肪 0.6g'),
         findsOneWidget);
 
-    // 拖动滑杆 → 预览数字必须变化
-    final before = tester.getRect(find.byType(Slider));
-    await tester.drag(find.byType(Slider), Offset(before.width * 0.2, 0));
+    // ± 步进（老大 09-27 反馈滑杆改加减，一档 5g）→ 预览数字必须变化
+    await tester.tap(find.text('＋'));
     await tester.pumpAndSettle();
+    expect(find.text('205g ≈ 238 kcal · 蛋白 5.3g / 碳水 53.1g / 脂肪 0.6g'),
+        findsOneWidget); // 200→205 线性换算（portionMacros 口径）
     expect(find.text('200g ≈ 232 kcal · 蛋白 5.2g / 碳水 51.8g / 脂肪 0.6g'),
         findsNothing);
     expect(find.textContaining('kcal · 蛋白'), findsOneWidget);
@@ -258,7 +259,7 @@ void main() {
     final portion = body['portion'] as String;
     expect(portion, endsWith('g'));
     final g = int.parse(portion.substring(0, portion.length - 1));
-    expect(g, isNot(200)); // 确实随滑杆变了
+    expect(g, isNot(200)); // 确实随 ± 步进变了
     final r = portionMacros(
         Per100.fromMap(Map<String, Object?>.from(kRiceFood['per100'] as Map)), g);
     expect(body['kcal'], r.kcal);
@@ -269,7 +270,7 @@ void main() {
     expect(body['image'], 'img/foods/rice.jpg');
   });
 
-  testWidgets('③b 不拖滑杆直接确认：200g（baseG 预设）→ body kcal/三素精确等于 232/5.2/51.8/0.6',
+  testWidgets('③b 不步进直接确认：200g（baseG 预设）→ body kcal/三素精确等于 232/5.2/51.8/0.6',
       (tester) async {
     final api = StubHealthApi(foods: [kRiceFood]);
     await tester.pumpWidget(harness(api, initialMeal: 'lunch'));
