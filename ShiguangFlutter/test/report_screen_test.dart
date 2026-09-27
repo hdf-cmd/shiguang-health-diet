@@ -21,7 +21,7 @@ import 'stubs/stub_health_api.dart';
 
 Widget harness(StubHealthApi api) => ProviderScope(
       overrides: [healthApiProvider.overrideWithValue(api)],
-      child: const MaterialApp(home: ReportScreen()),
+      child: const MaterialApp(home: Scaffold(body: ReportScreen())), // M8-① 报告页含 WeightLogCard(TextField)，需 Material 祖先（生产由 Shell Scaffold 提供）
     );
 
 void main() {
@@ -220,7 +220,7 @@ void main() {
         healthApiProvider.overrideWithValue(StubHealthApi()),
         weekReportProvider.overrideWith((ref) => pending.future),
       ],
-      child: const MaterialApp(home: ReportScreen()),
+      child: const MaterialApp(home: Scaffold(body: ReportScreen())), // M8-① 报告页含 WeightLogCard(TextField)，需 Material 祖先（生产由 Shell Scaffold 提供）
     ));
     await tester.pumpAndSettle();
 
@@ -414,7 +414,7 @@ void main() {
         healthApiProvider.overrideWithValue(StubHealthApi()),
         weekReportProvider.overrideWith((ref) => pending.future),
       ],
-      child: const MaterialApp(home: ReportScreen()),
+      child: const MaterialApp(home: Scaffold(body: ReportScreen())), // M8-① 报告页含 WeightLogCard(TextField)，需 Material 祖先（生产由 Shell Scaffold 提供）
     ));
     await tester.pumpAndSettle();
 

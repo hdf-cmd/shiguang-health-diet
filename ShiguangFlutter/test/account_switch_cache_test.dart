@@ -19,7 +19,7 @@ import 'package:shiguang_flutter/features/exercise/exercise_controller.dart'
     show exerciseKcalProvider, exercisesProvider;
 import 'package:shiguang_flutter/features/home/home_controller.dart'
     show plateDateProvider, summaryProvider, waterOverrideProvider;
-import 'package:shiguang_flutter/features/profile/profile_screen.dart'
+import 'package:shiguang_flutter/features/profile/weight_log_card.dart'
     show profileWeightProvider;
 import 'package:shiguang_flutter/features/record/food_freq.dart'
     show FoodFreqStore, foodFreqProvider;

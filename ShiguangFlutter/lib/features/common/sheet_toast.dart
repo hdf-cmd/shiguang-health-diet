@@ -57,7 +57,9 @@ class _SheetToastState extends State<SheetToast>
           child: FadeTransition(
             opacity: opacity,
             child: Material(
-              color: const Color(0xE632352D),
+              // M8-④：与全局 SnackBar toast 统一视觉语言（theme.dart 同值
+              // primaryDeep 94% 深绿胶囊），弹层语境盖层语义不变。
+              color: const Color(0xF0234D30),
               borderRadius: BorderRadius.circular(14),
               child: Padding(
                 padding: const EdgeInsets.symmetric(

@@ -32,6 +32,11 @@
 // 取数链：切日期后不手动 invalidate 一梭子——summary/records 与运动两族
 // （exercisesProvider/exerciseKcalProvider，M7-T2 起皆 autoDispose）随 watch
 // 自然起新流，同日回访亦重取（≙ app.js:221-223 每次切日期并行拉取）。
+// M8-②：三餐记录卡整卡删除（老大 09-27 真机反馈）——首页不再 watch
+// recordsProvider，取数/error 闸/重试随之收敛为 summary 单路；餐次数据只在
+// 记录页呈现。M8-③：盘子卡卡内横滑切日（M7-T1 裁定的「不移植面」翻案——
+// 胶囊小字「右滑看历史」自本批起言行一致）：右滑=前一天、左滑=后一天，
+// 阈值 ±60px，走 shiftPlateDate（未来闸/三态文案自动生效）。
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -41,7 +46,6 @@ import '../../domain/constants.dart' show exerciseLib;
 import '../../domain/dates.dart' show dateLabelOf, todayIso;
 import '../../domain/exercise.dart' show isRepRecord;
 import '../../domain/js_compat.dart' show jsNumText;
-import '../../domain/models.dart';
 import '../exercise/exercise_controller.dart'
     show deleteExerciseRecord, exerciseKcalProvider, exercisesProvider;
 import '../exercise/exercise_sheet.dart'
@@ -107,13 +111,10 @@ String greetingDateLineOf(DateTime d) {
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
-  /// 数展示：与 H5 一致按整数呈现（Math.round 语义）
-  static String _n(num v) => '${v.round()}';
-
   /// error 态文案：ApiException 露后端 message（H5 err.textContent = e.message 语义），
-  /// 其余异常给通用兜底。两个请求任一失败即整体进 error 卡。
-  static String? _errorMessage(AsyncValue<Object?> a, AsyncValue<Object?> b) {
-    final err = a.hasError ? a.error : (b.hasError ? b.error : null);
+  /// 其余异常给通用兜底。M8-②：records 单路随三餐卡退役，闸只挂 summary。
+  static String? _errorMessage(AsyncValue<Object?> a) {
+    final err = a.hasError ? a.error : null;
     if (err == null) return null;
     return err is ApiException ? err.message : '加载失败，请检查网络后重试';
   }
@@ -124,11 +125,7 @@ class HomeScreen extends ConsumerWidget {
     // todayProvider 仍供记录页/身体卡等非首页语境使用。
     final date = ref.watch(plateDateProvider);
     final summary = ref.watch(summaryProvider(date));
-    final records = ref.watch(recordsProvider(date));
-    // M6-T3 环接线（app.js:298 ex=state.exerciseKcal||0；在途/失败 orElse 0
-    // ≙ H5 loadExercises 前缺省与 catch 降级，不阻断主流程）
-    final ex = ref.watch(exerciseKcalProvider(date));
-    final error = _errorMessage(summary, records);
+    final error = _errorMessage(summary);
 
     return SafeArea(
       child: ListView(
@@ -147,8 +144,7 @@ class HomeScreen extends ConsumerWidget {
           ),
           const SizedBox(height: Tokens.sp4),
           if (error != null)
-            _card(
-              color: Tokens.surface,
+            _homeCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -168,9 +164,8 @@ class HomeScreen extends ConsumerWidget {
                     alignment: Alignment.centerRight,
                     child: TextButton(
                       onPressed: () {
-                        // 重试 = invalidate 两个 provider 重新取数（非本地翻牌）
+                        // 重试 = invalidate summary 重新取数（非本地翻牌）
                         ref.invalidate(summaryProvider(date));
-                        ref.invalidate(recordsProvider(date));
                       },
                       child: const Text('重试'),
                     ),
@@ -179,7 +174,7 @@ class HomeScreen extends ConsumerWidget {
               ),
             )
           else ...[
-            _plateCard(summary, ex),
+            const _PlateSwipeZone(child: _PlateCard()),
             // 建议卡（index.html:106-109；卡序复核见文件头 M6-T5 注。
             // summary 在途整卡不渲染 ≙ app.js:351 `if (!s || !el) return`——
             // 卡体连同其顶部 sp3 间距一并消失（间距在 AdviceCard 卡体条件
@@ -190,8 +185,8 @@ class HomeScreen extends ConsumerWidget {
             // 水卡（index.html:111-131；卡序复核见文件头 M6-T4 注）
             WaterCard(date: date),
             const SizedBox(height: Tokens.sp3),
-            _mealsCard(records),
-            const SizedBox(height: Tokens.sp3),
+            // M8-②：三餐记录卡整卡删除——餐次呈现收敛到记录页，
+            // 首页卡序变 盘子→建议→水→运动。
             // 运动卡（index.html:133-137，H5 首页末位卡；复核注释见文件头）
             HomeExerciseCard(date: date),
           ],
@@ -241,15 +236,42 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
-  /// 餐盘卡（index.html:70-104 .card.plate-card，surface 白底——M2 深色占位卡
-  /// 替换之）。结构 = plate-head（index.html:71-75，M7-T1 落地）+ .plate-top
-  /// （左环右 aside，screens.css:150）+ nutrient-note（index.html:103）。
-  /// 加载期（summary 未回）：环位显静态骨架、aside 数字显"—"——与"加载完成
-  /// 且无记录"的零值态（真实 0/预算数字）可分辨（M2 终审 Minor M1）。
-  /// [ex] 今日运动消耗（M6-T3 接线，app.js:298）；加载期不显 0 而显 —（同口径）。
-  Widget _plateCard(AsyncValue<Summary> summary, int ex) {
+}
+
+/* ---------- M8-③ 盘子卡 + 卡内横滑切日 ---------- */
+
+/// 首页卡片壳（surface 圆角阴影，M8-② 随三餐卡删除从实例方法升为顶层
+/// 共用——HomeScreen error 卡与 _PlateCard 同源）。
+Widget _homeCard({required Widget child}) {
+  return Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(Tokens.sp5),
+    decoration: BoxDecoration(
+      color: Tokens.surface,
+      borderRadius: BorderRadius.circular(Tokens.radiusLg),
+      boxShadow: Tokens.shadowCard,
+    ),
+    child: child,
+  );
+}
+
+/// 餐盘卡（index.html:70-104 .card.plate-card，surface 白底——M2 深色占位卡
+/// 替换之）。结构 = plate-head（index.html:71-75，M7-T1 落地）+ .plate-top
+/// （左环右 aside，screens.css:150）+ nutrient-note（index.html:103）。
+/// 加载期（summary 未回）：环位显静态骨架、aside 数字显"—"——与"加载完成
+/// 且无记录"的零值态（真实 0/预算数字）可分辨（M2 终审 Minor M1）。
+/// M8-③：自 HomeScreen 实例方法拆为独立 ConsumerWidget——日期源
+/// plateDateProvider 自 watch，供 _PlateSwipeZone 包裹（横滑切日手势层）。
+class _PlateCard extends ConsumerWidget {
+  const _PlateCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final date = ref.watch(plateDateProvider);
+    final summary = ref.watch(summaryProvider(date));
+    final ex = ref.watch(exerciseKcalProvider(date));
     final s = summary.value;
-    // H5 renderRing 入参先 Math.round 语义取整（本仓 _n 口径同源）
+    // H5 renderRing 入参先 Math.round 语义取整（本仓整数呈现口径同源）
     final kcal = s?.kcal.round() ?? 0;
     final target = s?.target.round() ?? 0;
     final ring = s == null
@@ -264,8 +286,9 @@ class HomeScreen extends ConsumerWidget {
           );
     // budget = target + ex（app.js:299；M3 恒 0 口子已由实例参数闭环）
     final budget = s == null ? '—' : '${target + ex}';
-    return _card(
+    return _homeCard(
       child: Column(
+        key: const ValueKey('plate-card'),
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const _PlateHead(),
@@ -326,146 +349,76 @@ class HomeScreen extends ConsumerWidget {
       ),
     );
   }
+}
 
-  /// .goal-line（screens.css:164-165）：`标签 数字 kcal`，数字 b 语义
-  /// （ink 色 w600 tabular-nums）
-  Widget _goalLine(String label, String value) {
-    return Text.rich(
-      TextSpan(
-        style: const TextStyle(fontSize: Tokens.textSm, color: Tokens.ink2),
-        children: [
-          TextSpan(text: '$label '),
-          TextSpan(
-            style: const TextStyle(
-              color: Tokens.ink,
-              fontWeight: FontWeight.w600,
-              fontFeatures: [FontFeature.tabularFigures()],
-            ),
-            text: value,
+/// .goal-line（screens.css:164-165）：`标签 数字 kcal`，数字 b 语义
+/// （ink 色 w600 tabular-nums）
+Widget _goalLine(String label, String value) {
+  return Text.rich(
+    TextSpan(
+      style: const TextStyle(fontSize: Tokens.textSm, color: Tokens.ink2),
+      children: [
+        TextSpan(text: '$label '),
+        TextSpan(
+          style: const TextStyle(
+            color: Tokens.ink,
+            fontWeight: FontWeight.w600,
+            fontFeatures: [FontFeature.tabularFigures()],
           ),
-          const TextSpan(text: ' kcal'),
-        ],
-      ),
-    );
+          text: value,
+        ),
+        const TextSpan(text: ' kcal'),
+      ],
+    ),
+  );
+}
+
+/// 盘子卡横滑切日手势层（M8-③， H5 app.js:227-259 卡内左右滑动通道）。
+/// 语义：**右滑（dx>0）=看历史=前一天；左滑=后一天**，阈值 ±60px（H5
+/// 阈值口径），走 shiftPlateDate——未来闸 toast「已经到今天了」/三态文案
+/// 自动生效。与壳层 PageView 的横滑切 tab 竞争：卡内 GestureDetector 位于
+/// 更深层，手势竞技场按最深优先接纳——卡内起滑切日期、卡外起滑切 tab
+/// （plate_swipe_test 双向钉死）。
+class _PlateSwipeZone extends ConsumerStatefulWidget {
+  const _PlateSwipeZone({required this.child});
+
+  final Widget child;
+
+  @override
+  ConsumerState<_PlateSwipeZone> createState() => _PlateSwipeZoneState();
+}
+
+class _PlateSwipeZoneState extends ConsumerState<_PlateSwipeZone> {
+  /// 本次拖拽的水平累计位移（drag start 归零，end 判定后归零）
+  double _dx = 0;
+
+  static const _threshold = 60.0;
+
+  void _toast(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  /// 三餐卡：早餐/午餐/晚餐各行，真实记录渲染「名（portion）… kcal」，空则「未记录」。
-  /// 加载期（records 未回）显静态骨架行（meal-skeleton），不伪装「未记录」零值态
-  /// （M2 终审 Minor M1，与餐盘卡同口径）。
-  Widget _mealsCard(AsyncValue<List<Map<String, dynamic>>> records) {
-    final list = records.value;
-    return _card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('三餐记录', style: TextStyle(fontWeight: FontWeight.w700)),
-          const SizedBox(height: Tokens.sp3),
-          if (list == null)
-            const Column(
-              key: ValueKey('meal-skeleton'),
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _MealSkeletonRow(),
-                _MealSkeletonRow(),
-                _MealSkeletonRow(),
-              ],
-            )
-          else
-            for (final (label, meal) in const [
-              ('早餐', 'breakfast'),
-              ('午餐', 'lunch'),
-              ('晚餐', 'dinner'),
-            ])
-              _mealRow(label, _recordsOf(list, meal)),
-        ],
-      ),
-    );
+  void _end() {
+    final dx = _dx;
+    _dx = 0;
+    if (dx > _threshold) {
+      shiftPlateDate(ref, -1, _toast); // 右滑 → 前一天（看历史）
+    } else if (dx < -_threshold) {
+      shiftPlateDate(ref, 1, _toast); // 左滑 → 后一天（今天被未来闸拦）
+    }
   }
 
-  static List<Map<String, dynamic>> _recordsOf(
-    List<Map<String, dynamic>> list,
-    String meal,
-  ) => list.where((r) => r['meal'] == meal).toList(growable: false);
-
-  Widget _mealRow(String label, List<Map<String, dynamic>> recs) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: Tokens.sp2),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 44,
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: Tokens.ink2,
-                fontSize: Tokens.textSm,
-              ),
-            ),
-          ),
-          Expanded(
-            child: recs.isEmpty
-                ? const Padding(
-                    padding: EdgeInsets.symmetric(vertical: Tokens.sp1),
-                    child: Text(
-                      '未记录',
-                      style: TextStyle(
-                        color: Tokens.ink3,
-                        fontSize: Tokens.textSm,
-                      ),
-                    ),
-                  )
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      for (final r in recs)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                            vertical: Tokens.sp1,
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  '${r['name'] ?? ''}（${r['portion'] ?? ''}）',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: Tokens.ink,
-                                    fontSize: Tokens.textSm,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: Tokens.sp2),
-                              Text(
-                                '${_n((r['kcal'] as num?) ?? 0)} kcal',
-                                style: const TextStyle(
-                                  color: Tokens.ink2,
-                                  fontSize: Tokens.textSm,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                    ],
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _card({required Widget child, Color? color}) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(Tokens.sp5),
-      decoration: BoxDecoration(
-        color: color ?? Tokens.surface,
-        borderRadius: BorderRadius.circular(Tokens.radiusLg),
-        boxShadow: Tokens.shadowCard,
-      ),
-      child: child,
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      key: const ValueKey('plate-swipe'),
+      behavior: HitTestBehavior.opaque,
+      onHorizontalDragUpdate: (d) => _dx += d.delta.dx,
+      onHorizontalDragEnd: (_) => _end(),
+      child: widget.child,
     );
   }
 }
@@ -478,8 +431,8 @@ class HomeScreen extends ConsumerWidget {
 /// › 在 date==今天 时保位隐藏 ≙ :213 style.visibility='hidden'（占格不消失、
 /// 不可点，Visibility maintain* 组合即 CSS visibility 语义）；‹ 恒在（:225）。
 /// 未来闸 toast「已经到今天了」≙ :219（shiftPlateDate 内）。
-/// 不移植面（本任务裁定）：卡内左右滑动通道（app.js:227-259）——「右滑看历史」
-/// 仅系胶囊小字文案，‹ › 按钮即完整可达路径。
+/// M8-③：卡内左右滑动通道（app.js:227-259）翻案落地——见 _PlateSwipeZone，
+/// 「右滑看历史」胶囊小字自本批起言行一致。
 class _PlateHead extends ConsumerWidget {
   const _PlateHead();
 
@@ -628,37 +581,6 @@ class _PlateRingSkeleton extends StatelessWidget {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// 加载期三餐骨架行：标签位 + 灰条占位（高 ≈ textSm 行，surfaceSoft）
-class _MealSkeletonRow extends StatelessWidget {
-  const _MealSkeletonRow();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.symmetric(vertical: Tokens.sp2),
-      child: Row(
-        children: [
-          SizedBox(width: 44), // 标签位列宽（_mealRow 同宽）
-          SizedBox(width: Tokens.sp2),
-          Expanded(
-            child: SizedBox(
-              height: 14,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Tokens.surfaceSoft,
-                  borderRadius: BorderRadius.all(
-                    Radius.circular(Tokens.radiusSm),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }

@@ -98,6 +98,22 @@ ThemeData shiguangTheme() {
           borderRadius: BorderRadius.circular(Tokens.radiusMd),
           borderSide: const BorderSide(color: Tokens.line)),
     ),
-    snackBarTheme: const SnackBarThemeData(behavior: SnackBarBehavior.floating),
+    // M8-④（老大 09-27 真机反馈「消息弹窗太丑」）：全局 toast 主题化胶囊——
+    // primaryDeep 94% 深绿底白字、radius 14（与 SheetToast 同语言）、floating
+    // 天然浮在底部导航之上；动效沿用 SnackBar 自带滑入淡出，时长/队列语义
+    // 由各调用点 ScaffoldMessenger 保持不变（视觉层 R4 自主，行为零变更）。
+    snackBarTheme: SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: const Color(0xF0234D30),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(14))),
+      elevation: 6,
+      insetPadding: const EdgeInsets.fromLTRB(
+          Tokens.sp5, 0, Tokens.sp5, Tokens.sp4),
+      contentTextStyle: const TextStyle(
+          fontSize: Tokens.textSm,
+          fontWeight: FontWeight.w600,
+          color: Colors.white),
+    ),
   );
 }

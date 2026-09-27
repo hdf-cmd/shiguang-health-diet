@@ -123,7 +123,7 @@ void main() {
 
   /* ---------- HomeScreen 接线：加载/零值区分 + aside/note 文案 ---------- */
   group('HomeScreen 餐盘卡', () {
-    testWidgets('加载期：环位/三餐位显静态骨架（不显数字、不显"未记录"），与全空态可分辨',
+    testWidgets('加载期：环位显静态骨架、三餐卡退役（不显数字、不显"未记录"），与全空态可分辨',
         (tester) async {
       final api = StubHealthApi(
         summary: StubHealthApi.summaryMap(kcal: 712, target: 1679, carb: 60, protein: 45, fat: 30),
@@ -134,7 +134,8 @@ void main() {
       await tester.pump(); // 定步 pump：加载期若有持续动画不死等（本实现为静态骨架，无帧）
 
       expect(find.byKey(const ValueKey('plate-ring-skeleton')), findsOneWidget);
-      expect(find.byKey(const ValueKey('meal-skeleton')), findsOneWidget);
+      expect(find.byKey(const ValueKey('meal-skeleton')),
+          findsNothing); // M8-②：三餐卡整卡删除，骨架位不复存在
       expect(find.text('还可摄入 kcal'), findsNothing);
       expect(find.textContaining('已摄入 712'), findsNothing);
       expect(find.text('未记录'), findsNothing); // 加载期不得伪装成全空态
@@ -168,7 +169,7 @@ void main() {
       );
     });
 
-    testWidgets('加载完成且无记录：显真实零值（已摄入 0、环中心=预算、三餐未记录）',
+    testWidgets('加载完成且无记录：显真实零值（已摄入 0、环中心=预算；M8-② 三餐卡不在场）',
         (tester) async {
       // M6-T5 注：AdviceCard 落位后默认 800×600 视口把三餐卡推出 ListView
       // 缓存区（harness.dart 注②病症）→ 撑大视口
@@ -180,7 +181,8 @@ void main() {
       expect(find.byKey(const ValueKey('plate-ring-skeleton')), findsNothing);
       expect(ringNum(tester), '1679'); // 全零摄入 → 还可摄入 = budget
       expect(find.textContaining('已摄入 0 kcal'), findsOneWidget);
-      expect(find.text('未记录'), findsNWidgets(3));
+      expect(find.text('未记录'),
+          findsNothing); // M8-②：三餐「未记录」行随卡退役
     });
 
     testWidgets('error 分支沿用重试行（回归锚：错误优先于骨架）', (tester) async {

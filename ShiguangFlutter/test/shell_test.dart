@@ -33,9 +33,12 @@ void main() {
     await tester.tap(find.text('我的').first);
     await tester.pumpAndSettle();
     // M1 占位 PlaceholderScreen('我的（M2 接入）') 已被 ProfileScreen 替换：
-    // 体重卡入口要素在场（细粒度行为在 test/profile_screen_test.dart 钉）
+    // M8-① 体重卡迁往报告页——本页残面哨兵改钉提醒卡+食物库入口；
+    // 「当前体重」须不在场（反向钉搬家彻底）。
     expect(find.text('我的（M2 接入）'), findsNothing);
-    expect(find.text('当前体重'), findsOneWidget);
+    expect(find.text('当前体重'), findsNothing);
+    expect(find.text('消息提醒 · 系统通知'), findsOneWidget);
+    expect(find.text('食物库'), findsOneWidget);
     expect(find.text('退出登录'), findsOneWidget);
   });
 

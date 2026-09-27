@@ -29,7 +29,7 @@ Widget chartHarness(List<double> points, List<String> labels) => MaterialApp(
 
 Widget reportHarness(StubHealthApi api) => ProviderScope(
       overrides: [healthApiProvider.overrideWithValue(api)],
-      child: const MaterialApp(home: ReportScreen()),
+      child: const MaterialApp(home: Scaffold(body: ReportScreen())), // M8-① 报告页含 WeightLogCard(TextField)，需 Material 祖先（生产由 Shell Scaffold 提供）
     );
 
 void main() {

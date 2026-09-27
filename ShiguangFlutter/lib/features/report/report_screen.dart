@@ -15,6 +15,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
 import '../../domain/report.dart';
+import '../profile/weight_log_card.dart' show WeightLogCard;
 import 'report_controller.dart';
 import 'weight_trend.dart';
 import 'week_chart.dart';
@@ -132,6 +133,10 @@ class _ReportScreenState extends ConsumerState<ReportScreen> {
           // 报告三态分派，自己管加载/错误/空数据/有数据四态，周报失败也在。
           const SizedBox(height: Tokens.sp4), // .weight-trend margin-top --sp-4
           _weightCard(),
+          // M8-①（老大 09-27 真机反馈）：体重记录卡自「我的」页搬来，贴
+          // 趋势图下方——记完即见图变化（保存链 invalidate weightTrendProvider）。
+          const SizedBox(height: Tokens.sp4),
+          const WeightLogCard(),
         ],
       ),
     );

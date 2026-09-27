@@ -16,7 +16,7 @@ import '../features/exercise/exercise_controller.dart' show exercisesProvider;
 import '../features/home/home_controller.dart'
     show plateDateProvider, recordsProvider, summaryProvider, waterOverrideProvider;
 import '../features/profile/profile_providers.dart' show profileProvider;
-import '../features/profile/profile_screen.dart' show profileWeightProvider;
+import '../features/profile/weight_log_card.dart' show profileWeightProvider;
 import '../features/record/food_freq.dart' show foodFreqProvider;
 import '../features/report/report_controller.dart'
     show monthReportProvider, weekReportProvider, weightTrendProvider;
