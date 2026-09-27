@@ -20,6 +20,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/auth_state.dart';
 import '../../app/theme.dart';
 import '../common/food_thumb.dart';
+import '../common/sheet.dart' show showShiguangSheet;
 import '../common/sheet_toast.dart' show SheetToast;
 import '../notifications/reminder_scheduler.dart';
 import 'body_profile_card.dart' show BodyProfileCard;
@@ -109,16 +110,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   /// 「提醒设置」弹层（M6-T6 方案 A）：卡面两枚诊断钮收进层内「诊断」区，
   /// 按钮直连原 [_testMealReminder]/[_testWaterReminder]，行为零变更。
-  /// 样式沿用弹层族（profile_edit_sheet/goal_sheet 的 showModalBottomSheet 定式）。
+  /// M9-T8：开层样板收口 showShiguangSheet（原定式与弹层族同构；本层原
+  /// 未传 isScrollControlled，收口后统一 78% 最大高+可滚容器语义）。
   Future<void> _openReminderSettings() {
-    return showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Tokens.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius:
-            BorderRadius.vertical(top: Radius.circular(Tokens.radiusSheet)),
-      ),
-      builder: (_) => _ReminderSettingsSheet(
+    return showShiguangSheet<void>(
+      context,
+      title: '提醒设置', // 原标题行逐字（现由 helper 承载）
+      child: _ReminderSettingsSheet(
         onTestMeal: _testMealReminder,
         onTestWater: _testWaterReminder,
         bindToastSink: (sink, mySink) {
@@ -446,38 +444,17 @@ class _ReminderSettingsSheetState extends State<_ReminderSettingsSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-            Tokens.sp5, Tokens.sp3, Tokens.sp5, Tokens.sp4),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                const Text('提醒设置',
-                    style: TextStyle(
-                        fontSize: Tokens.textLg,
-                        fontWeight: FontWeight.w800,
-                        color: Tokens.ink)),
-                const Spacer(),
-                Semantics(
-                  label: '关闭', // 弹层族 ✕ aria 定式
-                  button: true,
-                  child: GestureDetector(
-                    onTap: () => Navigator.of(context).pop(),
-                    child: const Padding(
-                      padding: EdgeInsets.all(Tokens.sp1),
-                      child: Text('✕',
-                          style: TextStyle(
-                              fontSize: Tokens.textMd, color: Tokens.ink3)),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: Tokens.sp3),
+    // M9-T8：标题行「提醒设置」+ ✕ 与 SafeArea 由 showShiguangSheet 承载，
+    // 本地副本删除；原顶部 sp3 内边距归零（层内标题后既有 sp3 间距保留，
+    // 标题→说明的净距离不变），其余业务内容一字未改。
+    return Padding(
+      padding:
+          const EdgeInsets.fromLTRB(Tokens.sp5, 0, Tokens.sp5, Tokens.sp4),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: Tokens.sp3),
             // 说明（与开关开启 toast「提醒已开启：每天定点弹系统通知」同族措辞，
             // 简报 Step 2 指定文本）
             const Text('开启后每天定点弹系统通知',
@@ -497,8 +474,7 @@ class _ReminderSettingsSheetState extends State<_ReminderSettingsSheet> {
               onPressed: widget.onTestWater,
               child: const Text('发一条喝水到点提醒（测试）'),
             ),
-          ],
-        ),
+        ],
       ),
     );
   }

@@ -24,6 +24,7 @@ import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
 import '../../domain/constants.dart';
 import '../common/food_thumb.dart';
+import '../common/sheet.dart' show showShiguangSheet;
 import 'custom_food_sheet.dart';
 import 'portion_sheet.dart';
 import 'food_freq.dart';
@@ -34,15 +35,12 @@ Future<void> showSearchSheet(
   required String date,
   required String meal,
 }) {
-  return showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Tokens.surface,
-    shape: const RoundedRectangleBorder(
-      borderRadius:
-          BorderRadius.vertical(top: Radius.circular(Tokens.radiusSheet)),
-    ),
-    builder: (_) => SearchSheet(date: date, meal: meal),
+  // M9-T8：开层样板收口 showShiguangSheet；弹层标题「记一笔 · <餐次>」
+  // （js/app.js:613）原在层内首行，现逐字上移为 helper 标题。
+  return showShiguangSheet<void>(
+    context,
+    title: '记一笔 · ${mealNames[meal] ?? ''}',
+    child: SearchSheet(date: date, meal: meal),
   );
 }
 
@@ -155,34 +153,17 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
     final query = (keyword: _keyword, meal: widget.meal);
     final results = ref.watch(searchProvider(query));
 
-    return SafeArea(
-      child: SizedBox(
-        height: MediaQuery.of(context).size.height * 0.72,
-        child: Padding(
-          padding: const EdgeInsets.all(Tokens.sp4),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // 弹层标题「记一笔 · <餐次>」（js/app.js:613）
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '记一笔 · ${mealNames[widget.meal] ?? ''}',
-                      style: const TextStyle(
-                          fontSize: Tokens.textLg,
-                          fontWeight: FontWeight.w800,
-                          color: Tokens.ink),
-                    ),
-                  ),
-                  IconButton(
-                    key: const ValueKey('sheet-close'),
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close, color: Tokens.ink3),
-                    tooltip: '关闭',
-                  ),
-                ],
-              ),
+    // M9-T8：弹层标题「记一笔 · <餐次>」+ ✕（原 ValueKey('sheet-close')
+    // IconButton，tooltip「关闭」）由 showShiguangSheet 标题行承载，本地
+    // 副本删除；内层 SafeArea 与 helper 重复去内层留 helper 的；0.72h 内容
+    // 高经 helper Flexible 槽承接（超 78% 上限按约束回缩，Expanded 列表自适应）。
+    return SizedBox(
+      height: MediaQuery.of(context).size.height * 0.72,
+      child: Padding(
+        padding: const EdgeInsets.all(Tokens.sp4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
               const SizedBox(height: Tokens.sp2),
               // 搜索框行 + 常驻「＋ 自定义」钮（≙ index.html:276
               // #sheet-cf-open，文案逐字；点击 ≙ js/app.js:1275
@@ -303,7 +284,6 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
             ],
           ),
         ),
-      ),
     );
   }
 

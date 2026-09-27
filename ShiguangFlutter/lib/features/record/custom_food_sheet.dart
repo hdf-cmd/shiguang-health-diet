@@ -53,6 +53,7 @@ import '../../domain/constants.dart';
 import '../../domain/dates.dart';
 import '../common/food_thumb.dart';
 import '../common/image_pick.dart';
+import '../common/sheet.dart' show showShiguangSheet;
 import 'record_controller.dart';
 
 /// 选图注入面（≙ T5 AvatarPicker 做法）：入参来源，返回压缩 dataURL/失败态。
@@ -131,15 +132,13 @@ Future<void> openCustomFoodSheet(
   required void Function() onSaved,
   CustomFoodImagePicker pickImage = _defaultPickImage,
 }) {
-  return showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true, // 键盘弹出/表单滚到底（目检项）
-    backgroundColor: Tokens.surface,
-    shape: const RoundedRectangleBorder(
-      borderRadius:
-          BorderRadius.vertical(top: Radius.circular(Tokens.radiusSheet)),
-    ),
-    builder: (_) => _CustomFoodSheet(
+  // M9-T8：开层样板收口 showShiguangSheet；标题「自定义食物」+ ✕
+  // （index.html:509-511）上移 helper，sheet-close 键位经 closeKey 透传。
+  return showShiguangSheet<void>(
+    context,
+    title: '自定义食物', // :509 逐字
+    closeKey: const Key('sheet-close'), // :511 ✕ 键位透传
+    child: _CustomFoodSheet(
       date: date,
       meal: meal,
       initialName: initialName,
@@ -392,44 +391,21 @@ class _CustomFoodSheetState extends ConsumerState<_CustomFoodSheet> {
   @override
   Widget build(BuildContext context) {
     final messenger = ScaffoldMessenger.of(context);
+    // M9-T8：标题「自定义食物」+ ✕（index.html:509-511，Key('sheet-close')
+    // 键位经 helper closeKey 透传）与内层 SafeArea 由 showShiguangSheet 承载，
+    // 本地副本删除；顶部 sp3 内边距归零（其下原有 SizedBox(sp3) 承接净距）；
+    // viewInsets 包裹与 SingleChildScrollView 保留（键盘弹出/表单滚到底目检项，
+    // 弹层实高由 helper 78% 上限约束，viewport 随约束收缩可滚到两钮）。
     return Padding(
       // 键盘上滚（目检项：两钮不遮）
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-      child: SafeArea(
-        // 不设百分比 maxHeight：BottomSheet 自身把 isScrollControlled 弹层
-        // 限到屏高，SingleChildScrollView  viewport=弹层实高即可滚到两钮
-        //（MediaQuery 路由内值≠测试 setSurfaceSize，勿依赖其做高度预算）
-        child: SingleChildScrollView(
+      child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(
-              Tokens.sp5, Tokens.sp3, Tokens.sp5, Tokens.sp4),
+              Tokens.sp5, 0, Tokens.sp5, Tokens.sp4),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-                // 标题「自定义食物」+ ✕（index.html:509-511）
-                Row(
-                  children: [
-                    const Text('自定义食物', style: TextStyle(
-                        fontSize: Tokens.textLg,
-                        fontWeight: FontWeight.w800,
-                        color: Tokens.ink)),
-                    const Spacer(),
-                    Semantics(
-                      label: '关闭', // :511 aria-label 逐字
-                      button: true,
-                      child: GestureDetector(
-                        key: const Key('sheet-close'),
-                        onTap: () => Navigator.of(context).pop(),
-                        child: const Padding(
-                          padding: EdgeInsets.all(Tokens.sp1),
-                          child: Text('✕',
-                              style: TextStyle(
-                                  fontSize: Tokens.textMd, color: Tokens.ink3)),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
                 const SizedBox(height: Tokens.sp3),
                 // 食物名称（:513-515，maxlength=30，占位逐字）
                 const Text('食物名称', style: _label),
@@ -608,7 +584,6 @@ class _CustomFoodSheetState extends ConsumerState<_CustomFoodSheet> {
               ],
             ),
           ),
-        ),
       );
   }
 

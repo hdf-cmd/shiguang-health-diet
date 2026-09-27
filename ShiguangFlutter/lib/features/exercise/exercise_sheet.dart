@@ -29,6 +29,7 @@ import '../../domain/constants.dart' show Exercise, exerciseLib;
 import '../../domain/exercise.dart'
     show exerciseAmountLabel, exerciseKcalOf;
 import '../../domain/js_compat.dart' show jsFixed1, jsNumber;
+import '../common/sheet.dart' show showShiguangSheet;
 import '../profile/profile_providers.dart' show profileProvider;
 import 'exercise_controller.dart'
     show addExerciseRecord, exerciseWeightKg;
@@ -61,15 +62,11 @@ Future<void> openExerciseSheet(
   WidgetRef ref, {
   required String date,
 }) {
-  return showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Tokens.surface,
-    shape: const RoundedRectangleBorder(
-      borderRadius:
-          BorderRadius.vertical(top: Radius.circular(Tokens.radiusSheet)),
-    ),
-    builder: (_) => _ExerciseSheet(date: date, hostRef: ref),
+  return showShiguangSheet<void>(
+    context,
+    title: '记运动', // :419 逐字（M9-T8 起由 helper 标题行承载）
+    closeKey: exCloseKey, // :421 ✕ 键位透传
+    child: _ExerciseSheet(date: date, hostRef: ref),
   );
 }
 
@@ -228,41 +225,19 @@ class _ExerciseSheetState extends ConsumerState<_ExerciseSheet> {
         orElse: () => null);
     final previewKcal = exerciseKcalOf(lib, _parseField(), wKg); // :1767-1768
 
+    // M9-T8：标题「记运动」+ ✕（index.html:419-422，exCloseKey 键位经
+    // helper closeKey 透传）与内层 SafeArea 由 showShiguangSheet 承载，本地
+    // 副本删除；顶部 sp3 内边距归零（chips 前原 SizedBox(sp3) 提供标题下
+    // 间距，净距不变）；viewInsets 包裹保留（键盘避让）。
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-      child: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(
-              Tokens.sp5, Tokens.sp3, Tokens.sp5, Tokens.sp4),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // 标题「记运动」+ ✕（index.html:419-422）
-              Row(
-                children: [
-                  const Text('记运动',
-                      style: TextStyle(
-                          fontSize: Tokens.textLg,
-                          fontWeight: FontWeight.w800,
-                          color: Tokens.ink)),
-                  const Spacer(),
-                  Semantics(
-                    label: '关闭', // :421 aria-label 逐字
-                    button: true,
-                    child: GestureDetector(
-                      key: exCloseKey,
-                      onTap: () => Navigator.of(context).pop(),
-                      child: const Padding(
-                        padding: EdgeInsets.all(Tokens.sp1),
-                        child: Text('✕',
-                            style: TextStyle(
-                                fontSize: Tokens.textMd, color: Tokens.ink3)),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(
+            Tokens.sp5, 0, Tokens.sp5, Tokens.sp4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
               const SizedBox(height: Tokens.sp3),
               // chips（:423 #exercise-chips，exerciseLib 全量，emoji+名）
               // M8-⑤（老大 09-27 真机反馈「参差不齐」）：H5 系流式 chips 按
@@ -398,7 +373,6 @@ class _ExerciseSheetState extends ConsumerState<_ExerciseSheet> {
             ],
           ),
         ),
-      ),
     );
   }
 

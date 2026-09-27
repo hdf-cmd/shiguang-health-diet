@@ -44,6 +44,7 @@ import '../../domain/constants.dart' show activity;
 import '../../domain/js_compat.dart' show jsFixed1, jsNumText;
 import '../../domain/metabolism.dart' show computeMetabolism;
 import '../../domain/models.dart' show Body;
+import '../common/sheet.dart' show showShiguangSheet;
 import '../exercise/exercise_controller.dart' show exerciseKcalProvider;
 import '../home/home_controller.dart'
     show healthApiProvider, summaryProvider, todayProvider;
@@ -185,15 +186,13 @@ class BodyProfileCard extends ConsumerWidget {
       return;
     }
     final messenger = ScaffoldMessenger.of(context);
-    final bodyMap = await showModalBottomSheet<Map<String, Object?>>(
-      context: context,
-      isScrollControlled: true, // 表单长，可滚动（目检项）
-      backgroundColor: Tokens.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius:
-            BorderRadius.vertical(top: Radius.circular(Tokens.radiusSheet)),
-      ),
-      builder: (_) => _BodyProfileSheet(initial: _bodyOf(p)),
+    // M9-T8：开层样板收口 showShiguangSheet；泛型 pop 值 Map<String, Object?>
+    // 经 helper 原样透传（✕/外触关闭回 null 的判定不变）；标题「身体档案」
+    // （index.html:359）原在层内首行，现逐字上移为 helper 标题。
+    final bodyMap = await showShiguangSheet<Map<String, Object?>>(
+      context,
+      title: '身体档案',
+      child: _BodyProfileSheet(initial: _bodyOf(p)),
     );
     if (bodyMap == null) return; // ✕/外触关闭：H5 closeBodySheet 无保存动作
     await saveBodyProfile(ref, bodyMap, (msg) {
@@ -509,43 +508,23 @@ class _BodyProfileSheetState extends State<_BodyProfileSheet> {
 
   @override
   Widget build(BuildContext context) {
+    // M9-T8：标题「身体档案」+ ✕（index.html:359-360）与内层 SafeArea 由
+    // showShiguangSheet 承载，本地副本删除；0.9h ConstrainedBox 原样保留
+    // （helper 78% 上限更紧，实际生效者为其）；顶部 sp3 归零（其下原有
+    // SizedBox(sp3) 承接净距）；viewInsets 包裹与可滚表单保留（表单长目检项）。
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-      child: SafeArea(
-        child: ConstrainedBox(
-          // 表单长（六组控件+保存）：限高可滚动（R4 关注滚动可用性）
-          constraints: BoxConstraints(
-              maxHeight: MediaQuery.sizeOf(context).height * 0.9),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(
-                Tokens.sp5, Tokens.sp3, Tokens.sp5, Tokens.sp4),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    const Text('身体档案', // index.html:359 逐字
-                        style: TextStyle(
-                            fontSize: Tokens.textLg,
-                            fontWeight: FontWeight.w800,
-                            color: Tokens.ink)),
-                    const Spacer(),
-                    Semantics(
-                      label: '关闭', // :360 aria-label 逐字
-                      child: GestureDetector(
-                        onTap: () => Navigator.of(context).pop(),
-                        child: const Padding(
-                          padding: EdgeInsets.all(Tokens.sp1),
-                          child: Text('✕',
-                              style: TextStyle(
-                                  fontSize: Tokens.textMd,
-                                  color: Tokens.ink3)),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+      child: ConstrainedBox(
+        // 表单长（六组控件+保存）：限高可滚动（R4 关注滚动可用性）
+        constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.9),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(
+              Tokens.sp5, 0, Tokens.sp5, Tokens.sp4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
                 const SizedBox(height: Tokens.sp3),
                 _stepper(
                     label: '身高', // :363 逐字
@@ -658,7 +637,6 @@ class _BodyProfileSheetState extends State<_BodyProfileSheet> {
             ),
           ),
         ),
-      ),
     );
   }
 

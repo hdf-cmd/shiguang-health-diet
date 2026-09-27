@@ -62,6 +62,7 @@ import '../../data/swr_cache.dart' show swrCacheProvider;
 import '../../domain/js_compat.dart' show jsNumText, jsOr;
 import '../common/food_thumb.dart';
 import '../common/skeleton.dart' show SkeletonBar;
+import '../common/sheet.dart' show showShiguangSheet;
 import '../common/sheet_toast.dart';
 import '../common/stagger.dart' show Stagger;
 import '../home/home_controller.dart' show healthApiProvider, plateDateProvider;
@@ -129,15 +130,12 @@ String cfMealKind(Object? meals) {
 /// 不落今天；meal=默认档正餐，fromLib 单钮形态 T8 终裁不做，见头注与
 /// custom_food_sheet.dart「有意背离」登记）。
 Future<void> openFoodLibSheet(BuildContext context, WidgetRef ref) async {
-  final addRequested = await showModalBottomSheet<bool>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Tokens.surface,
-    shape: const RoundedRectangleBorder(
-      borderRadius:
-          BorderRadius.vertical(top: Radius.circular(Tokens.radiusSheet)),
-    ),
-    builder: (_) => const _FoodLibSheet(),
+  // M9-T8：开层样板收口 showShiguangSheet；bool addRequested 返回语义不变
+  // （helper 原样透传 showModalBottomSheet<bool> 的 pop 值）。
+  final addRequested = await showShiguangSheet<bool>(
+    context,
+    title: '我的食物库', // :566 逐字（原标题行现由 helper 承载）
+    child: const _FoodLibSheet(),
   );
   if (addRequested == true) {
     if (!context.mounted) return; // 层动画期间入口页可能已销毁
@@ -477,40 +475,17 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
   @override
   Widget build(BuildContext context) {
     final sheetH = MediaQuery.sizeOf(context).height * 0.72;
-    return SafeArea(
-      child: SizedBox(
-        height: sheetH,
-        child: Padding(
-          padding:
-              const EdgeInsets.fromLTRB(Tokens.sp5, Tokens.sp3, Tokens.sp5, Tokens.sp4),
-          child: Column(
+    // M9-T8：sheet-head 标题「我的食物库」+ ✕（index.html:565-568）与内层
+    // SafeArea 由 showShiguangSheet 承载，本地副本删除；0.72h 内容高经 helper
+    // Flexible 槽承接（超出 78% 上限时按约束回缩，Expanded 列表自适应）。
+    return SizedBox(
+      height: sheetH,
+      child: Padding(
+        padding:
+            const EdgeInsets.fromLTRB(Tokens.sp5, 0, Tokens.sp5, Tokens.sp4),
+        child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // sheet-head（index.html:565-568）
-              Row(
-                children: [
-                  const Text('我的食物库',
-                      style: TextStyle(
-                          fontSize: Tokens.textLg,
-                          fontWeight: FontWeight.w800,
-                          color: Tokens.ink)),
-                  const Spacer(),
-                  Semantics(
-                    label: '关闭', // :567 aria-label 逐字
-                    button: true,
-                    child: GestureDetector(
-                      onTap: () => Navigator.of(context).pop(),
-                      child: const Padding(
-                        padding: EdgeInsets.all(Tokens.sp1),
-                        child: Text('✕',
-                            style: TextStyle(
-                                fontSize: Tokens.textMd,
-                                color: Tokens.ink3)),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
               const SizedBox(height: Tokens.sp3),
               // segmented（:569-572 双钮，文案逐字）
               Row(
@@ -564,7 +539,6 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
             ],
           ),
         ),
-      ),
     );
   }
 

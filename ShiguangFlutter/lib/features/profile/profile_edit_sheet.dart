@@ -32,6 +32,7 @@ import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
 import '../common/food_thumb.dart';
 import '../common/image_pick.dart';
+import '../common/sheet.dart' show showShiguangSheet;
 import '../home/home_controller.dart' show healthApiProvider;
 import 'profile_providers.dart';
 
@@ -78,15 +79,10 @@ Future<void> openProfileEditSheet(
   // 不等待在途请求（加载/失败态点头部由页侧「点击重试」承担，见 profile_screen）。
   final p = ref.read(profileProvider).value;
   if (p == null) return;
-  await showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true, // 键盘弹出时可上滚（目检项）
-    backgroundColor: Tokens.surface,
-    shape: const RoundedRectangleBorder(
-      borderRadius:
-          BorderRadius.vertical(top: Radius.circular(Tokens.radiusSheet)),
-    ),
-    builder: (_) => _ProfileEditSheet(initial: p, pickAvatar: pickAvatar),
+  await showShiguangSheet<void>(
+    context,
+    title: '编辑资料', // index.html:440 逐字（M9-T8 起由 helper 标题行承载）
+    child: _ProfileEditSheet(initial: p, pickAvatar: pickAvatar),
   );
 }
 
@@ -192,39 +188,18 @@ class _ProfileEditSheetState extends ConsumerState<_ProfileEditSheet> {
     final p = ref.watch(profileProvider).value ?? widget.initial;
     final avatarData = avatarDataOf(p);
     final initial = avatarInitial(p, fallback: '食'); // :1134 弹层链带「食」
+    // M9-T8：标题「编辑资料」+ ✕（index.html:440-441）与内层 SafeArea 由
+    // showShiguangSheet 承载，本地副本删除；顶部 sp3 归零（其下原有
+    // SizedBox(sp3) 承接标题→头像行净距）；viewInsets 包裹保留（键盘避让）。
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(
-              Tokens.sp5, Tokens.sp3, Tokens.sp5, Tokens.sp4),
-          child: Column(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+            Tokens.sp5, 0, Tokens.sp5, Tokens.sp4),
+        child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(
-                children: [
-                  const Text('编辑资料', // index.html:440 逐字
-                      style: TextStyle(
-                          fontSize: Tokens.textLg,
-                          fontWeight: FontWeight.w800,
-                          color: Tokens.ink)),
-                  const Spacer(),
-                  Semantics(
-                    label: '关闭', // :441 aria-label 逐字
-                    button: true,
-                    child: GestureDetector(
-                      onTap: () => Navigator.of(context).pop(),
-                      child: const Padding(
-                        padding: EdgeInsets.all(Tokens.sp1),
-                        child: Text('✕',
-                            style: TextStyle(
-                                fontSize: Tokens.textMd, color: Tokens.ink3)),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
               const SizedBox(height: Tokens.sp3),
               // 头像预览行（:443-446 pe-avatar-row）
               Row(
@@ -292,7 +267,6 @@ class _ProfileEditSheetState extends ConsumerState<_ProfileEditSheet> {
             ],
           ),
         ),
-      ),
     );
   }
 

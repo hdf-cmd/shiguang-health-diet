@@ -16,6 +16,7 @@ import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
 import '../../domain/models.dart' show Per100;
 import '../../domain/portion.dart' show portionMacros;
+import '../common/sheet.dart' show showShiguangSheet;
 import 'record_controller.dart';
 
 /// 滑杆取值域与步进（简报：1-maxG 步进 5；下限取 5 保证整步格，上限沿用 H5 2000）
@@ -36,15 +37,13 @@ Future<void> showPortionSheet(
   required String date,
   required String meal,
 }) {
-  return showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Tokens.surface,
-    shape: const RoundedRectangleBorder(
-      borderRadius:
-          BorderRadius.vertical(top: Radius.circular(Tokens.radiusSheet)),
-    ),
-    builder: (_) => PortionSheet(food: food, date: date, meal: meal),
+  // M9-T8：开层样板收口 showShiguangSheet；标题「X · 自定义份量」
+  // （js/app.js:721）原在层内首行，现逐字上移为 helper 标题。
+  final name = '${food['name'] ?? ''}';
+  return showShiguangSheet<void>(
+    context,
+    title: '$name · 自定义份量',
+    child: PortionSheet(food: food, date: date, meal: meal),
   );
 }
 
@@ -143,98 +142,78 @@ class _PortionSheetState extends ConsumerState<PortionSheet> {
   @override
   Widget build(BuildContext context) {
     final r = portionMacros(_per100, _grams.round());
-    final name = '${widget.food['name'] ?? ''}';
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(Tokens.sp4),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  // 标题「X · 自定义份量」（js/app.js:721）
-                  child: Text(
-                    '$name · 自定义份量',
-                    style: const TextStyle(
-                        fontSize: Tokens.textLg,
-                        fontWeight: FontWeight.w800,
-                        color: Tokens.ink),
-                  ),
+    // M9-T8：标题「X · 自定义份量」（js/app.js:721）与 ✕（原
+    // ValueKey('portion-close') IconButton，tooltip「关闭」）由
+    // showShiguangSheet 标题行承载，本地副本删除；内层 SafeArea 与
+    // helper 重复去内层留 helper 的。滑杆/预览/确认钮业务 widget 不改。
+    return Padding(
+      padding: const EdgeInsets.all(Tokens.sp4),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.horizontal_rule,
+                  color: Tokens.ink3, size: Tokens.textMd),
+              Expanded(
+                child: Slider(
+                  key: const ValueKey('portion-slider'),
+                  value: _grams,
+                  min: _kMinG,
+                  max: _kMaxG,
+                  divisions: ((_kMaxG - _kMinG) / _kStepG).round(),
+                  label: '${_grams.round()}$_unit',
+                  activeColor: Tokens.primary,
+                  onChanged: (v) => setState(() => _grams = _snap(v)),
                 ),
-                IconButton(
-                  key: const ValueKey('portion-close'),
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close, color: Tokens.ink3),
-                  tooltip: '关闭',
+              ),
+              SizedBox(
+                width: 64,
+                child: Text(
+                  '${_grams.round()}$_unit',
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(
+                      fontSize: Tokens.textLg,
+                      fontWeight: FontWeight.w800,
+                      color: Tokens.primaryDeep),
                 ),
-              ],
+              ),
+            ],
+          ),
+          // 换算提示（js/app.js:724 语义）
+          const SizedBox(height: Tokens.sp1),
+          Text(
+            '拖动滑杆调整$_unit数，营养按每 100$_unit 换算',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: Tokens.textSm, color: Tokens.ink3),
+          ),
+          const SizedBox(height: Tokens.sp3),
+          // 实时宏量预览（js/app.js:737）
+          Container(
+            key: const ValueKey('portion-preview'),
+            padding: const EdgeInsets.all(Tokens.sp3),
+            decoration: BoxDecoration(
+              color: Tokens.primarySoft,
+              borderRadius: BorderRadius.circular(Tokens.radiusMd),
             ),
-            const SizedBox(height: Tokens.sp3),
-            Row(
-              children: [
-                const Icon(Icons.horizontal_rule,
-                    color: Tokens.ink3, size: Tokens.textMd),
-                Expanded(
-                  child: Slider(
-                    key: const ValueKey('portion-slider'),
-                    value: _grams,
-                    min: _kMinG,
-                    max: _kMaxG,
-                    divisions: ((_kMaxG - _kMinG) / _kStepG).round(),
-                    label: '${_grams.round()}$_unit',
-                    activeColor: Tokens.primary,
-                    onChanged: (v) => setState(() => _grams = _snap(v)),
-                  ),
-                ),
-                SizedBox(
-                  width: 64,
-                  child: Text(
-                    '${_grams.round()}$_unit',
-                    textAlign: TextAlign.right,
-                    style: const TextStyle(
-                        fontSize: Tokens.textLg,
-                        fontWeight: FontWeight.w800,
-                        color: Tokens.primaryDeep),
-                  ),
-                ),
-              ],
-            ),
-            // 换算提示（js/app.js:724 语义）
-            const SizedBox(height: Tokens.sp1),
-            Text(
-              '拖动滑杆调整$_unit数，营养按每 100$_unit 换算',
+            child: Text(
+              '${_grams.round()}$_unit ≈ ${r.kcal.round()} kcal · 蛋白 ${r.protein}g / 碳水 ${r.carb}g / 脂肪 ${r.fat}g',
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: Tokens.textSm, color: Tokens.ink3),
+              style: const TextStyle(
+                  fontSize: Tokens.textMd,
+                  fontWeight: FontWeight.w700,
+                  color: Tokens.primaryDeep),
             ),
-            const SizedBox(height: Tokens.sp3),
-            // 实时宏量预览（js/app.js:737）
-            Container(
-              key: const ValueKey('portion-preview'),
-              padding: const EdgeInsets.all(Tokens.sp3),
-              decoration: BoxDecoration(
-                color: Tokens.primarySoft,
-                borderRadius: BorderRadius.circular(Tokens.radiusMd),
-              ),
-              child: Text(
-                '${_grams.round()}$_unit ≈ ${r.kcal.round()} kcal · 蛋白 ${r.protein}g / 碳水 ${r.carb}g / 脂肪 ${r.fat}g',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                    fontSize: Tokens.textMd,
-                    fontWeight: FontWeight.w700,
-                    color: Tokens.primaryDeep),
-              ),
-            ),
-            const SizedBox(height: Tokens.sp4),
-            FilledButton(
-              // pending 期禁用 +「请稍候…」（H5 js/app.js:677/693 disabled 语义，
-              // 文案同 js/app.js:1902 提交态），完成后随 setState 恢复
-              onPressed: _pending ? null : _save,
-              child: Text(_pending ? '请稍候…' : '确认添加'),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: Tokens.sp4),
+          FilledButton(
+            // pending 期禁用 +「请稍候…」（H5 js/app.js:677/693 disabled 语义，
+            // 文案同 js/app.js:1902 提交态），完成后随 setState 恢复
+            onPressed: _pending ? null : _save,
+            child: Text(_pending ? '请稍候…' : '确认添加'),
+          ),
+        ],
       ),
     );
   }

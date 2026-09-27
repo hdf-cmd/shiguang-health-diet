@@ -23,6 +23,7 @@ import '../../domain/constants.dart'
     show waterCupMl, waterGoalMin, waterGoalMax;
 import '../../domain/js_compat.dart'
     show jsNumText, jsNumber, jsOr, jsParseFloat;
+import '../common/sheet.dart' show showShiguangSheet;
 import '../common/sheet_toast.dart' show SheetToast;
 import '../profile/profile_providers.dart' show profileProvider;
 import 'home_controller.dart' show healthApiProvider;
@@ -50,16 +51,11 @@ Future<void> openGoalSheet(
   WidgetRef ref, {
   required num goalMl,
 }) {
-  return showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Tokens.surface,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(
-        top: Radius.circular(Tokens.radiusSheet),
-      ),
-    ),
-    builder: (_) => _GoalSheet(hostRef: ref, goalMl: goalMl),
+  return showShiguangSheet<void>(
+    context,
+    title: '喝水目标', // :297 逐字（M9-T8 起由 helper 标题行承载）
+    closeKey: goalCloseKey, // :299 ✕ 键位透传（find.byKey 测试选择器不动）
+    child: _GoalSheet(hostRef: ref, goalMl: goalMl),
   );
 }
 
@@ -184,151 +180,121 @@ class _GoalSheetState extends ConsumerState<_GoalSheet> {
 
   @override
   Widget build(BuildContext context) {
+    // M9-T8：.sheet-head 标题「喝水目标」+ ✕（index.html:296-299，goalCloseKey
+    // 键位经 helper closeKey 透传）与内层 SafeArea 由 showShiguangSheet 承载，
+    // 本地副本删除；顶部 sp3 内边距归零（原标题占位）；viewInsets 包裹保留
+    // （键盘避让口径），步进/注记/保存钮业务 widget 一字未改。
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-      child: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(
-            Tokens.sp5,
-            Tokens.sp3,
-            Tokens.sp5,
-            Tokens.sp4,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // .sheet-head：标题「喝水目标」+ ✕（index.html:296-299）
-              Row(
-                children: [
-                  const Text(
-                    '喝水目标',
-                    style: TextStyle(
-                      fontSize: Tokens.textLg,
-                      fontWeight: FontWeight.w800,
-                      color: Tokens.ink,
-                    ),
-                  ),
-                  const Spacer(),
-                  Semantics(
-                    label: '关闭', // :299 aria-label 逐字
-                    button: true,
-                    child: GestureDetector(
-                      key: goalCloseKey,
-                      onTap: () => Navigator.of(context).pop(),
-                      child: const Padding(
-                        padding: EdgeInsets.all(Tokens.sp1),
-                        child: Text(
-                          '✕',
-                          style: TextStyle(
-                            fontSize: Tokens.textMd,
-                            color: Tokens.ink3,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(
+          Tokens.sp5,
+          0,
+          Tokens.sp5,
+          Tokens.sp4,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // .goal-stepper（:300-303；margin --sp-5 0 --sp-3）
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                0,
+                Tokens.sp5,
+                0,
+                Tokens.sp3,
               ),
-              // .goal-stepper（:300-303；margin --sp-5 0 --sp-3）
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  0,
-                  Tokens.sp5,
-                  0,
-                  Tokens.sp3,
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    _stepperBtn(
-                      goalDecKey,
-                      '−',
-                      '减少 ${waterCupMl}ml',
-                      () => _bump(-1),
-                    ), // :299 aria
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: Tokens.sp2,
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.baseline,
-                        textBaseline: TextBaseline.alphabetic,
-                        children: [
-                          SizedBox(
-                            width: 120, // .stepper-input 96px 系 css font-display 窄数字；
-                            // Flutter 默认字体 34px 四位数字实测 ~100px+，96 会裁尾
-                            // （目检 05/06 实证），放宽到 120（R4 版式修正）
-                            child: Semantics(
-                              label: '喝水目标 ml', // :301 aria-label 逐字
-                              child: TextField(
-                                controller: _ctl,
-                                focusNode: _focus,
-                                key: goalValueKey,
-                                textAlign: TextAlign.center,
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                      decimal: true,
-                                    ),
-                                // M5-T7 定式：字符类过滤；非法/小数由归一兜底
-                                inputFormatters: [
-                                  FilteringTextInputFormatter.allow(
-                                    RegExp(r'[0-9.]'),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _stepperBtn(
+                    goalDecKey,
+                    '−',
+                    '减少 ${waterCupMl}ml',
+                    () => _bump(-1),
+                  ), // :299 aria
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: Tokens.sp2,
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
+                      children: [
+                        SizedBox(
+                          width: 120, // .stepper-input 96px 系 css font-display 窄数字；
+                          // Flutter 默认字体 34px 四位数字实测 ~100px+，96 会裁尾
+                          // （目检 05/06 实证），放宽到 120（R4 版式修正）
+                          child: Semantics(
+                            label: '喝水目标 ml', // :301 aria-label 逐字
+                            child: TextField(
+                              controller: _ctl,
+                              focusNode: _focus,
+                              key: goalValueKey,
+                              textAlign: TextAlign.center,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
                                   ),
-                                ],
-                                style: const TextStyle(
-                                  fontSize: 34, // .stepper-input font-size:34
-                                  fontWeight: FontWeight.w600,
-                                  color: Tokens.ink,
-                                  fontFeatures: [FontFeature.tabularFigures()],
+                              // M5-T7 定式：字符类过滤；非法/小数由归一兜底
+                              inputFormatters: [
+                                FilteringTextInputFormatter.allow(
+                                  RegExp(r'[0-9.]'),
                                 ),
-                                decoration: const InputDecoration(
-                                  isDense: true,
-                                  counterText: '',
-                                ),
+                              ],
+                              style: const TextStyle(
+                                fontSize: 34, // .stepper-input font-size:34
+                                fontWeight: FontWeight.w600,
+                                color: Tokens.ink,
+                                fontFeatures: [FontFeature.tabularFigures()],
+                              ),
+                              decoration: const InputDecoration(
+                                isDense: true,
+                                counterText: '',
                               ),
                             ),
                           ),
-                          const Text(
-                            'ml',
-                            style: TextStyle(
-                              fontSize: Tokens.textSm,
-                              color: Tokens.ink3,
-                            ),
-                          ), // :301 <small>
-                        ],
-                      ),
+                        ),
+                        const Text(
+                          'ml',
+                          style: TextStyle(
+                            fontSize: Tokens.textSm,
+                            color: Tokens.ink3,
+                          ),
+                        ), // :301 <small>
+                      ],
                     ),
-                    _stepperBtn(
-                      goalIncKey,
-                      '＋',
-                      '增加 ${waterCupMl}ml',
-                      () => _bump(1),
-                    ), // :302 aria
-                  ],
-                ),
+                  ),
+                  _stepperBtn(
+                    goalIncKey,
+                    '＋',
+                    '增加 ${waterCupMl}ml',
+                    () => _bump(1),
+                  ), // :302 aria
+                ],
               ),
-              // 范围注记（:305 逐字「每杯 200ml · 可设范围 800–3000ml」）
-              Text(
-                // 逐字「每杯 200ml · 可设范围 800–3000ml」（相邻字面量拼接避开 $ 后标识符歧义）
-                '每杯 $waterCupMl'
-                'ml · 可设范围 $waterGoalMin'
-                '–$waterGoalMax'
-                'ml',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: Tokens.textSm,
-                  color: Tokens.ink3,
-                ),
+            ),
+            // 范围注记（:305 逐字「每杯 200ml · 可设范围 800–3000ml」）
+            Text(
+              // 逐字「每杯 200ml · 可设范围 800–3000ml」（相邻字面量拼接避开 $ 后标识符歧义）
+              '每杯 $waterCupMl'
+              'ml · 可设范围 $waterGoalMin'
+              '–$waterGoalMax'
+              'ml',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: Tokens.textSm,
+                color: Tokens.ink3,
               ),
-              const SizedBox(height: Tokens.sp4), // :307 btn margin-top --sp-4
-              FilledButton(
-                key: goalSaveKey,
-                onPressed: _save,
-                child: const Text('保存目标'), // :307 逐字
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(height: Tokens.sp4), // :307 btn margin-top --sp-4
+            FilledButton(
+              key: goalSaveKey,
+              onPressed: _save,
+              child: const Text('保存目标'), // :307 逐字
+            ),
+          ],
         ),
       ),
     );

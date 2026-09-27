@@ -31,6 +31,7 @@ import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
 import '../../domain/js_compat.dart'
     show jsFixed1, jsNumber, jsNumText, jsOr, jsParseFloat;
+import '../common/sheet.dart' show showShiguangSheet;
 import '../common/sheet_toast.dart' show SheetToast;
 import '../home/home_controller.dart' show healthApiProvider;
 import 'profile_providers.dart' show profileProvider;
@@ -66,16 +67,11 @@ Future<void> openGoalEditSheet(BuildContext context, WidgetRef ref) {
   final p = ref.read(profileProvider).value;
   final goal = (p?['goal'] as Map?)?['targetWeight'];
   final initial = (goal is num && goal != 0) ? goal.toDouble() : 55.0;
-  return showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Tokens.surface,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(
-        top: Radius.circular(Tokens.radiusSheet),
-      ),
-    ),
-    builder: (_) => _GoalEditSheet(hostRef: ref, initial: initial),
+  return showShiguangSheet<void>(
+    context,
+    title: '编辑目标体重', // :339 逐字（M9-T8 起由 helper 标题行承载）
+    closeKey: goalEditCloseKey, // :340 ✕ 键位透传（find.byKey 测试选择器不动）
+    child: _GoalEditSheet(hostRef: ref, initial: initial),
   );
 }
 
@@ -194,140 +190,110 @@ class _GoalEditSheetState extends ConsumerState<_GoalEditSheet> {
 
   @override
   Widget build(BuildContext context) {
+    // M9-T8：.sheet-head 标题行「编辑目标体重」+ ✕（index.html:338-341，
+    // goalEditCloseKey 键位经 helper closeKey 透传）与内层 SafeArea 由
+    // showShiguangSheet 承载，本地副本删除；顶部 sp3 内边距归零（原标题
+    // 占位），说明→section 的 sp5 净距不变；viewInsets 包裹保留（键盘避让）。
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-      child: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(
-            Tokens.sp5,
-            Tokens.sp3,
-            Tokens.sp5,
-            Tokens.sp4,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // .sheet-head（index.html:338-341）
-              Row(
-                children: [
-                  const Text(
-                    '编辑目标体重', // :339 逐字
-                    style: TextStyle(
-                      fontSize: Tokens.textLg,
-                      fontWeight: FontWeight.w800,
-                      color: Tokens.ink,
-                    ),
-                  ),
-                  const Spacer(),
-                  Semantics(
-                    label: '关闭', // :340 aria-label 逐字
-                    button: true,
-                    child: GestureDetector(
-                      key: goalEditCloseKey,
-                      onTap: () => Navigator.of(context).pop(),
-                      child: const Padding(
-                        padding: EdgeInsets.all(Tokens.sp1),
-                        child: Text(
-                          '✕',
-                          style: TextStyle(
-                            fontSize: Tokens.textMd,
-                            color: Tokens.ink3,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(
+          Tokens.sp5,
+          0,
+          Tokens.sp5,
+          Tokens.sp4,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // .goal-edit-section（:342-349）：label + stepper
+            const Padding(
+              padding: EdgeInsets.fromLTRB(0, Tokens.sp5, 0, Tokens.sp2),
+              child: Text(
+                '目标体重', // :343 逐字
+                style: TextStyle(fontSize: Tokens.textSm, color: Tokens.ink2),
               ),
-              // .goal-edit-section（:342-349）：label + stepper
-              const Padding(
-                padding: EdgeInsets.fromLTRB(0, Tokens.sp5, 0, Tokens.sp2),
-                child: Text(
-                  '目标体重', // :343 逐字
-                  style: TextStyle(fontSize: Tokens.textSm, color: Tokens.ink2),
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _stepperBtn(
+                  goalEditDecKey,
+                  '−',
+                  '减少 0.5 kg', // :345 aria 逐字
+                  () => _bump(-1),
                 ),
-              ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  _stepperBtn(
-                    goalEditDecKey,
-                    '−',
-                    '减少 0.5 kg', // :345 aria 逐字
-                    () => _bump(-1),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: Tokens.sp2),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.baseline,
-                      textBaseline: TextBaseline.alphabetic,
-                      children: [
-                        SizedBox(
-                          width: 120, // 同 goal_sheet :259 口径（默认字体宽于 css）
-                          child: Semantics(
-                            label: '目标体重 kg', // :346 aria-label 逐字
-                            child: TextField(
-                              controller: _ctl,
-                              focusNode: _focus,
-                              key: goalEditValueKey,
-                              textAlign: TextAlign.center,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
-                              // M5-T7 定式：字符类过滤；非法/小数由归一兜底
-                              inputFormatters: [
-                                FilteringTextInputFormatter.allow(
-                                  RegExp(r'[0-9.]'),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: Tokens.sp2),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      SizedBox(
+                        width: 120, // 同 goal_sheet :259 口径（默认字体宽于 css）
+                        child: Semantics(
+                          label: '目标体重 kg', // :346 aria-label 逐字
+                          child: TextField(
+                            controller: _ctl,
+                            focusNode: _focus,
+                            key: goalEditValueKey,
+                            textAlign: TextAlign.center,
+                            keyboardType:
+                                const TextInputType.numberWithOptions(
+                                  decimal: true,
                                 ),
-                              ],
-                              style: const TextStyle(
-                                fontSize: 34, // .stepper-input font-size:34
-                                fontWeight: FontWeight.w600,
-                                color: Tokens.ink,
-                                fontFeatures: [FontFeature.tabularFigures()],
+                            // M5-T7 定式：字符类过滤；非法/小数由归一兜底
+                            inputFormatters: [
+                              FilteringTextInputFormatter.allow(
+                                RegExp(r'[0-9.]'),
                               ),
-                              decoration: const InputDecoration(
-                                isDense: true,
-                                counterText: '',
-                              ),
+                            ],
+                            style: const TextStyle(
+                              fontSize: 34, // .stepper-input font-size:34
+                              fontWeight: FontWeight.w600,
+                              color: Tokens.ink,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              counterText: '',
                             ),
                           ),
                         ),
-                        const Text(
-                          'kg', // :346 <small>kg</small>
-                          style: TextStyle(
-                            fontSize: Tokens.textSm,
-                            color: Tokens.ink3,
-                          ),
+                      ),
+                      const Text(
+                        'kg', // :346 <small>kg</small>
+                        style: TextStyle(
+                          fontSize: Tokens.textSm,
+                          color: Tokens.ink3,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                  _stepperBtn(
-                    goalEditIncKey,
-                    '＋',
-                    '增加 0.5 kg', // :347 aria 逐字
-                    () => _bump(1),
-                  ),
-                ],
-              ),
-              const SizedBox(height: Tokens.sp3),
-              // hint（:350 逐字；en-dash U+2013「30–150」不折不改横线）
-              const Text(
-                '体重范围 30–150 kg · 点数字可直接输入 · 热量目标由系统按档案自动计算',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: Tokens.textSm, color: Tokens.ink3),
-              ),
-              const SizedBox(height: Tokens.sp4), // :351 btn margin-top --sp-4
-              FilledButton(
-                key: goalEditSaveKey,
-                onPressed: _save,
-                child: const Text('保存目标'), // :351 逐字
-              ),
-            ],
-          ),
+                ),
+                _stepperBtn(
+                  goalEditIncKey,
+                  '＋',
+                  '增加 0.5 kg', // :347 aria 逐字
+                  () => _bump(1),
+                ),
+              ],
+            ),
+            const SizedBox(height: Tokens.sp3),
+            // hint（:350 逐字；en-dash U+2013「30–150」不折不改横线）
+            const Text(
+              '体重范围 30–150 kg · 点数字可直接输入 · 热量目标由系统按档案自动计算',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: Tokens.textSm, color: Tokens.ink3),
+            ),
+            const SizedBox(height: Tokens.sp4), // :351 btn margin-top --sp-4
+            FilledButton(
+              key: goalEditSaveKey,
+              onPressed: _save,
+              child: const Text('保存目标'), // :351 逐字
+            ),
+          ],
         ),
       ),
     );
