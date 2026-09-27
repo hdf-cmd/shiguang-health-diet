@@ -15,6 +15,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
 import '../../domain/report.dart';
+import '../common/stagger.dart' show Stagger;
 import '../profile/weight_log_card.dart' show WeightLogCard;
 import 'report_controller.dart';
 import 'weight_trend.dart';
@@ -75,6 +76,9 @@ class _ReportScreenState extends ConsumerState<ReportScreen> {
       child: ListView(
         padding: const EdgeInsets.all(Tokens.sp4),
         children: [
+          // M9-T6（B2 接线）：卡序错峰入场——热量卡/统计行/建议卡（数据支、
+          // 骨架支、error 卡各占同位 index 0/1/2）+ 体重趋势卡=3 +
+          // WeightLogCard=4；页标题与 segmented 不播（静态头部观感）。
           const Text('健康报告',
               style: TextStyle(
                   fontSize: Tokens.textXl,
@@ -84,34 +88,37 @@ class _ReportScreenState extends ConsumerState<ReportScreen> {
           _segmented(range),
           if (report.hasError) ...[
             const SizedBox(height: Tokens.sp4),
-            _card(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(_errorMessage(report.error),
-                      style: const TextStyle(
-                          color: Tokens.danger, fontSize: Tokens.textMd)),
-                  const SizedBox(height: Tokens.sp2),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(
-                      // 重试 = 重新取当前区间的报告
-                      onPressed: () => ref.invalidate(range == ReportRange.week
-                          ? weekReportProvider
-                          : monthReportProvider),
-                      child: const Text('重试'),
+            Stagger(
+              index: 0,
+              child: _card(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(_errorMessage(report.error),
+                        style: const TextStyle(
+                            color: Tokens.danger, fontSize: Tokens.textMd)),
+                    const SizedBox(height: Tokens.sp2),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        // 重试 = 重新取当前区间的报告
+                        onPressed: () => ref.invalidate(range == ReportRange.week
+                            ? weekReportProvider
+                            : monthReportProvider),
+                        child: const Text('重试'),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ] else if (data != null) ...[
             const SizedBox(height: Tokens.sp4),
-            _kcalCard(data),
+            Stagger(index: 0, child: _kcalCard(data)),
             const SizedBox(height: Tokens.sp4), // .report-stats margin-top --sp-4
-            _statsRow(data),
+            Stagger(index: 1, child: _statsRow(data)),
             const SizedBox(height: Tokens.sp4), // .advice-card margin-top --sp-4
-            _adviceCard(data),
+            Stagger(index: 2, child: _adviceCard(data)),
           ] else ...[
             // 加载态渲染静态卡框骨架，对齐 index.html:158-168：.card 框、
             // "每日热量 · 对比目标"标题、.report-stats 三卡框与 .advice-card
@@ -122,21 +129,21 @@ class _ReportScreenState extends ConsumerState<ReportScreen> {
             // Riverpod 3 默认失败退避重试（200ms 起）的计时问题在测试侧用
             // Duration.zero 定步 pump 消除，不靠牺牲加载期可见性来规避。
             const SizedBox(height: Tokens.sp4),
-            _kcalSkeletonCard(),
+            Stagger(index: 0, child: _kcalSkeletonCard()),
             const SizedBox(height: Tokens.sp4),
-            _statsSkeleton(),
+            Stagger(index: 1, child: _statsSkeleton()),
             const SizedBox(height: Tokens.sp4),
-            _adviceSkeletonCard(range),
+            Stagger(index: 2, child: _adviceSkeletonCard(range)),
           ],
           // 体重趋势卡：index.html:170 .card.weight-trend 是报告页静态卡框，
           // 数据来自独立接口（app.js:262 与周报并发取一次），因此不参与上面
           // 报告三态分派，自己管加载/错误/空数据/有数据四态，周报失败也在。
           const SizedBox(height: Tokens.sp4), // .weight-trend margin-top --sp-4
-          _weightCard(),
+          Stagger(index: 3, child: _weightCard()),
           // M8-①（老大 09-27 真机反馈）：体重记录卡自「我的」页搬来，贴
           // 趋势图下方——记完即见图变化（保存链 invalidate weightTrendProvider）。
           const SizedBox(height: Tokens.sp4),
-          const WeightLogCard(),
+          const Stagger(index: 4, child: WeightLogCard()),
         ],
       ),
     );

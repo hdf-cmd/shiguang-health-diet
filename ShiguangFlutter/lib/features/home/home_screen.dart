@@ -47,6 +47,7 @@ import '../../domain/constants.dart' show exerciseLib;
 import '../../domain/dates.dart' show dateLabelOf, todayIso;
 import '../../domain/exercise.dart' show isRepRecord;
 import '../../domain/js_compat.dart' show jsNumText;
+import '../common/stagger.dart' show Stagger;
 import '../exercise/exercise_controller.dart'
     show deleteExerciseRecord, exerciseKcalProvider, exercisesProvider;
 import '../exercise/exercise_sheet.dart'
@@ -132,20 +133,34 @@ class HomeScreen extends ConsumerWidget {
       child: ListView(
         padding: const EdgeInsets.all(Tokens.sp4),
         children: [
+          // M9-T6（B2 接线）：问候头+页标题合并为错峰入场首项（index 0），
+          // 其后卡序 盘子=1 / 建议=2 / 水=3 / 运动=4；error 卡占盘子位同
+          // index 1。盘子卡不包 PressableScale（T5 移交裁定：与
+          // _PlateSwipeZone 手势竞争）。
           // 问候头（index.html:61-67 .home-head .hello；app.js:287-294）。
           // 恒用 DateTime.now()，不吃 plateDateProvider（‹ › 翻日期不改问候）。
-          _greetingHead(ref),
-          const Text(
-            '今日盘子',
-            style: TextStyle(
-              fontSize: Tokens.textXl,
-              fontWeight: FontWeight.w800,
-              color: Tokens.ink,
+          Stagger(
+            index: 0,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _greetingHead(ref),
+                const Text(
+                  '今日盘子',
+                  style: TextStyle(
+                    fontSize: Tokens.textXl,
+                    fontWeight: FontWeight.w800,
+                    color: Tokens.ink,
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: Tokens.sp4),
           if (error != null)
-            _homeCard(
+            Stagger(
+              index: 1,
+              child: _homeCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -177,23 +192,27 @@ class HomeScreen extends ConsumerWidget {
                   ),
                 ],
               ),
+            ),
             )
           else ...[
-            const _PlateSwipeZone(child: _PlateCard()),
+            Stagger(
+              index: 1,
+              child: const _PlateSwipeZone(child: _PlateCard()),
+            ),
             // 建议卡（index.html:106-109；卡序复核见文件头 M6-T5 注。
             // summary 在途整卡不渲染 ≙ app.js:351 `if (!s || !el) return`——
             // 卡体连同其顶部 sp3 间距一并消失（间距在 AdviceCard 卡体条件
             // 构造内，M7-T8 Minor-3：加载期餐盘卡与水卡之间恒为单份 sp3，
             // 不再叠 2×sp3 空档——原双空档系 M6-T7 F6 勘误登记的既知面））
-            AdviceCard(date: date),
+            Stagger(index: 2, child: AdviceCard(date: date)),
             const SizedBox(height: Tokens.sp3),
             // 水卡（index.html:111-131；卡序复核见文件头 M6-T4 注）
-            WaterCard(date: date),
+            Stagger(index: 3, child: WaterCard(date: date)),
             const SizedBox(height: Tokens.sp3),
             // M8-②：三餐记录卡整卡删除——餐次呈现收敛到记录页，
             // 首页卡序变 盘子→建议→水→运动。
             // 运动卡（index.html:133-137，H5 首页末位卡；复核注释见文件头）
-            HomeExerciseCard(date: date),
+            Stagger(index: 4, child: HomeExerciseCard(date: date)),
           ],
         ],
       ),

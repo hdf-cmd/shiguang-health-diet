@@ -20,6 +20,7 @@ import '../../domain/constants.dart';
 import '../../domain/dates.dart' show localIso;
 import '../home/home_controller.dart' show plateDateProvider;
 import '../common/food_thumb.dart';
+import '../common/pressable.dart' show PressableScale;
 import 'record_controller.dart';
 import 'search_sheet.dart';
 
@@ -224,7 +225,11 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
         children: [
           for (final meal in mealOrder)
             Expanded(
-              child: GestureDetector(
+              // M9-T6（B1 接线）：餐次 chip 的 tap 改由 PressableScale 承载
+              // （外层唯一手势=按下 0.975 回弹，内层 AnimatedContainer 纯
+              // 视觉），不嵌套双识别器（控制器裁定④：原 GestureDetector
+              // 即单一 onTap，原位替换，零结构改造面）。
+              child: PressableScale(
                 key: ValueKey('meal-tab-$meal'),
                 onTap: () => setState(() => _meal = meal),
                 child: AnimatedContainer(

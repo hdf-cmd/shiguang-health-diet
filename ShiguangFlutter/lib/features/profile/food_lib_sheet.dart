@@ -63,6 +63,7 @@ import '../../domain/js_compat.dart' show jsNumText, jsOr;
 import '../common/food_thumb.dart';
 import '../common/skeleton.dart' show SkeletonBar;
 import '../common/sheet_toast.dart';
+import '../common/stagger.dart' show Stagger;
 import '../home/home_controller.dart' show healthApiProvider, plateDateProvider;
 import '../record/custom_food_sheet.dart' show cfMealMap, openCustomFoodSheet;
 
@@ -614,14 +615,24 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
       return ListView.separated(
         itemCount: _custom.length,
         separatorBuilder: (_, _) => const SizedBox(height: Tokens.sp2),
-        itemBuilder: (_, i) => _customRow(_custom[i]),
+        // M9-T6（B2 接线）：前 8 行错峰入场（index=行号）。行不包
+        // PressableScale——行内删除钮/归类 chip 双手势，外层 Pressable
+        // 在手势竞技场必输=假反馈（T5 裁定「无 onTap 不包」延伸）。
+        itemBuilder: (_, i) {
+          final row = _customRow(_custom[i]);
+          return i < 8 ? Stagger(index: i, child: row) : row;
+        },
       );
     }
     final list = _builtin;
     return ListView.separated(
       itemCount: list.length,
       separatorBuilder: (_, _) => const SizedBox(height: Tokens.sp2),
-      itemBuilder: (_, i) => _builtinRow(list[i]),
+      // M9-T6：同 custom 支——前 8 行 Stagger，行不包 Pressable（裁定同上）。
+      itemBuilder: (_, i) {
+        final row = _builtinRow(list[i]);
+        return i < 8 ? Stagger(index: i, child: row) : row;
+      },
     );
   }
 
