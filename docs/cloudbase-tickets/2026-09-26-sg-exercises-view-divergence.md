@@ -60,3 +60,9 @@
 
 - 对照探针 `PYVIS2跑步`/`PYVIS3跑步` 两条（_id 见上表）**保留作平台方核验锚点**，工单结案后由我方删除。
 - App 侧幽灵行仅存在于其异常视图，主表无残留，无需数据清理。
+
+## 真机复测补充（2026-09-27，v2.5.0 正式包）
+
+- 环境：真机 RMX5010（Android 15，arm64），`食光Flutter-v2.5.0.apk`（release 签名），账号「春夏秋冬又一春」（uid=u_7f88ac7026f0ab562f1e0f75），CST 时区。
+- 操作：app 内记运动「跑步 5km · 345 kcal」→ 保存即显后**立即**用 MCP `readNoSqlDatabaseContent` 直查 `sg_exercises`（uid+date=2026-09-27）→ **正常落库**（requestId 81b84a3b-7272-4d0c-b365-51030b07b896，_id 92994ce06ab85cf701f494277b6028a2）；app 内删除后反查 → **云端零残留**（requestId ff874832-137c-4bb7-87c1-ec4ad3812f49）。
+- 结论修正：视图分歧**未在真机+release 语境复现**，迄今全部复现样本出自模拟器（Android 16 API 36 系统镜像）+debug/正式包混合语境。写视图粘滞疑与模拟器出网路径（NAT/virtualhost）或特定长连接实例相关，请平台方在网关访问日志中按上述 requestId 与 09-26 样本对照 UA/源 IP/实例落点。
