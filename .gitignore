@@ -15,6 +15,9 @@ HealthyDiet/local.properties
 # 依赖
 node_modules/
 
+# 云端数据备份（含密码哈希与个人饮食/体重记录）严禁入库
+cloud-backup/
+
 # 云端私钥（Custom Login 凭证）严禁入库；本地保留供部署
 **/tcb_custom_login.json
 
