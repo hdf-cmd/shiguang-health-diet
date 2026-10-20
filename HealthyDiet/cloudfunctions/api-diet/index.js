@@ -3,7 +3,10 @@ const crypto = require("crypto");
 // M12-③ 食物频次聚合（纯逻辑，tests/records-freq.test.js 覆盖）
 const { countNames, collectAll } = require("./freq");
 // M13：拍照识菜纯逻辑（解析/校验/限流常量，tests/ai-scan.test.js 覆盖）
-const { parseModelJson, validateScanResult, kAiScanDailyLimit, kAiImageMaxChars, kAiImagePrefix } = require("./ai");
+const {
+  parseModelJson, validateScanResult, kAiScanDailyLimit, kAiImageMaxChars, kAiImagePrefix,
+  validateProviderConfig, providerTarget, providerErrorMessage,
+} = require("./ai");
 
 const app = cloud.init({
   env: cloud.SYMBOL_CURRENT_ENV,
@@ -152,7 +155,6 @@ function profileToClient(p) {
   };
 }
 
-const DEEPSEEK_URL = "https://api.deepseek.com/chat/completions";
 const AI_SYSTEM_PROMPT = [
   "你是中文菜品营养估算器。",
   "看图识别图中最主要的一道菜（若有多样，取占比最大的）。",
@@ -161,44 +163,41 @@ const AI_SYSTEM_PROMPT = [
   '{"dish":"菜名","confidence":"high|medium|low","per100":{"kcal":0,"protein":0,"carb":0,"fat":0},"note":"一句话说明"}'
 ].join("\n");
 
-async function callDeepSeek(apiKey, imageDataUrl, strict) {
+async function callDeepSeek(apiKey, imageDataUrl, strict, target, logTag) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 12000);
   try {
-    const resp = await fetch(DEEPSEEK_URL, {
+    const resp = await fetch(target.url, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey },
       signal: controller.signal,
       body: JSON.stringify({
-        model: "deepseek-flash",
+        model: target.model,
         temperature: 0.2,
         max_tokens: 300,
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: AI_SYSTEM_PROMPT },
-          {
-            role: "user",
-            content: [
-              { type: "text", text: strict
-                  ? "上一次结果不合法。请严格按 JSON 输出，并保证 4P+4C+9F 与热量相差不超过 25%。"
-                  : "请识别这道菜。" },
-              { type: "image_url", image_url: { url: imageDataUrl } }
-            ]
-          }
+          { role: "user", content: [
+            { type: "text", text: strict
+                ? "上一次结果不合法。请严格按 JSON 输出，并保证 4P+4C+9F 与热量相差不超过 25%。"
+                : "请识别这道菜。" },
+            { type: "image_url", image_url: { url: imageDataUrl } }
+          ] }
         ]
       })
     });
     if (!resp.ok) {
-      console.log("DEEPSEEK_HTTP", resp.status);
-      return null;
+      console.log(logTag, resp.status);
+      return { text: null, status: resp.status };
     }
     const data = await resp.json();
     const msg = data && data.choices && data.choices[0] && data.choices[0].message;
-    return (msg && msg.content) || null;
+    return { text: (msg && msg.content) || null, status: 200 };
   } catch (e) {
-    if (e && e.name === "AbortError") console.log("DEEPSEEK_TIMEOUT", e.name);
-    else console.log("DEEPSEEK_ERR", e && e.name);
-    return null;
+    if (e && e.name === "AbortError") console.log(logTag, "TIMEOUT");
+    else console.log(logTag, "ERROR");
+    return { text: null, status: 0 };
   } finally {
     clearTimeout(timer);
   }
@@ -323,33 +322,52 @@ async function handle(path, method, params, body, uid) {
   /* ---- 运动记录（sg_exercises）：刻意运动单独记，消耗计入当日报销额度 ---- */
   /* M13：拍照识菜。图片只用于识别，不落库。 */
   if (path === "/ai/food-scan" && method === "POST") {
-    const apiKey = process.env.DEEPSEEK_API_KEY || "";
-    if (!apiKey) return { ok: false, message: "识别服务未配置" };
     const image = String(body.image || "");
+    const custom = body.provider;
+    let apiKey = "", target = null, logTag = "DEEPSEEK_HTTP", isCustom = false;
+    if (custom) {
+      const v = validateProviderConfig(custom);
+      if (!v.ok) return { ok: false, message: v.message };
+      target = providerTarget(v.id);
+      target = { url: target.url, model: v.model };
+      apiKey = v.key;
+      logTag = "AI_PROVIDER_HTTP " + v.id;
+      isCustom = true;
+    } else {
+      apiKey = process.env.DEEPSEEK_API_KEY || "";
+      if (!apiKey) return { ok: false, message: "识别服务未配置" };
+      target = providerTarget("deepseek");
+    }
+    // 图片校验（不变）
     if (!kAiImagePrefix.test(image) || image.length > kAiImageMaxChars) {
       return { ok: false, message: "图片格式不支持或过大" };
     }
-    const prof = await getOrCreateProfile(uid);
-    const d = today();
-    const used = prof.aiScanDate === d ? (Number(prof.aiScanCount) || 0) : 0;
-    if (used >= kAiScanDailyLimit) {
-      return { ok: false, message: "今日识别次数已用完（" + kAiScanDailyLimit + " 次）" };
+    // 配额：只有内置通道计数
+    let used = 0;
+    if (!isCustom) {
+      const prof = await getOrCreateProfile(uid);
+      const d = today();
+      used = prof.aiScanDate === d ? (Number(prof.aiScanCount) || 0) : 0;
+      if (used >= kAiScanDailyLimit) return { ok: false, message: "今日识别次数已用完（" + kAiScanDailyLimit + " 次）" };
+      await profiles.where({ uid }).update({ aiScanDate: d, aiScanCount: used + 1, updatedAt: Date.now() });
     }
-    // 先计数再调用：失败也占一次，防止坏图反复刷成本
-    await profiles.where({ uid }).update({ aiScanDate: d, aiScanCount: used + 1, updatedAt: Date.now() });
-    let result = null;
+    let result = null, lastStatus = 0;
     for (let attempt = 0; attempt < 2 && !result; attempt++) {
-      const text = await callDeepSeek(apiKey, image, attempt > 0);
-      const parsed = parseModelJson(text);
+      const r = await callDeepSeek(apiKey, image, attempt > 0, target, logTag);
+      lastStatus = r.status;
+      const parsed = parseModelJson(r.text);
       if (!parsed) continue;
       const v = validateScanResult(parsed);
       if (v.ok) result = v;
     }
-    if (!result) return { ok: false, message: "没认出来，换张更清楚的图或手动填写" };
+    if (!result) {
+      if (isCustom && lastStatus !== 200) return { ok: false, message: providerErrorMessage(lastStatus) };
+      return { ok: false, message: "没认出来，换张更清楚的图或手动填写" };
+    }
     return {
       ok: true, dish: result.dish, confidence: result.confidence,
       per100: result.per100, note: result.note,
-      quota: { used: used + 1, limit: kAiScanDailyLimit }
+      quota: isCustom ? undefined : { used: used + 1, limit: kAiScanDailyLimit }
     };
   }
 
