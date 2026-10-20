@@ -52,7 +52,43 @@ function validateScanResult(obj) {
   return { ok: true, dish, confidence, per100, note };
 }
 
+/* M14：自带 Key 多厂商识菜的纯逻辑（同样零依赖，node --test 可直接覆盖）。 */
+const AI_PROVIDERS = {
+  deepseek: { url: 'https://api.deepseek.com/chat/completions', model: 'deepseek-flash' },
+  qwen: { url: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', model: '' },
+  kimi: { url: 'https://api.moonshot.cn/v1/chat/completions', model: '' },
+  zhipu: { url: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', model: '' },
+  doubao: { url: 'https://ark.cn-beijing.volces.com/api/v3/chat/completions', model: '' },
+};
+const kProviderModelPattern = /^[A-Za-z0-9._:/-]{1,60}$/;
+
+function validateProviderConfig(p) {
+  if (!p || typeof p !== 'object') return { ok: false, message: '自定义模型配置不完整' };
+  const id = typeof p.id === 'string' ? p.id : '';
+  const t = AI_PROVIDERS[id];
+  if (!t) return { ok: false, message: '不支持的模型厂商' };
+  const rawModel = typeof p.model === 'string' ? p.model.trim() : '';
+  const model = rawModel || t.model;
+  if (!model || !kProviderModelPattern.test(model)) return { ok: false, message: '请填写有效的模型名' };
+  const key = typeof p.key === 'string' ? p.key : '';
+  if (key.length < 8 || key.length > 200 || /\s/.test(key)) return { ok: false, message: 'API Key 格式不正确' };
+  return { ok: true, id, model, key };
+}
+
+function providerTarget(id) {
+  const t = AI_PROVIDERS[id];
+  return t ? { url: t.url, model: t.model } : null;
+}
+
+function providerErrorMessage(status) {
+  if (status === 401 || status === 403) return 'Key 无效或无权限';
+  if (status === 429) return '厂商额度用完或请求太频繁';
+  if (status === 0) return '识别超时，请重试';
+  return '厂商服务异常（HTTP ' + status + '）';
+}
+
 module.exports = {
   kAiScanDailyLimit, kAiImageMaxChars, kAiImagePrefix,
   parseModelJson, normalizePer100, energyDeviation, validateScanResult,
+  AI_PROVIDERS, validateProviderConfig, providerTarget, providerErrorMessage,
 };
