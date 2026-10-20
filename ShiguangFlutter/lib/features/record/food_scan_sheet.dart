@@ -622,7 +622,9 @@ class _FoodScanSheetState extends ConsumerState<FoodScanSheet> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: _sub),
+          // 单位并进标签：四个输入框等分后每个仅约 70dp，`suffixText:'kcal'`
+          // 会把可输入区压到 1 位数宽（真机实测 62 显示成 6），故把单位移出输入框。
+          Text('$label($unit)', style: _sub),
           const SizedBox(height: Tokens.sp1),
           TextField(
             controller: ctl,
@@ -633,7 +635,7 @@ class _FoodScanSheetState extends ConsumerState<FoodScanSheet> {
               FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
             ],
             onChanged: (_) => setState(() {}),
-            decoration: _field('0').copyWith(suffixText: unit),
+            decoration: _field('0'),
           ),
         ],
       ),
