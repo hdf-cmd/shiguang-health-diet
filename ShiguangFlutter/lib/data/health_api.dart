@@ -7,6 +7,7 @@
 // 数组响应路由（mealRecords/searchFoods/builtinFoods）走 ApiClient.callValue，
 // 对齐 js/api.js:264 直接 return data（数组原样返回）。
 
+import 'ai_provider_store.dart';
 import 'api_client.dart';
 
 class HealthApi {
@@ -158,10 +159,25 @@ class HealthApi {
 
   /// 拍照识菜（M13）：云函数调 DeepSeek，返回 {dish,confidence,per100,note,quota}
   /// 云端函数部署后 60s（spec §2.5），客户端按请求放宽到 30s（其它路由仍默认 15s）。
-  Future<Map<String, dynamic>> scanFood(String imageDataUrl) => _client.call(
+  ///
+  /// M14：可选自带 provider；不可用/未配置时**整键省略**，回退内置通道。
+  /// 不能发空对象——云端收到 `provider: {}` 会报「自定义模型配置不完整」。
+  Future<Map<String, dynamic>> scanFood(
+    String imageDataUrl, {
+    AiProviderConfig? provider,
+  }) =>
+      _client.call(
         '/ai/food-scan',
         method: 'POST',
-        body: <String, dynamic>{'image': imageDataUrl},
+        body: <String, dynamic>{
+          'image': imageDataUrl,
+          if (provider != null && provider.isUsable)
+            'provider': <String, dynamic>{
+              'id': provider.id,
+              'model': provider.model,
+              'key': provider.key,
+            },
+        },
         timeout: const Duration(seconds: 30),
       );
 

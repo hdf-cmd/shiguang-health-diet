@@ -8,6 +8,7 @@
 // missing_override 检查）。
 import 'dart:async';
 
+import 'package:shiguang_flutter/data/ai_provider_store.dart';
 import 'package:shiguang_flutter/data/api_client.dart';
 import 'package:shiguang_flutter/data/health_api.dart';
 
@@ -607,7 +608,8 @@ class StubHealthApi implements HealthApi {
   ApiException? upsertError;
 
   @override
-  Future<Map<String, dynamic>> scanFood(String imageDataUrl) async {
+  Future<Map<String, dynamic>> scanFood(
+      String imageDataUrl, {AiProviderConfig? provider}) async {
     scanCalls++;
     if (scanError != null) throw scanError!;
     return scanResult;
