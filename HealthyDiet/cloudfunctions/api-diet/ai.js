@@ -65,7 +65,7 @@ const kProviderModelPattern = /^[A-Za-z0-9._:/-]{1,60}$/;
 function validateProviderConfig(p) {
   if (!p || typeof p !== 'object') return { ok: false, message: '自定义模型配置不完整' };
   const id = typeof p.id === 'string' ? p.id : '';
-  const t = AI_PROVIDERS[id];
+  const t = Object.prototype.hasOwnProperty.call(AI_PROVIDERS, id) ? AI_PROVIDERS[id] : null;
   if (!t) return { ok: false, message: '不支持的模型厂商' };
   const rawModel = typeof p.model === 'string' ? p.model.trim() : '';
   const model = rawModel || t.model;
@@ -76,7 +76,8 @@ function validateProviderConfig(p) {
 }
 
 function providerTarget(id) {
-  const t = AI_PROVIDERS[id];
+  /* 只认 AI_PROVIDERS 自有键：constructor / __proto__ / toString 等原型链键必须落空。 */
+  const t = Object.prototype.hasOwnProperty.call(AI_PROVIDERS, id) ? AI_PROVIDERS[id] : null;
   return t ? { url: t.url, model: t.model } : null;
 }
 
