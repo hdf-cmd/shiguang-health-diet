@@ -11,6 +11,8 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../data/swr_cache.dart' show swrCacheProvider;
+import '../../data/swr_disk.dart' show swrDiskProvider;
 import '../../domain/dates.dart' show localIso;
 import '../../domain/deficit.dart' show avgDeficitFromRows;
 import '../../domain/metabolism.dart' show computeMetabolism;
@@ -21,8 +23,22 @@ import '../exercise/exercise_controller.dart' show exerciseKcalProvider;
 import '../home/home_controller.dart'
     show healthApiProvider, summaryProvider, todayProvider;
 
-final profileProvider = FutureProvider<Map<String, dynamic>>((ref) =>
-    ref.watch(healthApiProvider).getProfile());
+final profileProvider = FutureProvider<Map<String, dynamic>>((ref) async {
+  final p = await ref.watch(healthApiProvider).getProfile();
+  // M11-T3：profile 是本会话第一个「确知当前账号」的点。绑定后磁盘层才开闸
+  // 落盘；uid 变化由 bindOwner 内部先清盘（不 await：落盘绑定属旁路，
+  // 绝不能拖慢/拖挂所有下游都依赖的 profile 链）。
+  // 绑定完必须补一次 syncDisk：绑定前首页的写入只在盘层留了快照、并未落盘，
+  // 缺这一步冷启动永远播不出数据（v2.7.2 真机实测缺陷，钉 test ⑭）。
+  final disk = ref.read(swrDiskProvider);
+  if (disk != null) {
+    final uid = '${p['id'] ?? ''}';
+    unawaited(disk.bindOwner(uid).then((_) {
+      if (ref.mounted) ref.read(swrCacheProvider).syncDisk();
+    }));
+  }
+  return p;
+});
 
 /// profile.goal.waterMl 的水目标口径（M6-T7 评审 F3+F4：收敛 water_card /
 /// advice_card 两份近重复 `_goalOf` 为单一工具，并复刻 H5 falsy 支）。

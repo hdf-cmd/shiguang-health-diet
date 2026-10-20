@@ -18,7 +18,7 @@ import 'package:shiguang_flutter/domain/portion.dart' show portionMacros;
 import 'package:shiguang_flutter/features/home/home_controller.dart'
     show healthApiProvider;
 import 'package:shiguang_flutter/features/record/record_controller.dart'
-    show defaultMealAt, recordControllerProvider;
+    show defaultMealAt, recordControllerProvider, recordsProvider, summaryProvider;
 import 'package:shiguang_flutter/features/record/record_screen.dart'
     show RecordScreen;
 
@@ -146,13 +146,21 @@ void main() {
     expect(api.recordsCalls, 1);
 
     await openSheetAndSearch(tester, '鸡');
-    // searchFoods 收到关键词与当前餐次（js/app.js:633）
-    expect(api.lastSearchKeyword, '鸡');
+    // M11-T1：开层拉一份空词快照（meal 仍按当前餐次，js/app.js:633），
+    // 打字改端上过滤 → 网络请求总数不因关键词增加。
+    expect(api.searchCalls, 1);
+    expect(api.lastSearchKeyword, '');
     expect(api.lastSearchMeal, 'lunch');
     // 结果行：名/meta/kcal + 按钮文案（per100→「按克加」，普通→「添加」，js/app.js:642）
     expect(find.textContaining('鸡蛋'), findsOneWidget);
     expect(find.text('添加'), findsOneWidget);
-    expect(find.text('按克加'), findsOneWidget); // 米饭是 per100 食物
+    // 端上过滤真生效的新证据：搜「鸡」时米饭必须被滤掉。
+    // 量具说明：结果行与记录行都渲染菜名，`textContaining('米饭')` 会同时命中
+    // 记录区那条（本用例 records 里就有米饭），故改用**只出现在搜索结果行**的
+    // per100 按钮「按克加」作尺（米饭是唯一 per100 项，它不在＝已被滤掉）。
+    // per100 的正向覆盖由 ③/③b 独立承担，本处删除不构成减 Coverage。
+    expect(find.text('按克加'), findsNothing);
+    expect(find.textContaining('米饭'), findsOneWidget); // 仅剩记录区那一行
 
     await tester.tap(find.text('添加'));
     await tester.pumpAndSettle();
@@ -345,8 +353,8 @@ void main() {
 
   /* ---------- M9 终审 I-1 钉①：addRecord 成功链「写删键」缓存面锁 ---------- */
 
-  test('M9终审I-1钉① addRecord 成功链先删键：records/summary 两键缓存面均归 null'
-      '（对照 record_controller.dart :94-95 _syncDay 双删；摘任一删键行本钉即红）',
+  test('M11-T2 改判据（原 M9终审I-1钉①「写后双删键」）：键保留，但绝不播种到写前旧数'
+      '（乐观写 + 提交后 stamp/重建对账两件事共同保证；摘任一件本钉即红）',
       () async {
     final api = StubHealthApi(records: [
       StubHealthApi.recordMap(
@@ -359,10 +367,7 @@ void main() {
     addTearDown(container.dispose);
     final date = todayIso();
     final cache = container.read(swrCacheProvider);
-    // 预置「写前旧数」两键（≙ 读播种面的回写形态：RecordsNotifier/SummaryNotifier
-    // 各自的 cache.write 同款值型）。本用例不挂 widget、两 family 元素不在场，
-    // _syncDay 的 provider-invalidate 无在体可重建 → 删键后零重取回写竞态，
-    // 锁的就是成功链「先删键」的纯缓存面（M9-T4钉b/T9结转钉同族口径）。
+    // 预置「写前旧数」（≙ 读播种面的回写形态），用来验终态里它已被冲掉。
     cache.write(
         'records.$date',
         <Map<String, dynamic>>[
@@ -372,6 +377,11 @@ void main() {
     cache.write('summary.$date', Summary.fromMap(StubHealthApi.summaryMap(kcal: 232)));
     expect(cache.read<Object>('records.$date'), isNotNull);
     expect(cache.read<Object>('summary.$date'), isNotNull);
+    // 挂监听者 ≙ 首页/记录页在场：invalidate 才会真的重建并重取对账
+    final subR = container.listen(recordsProvider(date), (_, _) {});
+    final subS = container.listen(summaryProvider(date), (_, _) {});
+    addTearDown(subR.close);
+    addTearDown(subS.close);
 
     final ok = await container.read(recordControllerProvider).addRecord(
           date,
@@ -386,10 +396,20 @@ void main() {
         );
     expect(ok, isTrue);
     expect(api.addBodies, hasLength(1)); // 成功链确实走过网络层（非半途抛错）
+    await Future<void>.delayed(const Duration(milliseconds: 1)); // 对账回包落地
 
-    expect(cache.read<Object>('records.$date'), isNull,
-        reason: 'addRecord 成功链必须删 records.\$date 键（record_controller.dart:94）');
-    expect(cache.read<Object>('summary.$date'), isNull,
-        reason: 'addRecord 成功链必须删 summary.\$date 键（record_controller.dart:95）');
+    expect(cache.read<Object>('records.$date'), isNotNull,
+        reason: 'M11-T2：写后保留键——回访必须先播种，删键＝白屏一个往返');
+    final names =
+        (cache.read<List<Map<String, dynamic>>>('records.$date')!)
+            .map((e) => e['name'])
+            .toList();
+    expect(names, isNot(contains('写前旧餐')),
+        reason: '旧数必须被云端真行冲掉（这才是 I-1 当初要守的不变量）');
+    expect(names, containsAll(<String>['米饭', '鸡蛋']));
+    // summary 只断「键保留」：对账以云端为准，而本桩的 summary 恒返 kcal=0
+    // （未随入库累加），故「环数=232+72」在这里不成立——环的乐观加算与失败
+    // 回滚由 test/record/optimistic_write_test.dart ①②⑥ 覆盖，不在本桩形上重复钉。
+    expect(cache.read<Object>('summary.$date'), isNotNull);
   });
 }

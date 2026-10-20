@@ -81,24 +81,53 @@ class InMemoryTokenStore implements TokenStore {
   }
 }
 
-/// 平台实现薄壳（真机/桌面用，不在单测覆盖内）：
-/// flutter_secure_storage 持久化 JSON 字符串，键 kTokenKey。
+/// 平台实现薄壳（真机/桌面用）：flutter_secure_storage 持久化 JSON 字符串，
+/// 键 kTokenKey；**M11-T4 起带内存镜像**，一次启动只打一次盘。
 class SecureTokenStore implements TokenStore {
   SecureTokenStore([FlutterSecureStorage? storage])
       : _storage = storage ?? const FlutterSecureStorage();
 
   final FlutterSecureStorage _storage;
 
+  /// 内存镜像。为什么要它：Android Keystore 读是数十 ms 级平台通道，而
+  /// ApiClient 每个请求都 read 一次（api_client.dart:101），常吃回填更是
+  /// 一次性 30 路并发（food_freq.dart:181）——同一份 token 被读 30 遍。
+  /// App 单 isolate，且本键只有本类会写，故镜像不会与盘不一致；写/清一律
+  /// **等盘成功后再改镜像**（抛异常时镜像保持旧值，不制造假登录态）。
+  TokenData? _mirror;
+  bool _loaded = false;
+
+  /// 并发首读去重：30 路同时进来只打一次盘。
+  Future<TokenData?>? _inflight;
+
   @override
-  Future<TokenData?> read() async {
+  Future<TokenData?> read() {
+    if (_loaded) return Future.value(_mirror);
+    return (_inflight ??= _readOnce())
+        .whenComplete(() => _inflight = null);
+  }
+
+  Future<TokenData?> _readOnce() async {
     try {
       final s = await _storage.read(key: kTokenKey);
-      if (s == null) return null;
+      if (s == null) {
+        _mirror = null;
+        _loaded = true;
+        return null;
+      }
       final decoded = jsonDecode(s);
       // 对齐 js：非法 JSON / 非对象 → 视为无 token
-      if (decoded is! Map) return null;
-      return TokenData(Map<String, dynamic>.from(decoded));
+      if (decoded is! Map) {
+        _mirror = null;
+        _loaded = true;
+        return null;
+      }
+      final data = TokenData(Map<String, dynamic>.from(decoded));
+      _mirror = data;
+      _loaded = true;
+      return data;
     } catch (_) {
+      // 平台异常不置 _loaded：下次读再打盘（失败不钉死整会话）
       return null;
     }
   }
@@ -106,10 +135,14 @@ class SecureTokenStore implements TokenStore {
   @override
   Future<void> write(TokenData token) async {
     await _storage.write(key: kTokenKey, value: jsonEncode(token.raw));
+    _mirror = token;
+    _loaded = true;
   }
 
   @override
   Future<void> clear() async {
     await _storage.delete(key: kTokenKey);
+    _mirror = null;
+    _loaded = true;
   }
 }

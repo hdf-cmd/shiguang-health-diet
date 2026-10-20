@@ -44,7 +44,11 @@ abstract class SwrFamilyNotifier<T extends Object, Arg>
     final key = cacheKey(arg);
     final cached = cache.read<T>(key);
     if (cached == null) {
+      final rev0 = cache.revision(key);
       final fresh = await fetch(arg); // 首访：现行 loading→data
+      if (!_isStillAuthoritative(cache, key, rev0)) {
+        return cache.read<T>(key) ?? fresh;
+      }
       cache.write(key, fresh);
       return fresh;
     }
@@ -54,14 +58,27 @@ abstract class SwrFamilyNotifier<T extends Object, Arg>
     if (!(state.hasValue && identical(state.value, cached))) {
       state = AsyncData<T>(cached); // 播种（build 返回值稍后覆盖，无竞态）
     }
+    final rev0 = cache.revision(key);
     try {
       final fresh = await fetch(arg);
+      if (!_isStillAuthoritative(cache, key, rev0)) {
+        // 回包过期（其间有乐观写/删键）或该键正被在途写挂起（M11-T2）——
+        // 一律不落缓存、不改写乐观值，保住「删掉的行不会闪回来」。
+        // 写路径提交后会 stamp + invalidate，云端终态照样对账回来。
+        final newer = cache.read<T>(key);
+        if (newer != null) return newer;
+        return fresh;
+      }
       cache.write(key, fresh);
       return fresh;
     } catch (_) {
       return cached; // 失败有缓存：静默保旧（spec §1 差异登记）
     }
   }
+
+  /// 回包能否作权威值：代次未变（其间无人写过/删过该键）**且**该键未被在途写挂起。
+  bool _isStillAuthoritative(SwrCache cache, String key, int rev0) =>
+      cache.revision(key) == rev0 && !cache.isHeld(key);
 }
 
 /// 某日热量汇总（HealthAPI.getDailySummary → 契约 dailySummary：

@@ -130,6 +130,33 @@ class PrefsFoodFreqStore implements FoodFreqStore {
 /// 初始化窗口：近 30 天（老大拍板 B 方案）。
 const int kFreqInitDays = 30;
 
+/// 回填并发上限（M11-T5）：30 路同时打网关会挤在同一时刻抢连接与云函数并发，
+/// 把「打开搜索弹层」这一次真正的读请求排在后面；限到 6 路后总耗时仍远小于
+/// 逐日串行，且不再与首页/搜索请求抢道。
+const int kFreqInitConcurrency = 6;
+
+/// 定宽 worker 池：`limit` 个工人轮流从 [items] 取活，保证同时在途数 ≤ limit。
+/// 不用 `Future.wait(items.map(...))`——那写法一次性创建全部 Future，等于全并发。
+Future<void> _runLimited<T>(
+  List<T> items,
+  int limit,
+  Future<void> Function(T item) body,
+) async {
+  var cursor = 0;
+  Future<void> worker() async {
+    while (true) {
+      final i = cursor++;
+      if (i >= items.length) return;
+      await body(items[i]);
+    }
+  }
+
+  await Future.wait([
+    for (var w = 0; w < (limit < items.length ? limit : items.length); w++)
+      worker(),
+  ]);
+}
+
 final foodFreqStoreProvider = Provider<FoodFreqStore>(
     (ref) => throw UnimplementedError('组合根注入'));
 
@@ -161,8 +188,10 @@ class FoodFreqNotifier extends Notifier<Map<String, int>> {
     }
   }
 
-  /// 幂等：已初始化/已加载即直返。失败容忍：部分日期取回即用但不打标记，
-  /// 下次冷启再补齐；全失败返回空且不标记（本次按无频次原序显示）。
+  /// 幂等：标记已落盘即直返回放（M11-T5 根治点——旧口径要求 30 天全成功才落
+  /// 标记，弱网下永不落盘 ⇒ 每次冷启动重放 30 请求）。失败容忍：部分日期取回
+  /// 即用并落标记（频次只决定排序，少算一天的代价远小于每次冷启重放）；
+  /// 全失败返回空且不标记，本次按无频次原序显示，下次冷启再补齐。
   Future<void> ensureLoaded() async {
     if (_started) return;
     _started = true;
@@ -177,15 +206,14 @@ class FoodFreqNotifier extends Notifier<Map<String, int>> {
     final dates = recentIsoDates(
         DateTime.parse(ref.read(todayProvider)), kFreqInitDays);
     final byDate = <String, List<Map<String, dynamic>>>{};
-    var failures = 0;
-    await Future.wait(dates.map((d) async {
+    await _runLimited(dates, kFreqInitConcurrency, (d) async {
       try {
         final recs = await api.getMealRecords(d);
         byDate[d] = recs.map((e) => Map<String, dynamic>.from(e)).toList();
       } catch (_) {
-        failures++; // 该日失败：本次仍可用成功日聚合，但不打标记，下次冷启补齐
+        // 该日失败：跳过，按已成功日聚合（见上：不再因此拒绝落标记）
       }
-    }));
+    });
     if (byDate.isEmpty) {
       _started = false; // 全失败：本会话内下次开弹层可再试
       return;
@@ -193,7 +221,7 @@ class FoodFreqNotifier extends Notifier<Map<String, int>> {
     final counts = aggregateFreqFromRecords(byDate);
     state = counts;
     await store.saveCounts(uid, counts);
-    if (failures == 0) await store.markInitialized(uid);
+    await store.markInitialized(uid);
   }
 
   bool _started = false;

@@ -433,10 +433,11 @@ void main() {
 
   /* ---------- 搜索弹层空结果入口接线（cf-open，:646/:657-658） ---------- */
 
-  testWidgets('空结果区「＋ 自定义食物」→ 开表单且名称预填关键词；入库后按当前关键词重查',
+  testWidgets(
+      '空结果区「＋ 自定义食物」→ 开表单且名称预填关键词；入库后清快照重取',
       (tester) async {
     await useBigSurface(tester);
-    final api = StubHealthApi(foods: const <dynamic>[]);
+    final api = _StubSnapshotGrowsOnAdd();
     final container = ProviderContainer(
       overrides: [healthApiProvider.overrideWithValue(api)],
       retry: (_, _) => null,
@@ -467,9 +468,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('已存入食物库，搜索可用'), findsOneWidget);
     expect(api.customFoodBodies.single['name'], '奶茶');
-    // onSaved ≙ fillSheetResults(当前关键词)：searchProvider 以同键重取
+    // onSaved ≙ fillSheetResults(当前关键词)。**M11-T1 差异登记**：Flutter 侧
+    // 重取的是空词快照（record_controller.invalidateFoodLibrary → SearchNotifier
+    // 重跑 fetch），再由端上按当前关键词过滤；H5 js/app.js:1251 是直接以该词打
+    // 云端。两支**终态同集**（自定义撞 limit(20) 截断时由 search_local_test ⑤
+    // 的守卫回落逐词），故本钉从「重取用当前关键词」改判「重取确实发生 + 新条目
+    // 搜得到」——不放宽：条目搜不到即红。
     expect(api.searchCalls, searchCallsBefore + 1);
-    expect(api.lastSearchKeyword, '奶茶');
+    expect(api.lastSearchKeyword, ''); // 快照口径（旧口径为该词，已随 T1 变更）
+    expect(find.text('奶茶'), findsWidgets); // 入库后即可在结果区看到
   });
 
   /* ---------- M5 终审 F2：搜索框旁常驻入口（≙ index.html:276 #sheet-cf-open） ---------- */
@@ -610,4 +617,29 @@ void main() {
     expect(api.addBodies.single['date'], '2020-01-01');
     expect(api.addBodies.single['date'], isNot(todayIso()));
   });
+}
+
+/// M11-T1 用尺：模拟「空词快照随入库增长」的真实云端行为（index.js:57-93 的
+/// 空词分支每次都把该 uid 的自定义食物现算进返回），使「入库后搜得到」可以被
+/// 断言而不是只断调用次数。
+class _StubSnapshotGrowsOnAdd extends StubHealthApi {
+  _StubSnapshotGrowsOnAdd() : super(foods: const <dynamic>[]);
+
+  @override
+  Future<List<dynamic>> searchFoods(String keyword, [String? meal]) async {
+    final base = await super.searchFoods(keyword, meal);
+    if (keyword.isNotEmpty || customFoodBodies.isEmpty) return base;
+    final added = customFoodBodies.last;
+    return <dynamic>[
+      ...base,
+      {
+        'id': 'cf_added',
+        'name': added['name'],
+        'meta': '自定义 · ${added['portion'] ?? ''}',
+        'kcal': added['kcal'],
+        'emoji': '🍽️',
+        'image': '',
+      },
+    ];
+  }
 }

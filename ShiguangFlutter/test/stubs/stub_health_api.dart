@@ -217,6 +217,10 @@ class StubHealthApi implements HealthApi {
   final List<String> deletedIds = <String>[];
   ApiException? deleteError;
 
+  /// M11-T2：非空 → deleteFoodRecord 先 await 它再返回（模拟慢网在途，
+  /// 用于证明「乐观移除发生在回包之前」，形同 [addGate]）
+  Completer<void>? deleteGate;
+
   /* ---------- M7-T4 食物库管理：listCustomFoods / setCustomFoodMeals /
   deleteCustomFood / setHiddenFoods / getBuiltinFoods ---------- */
 
@@ -533,7 +537,12 @@ class StubHealthApi implements HealthApi {
     addBodies.add(Map<String, dynamic>.from(record));
     if (addGate != null) await addGate!.future;
     if (addError != null) throw addError!;
-    return <String, dynamic>{'id': 'rec_added_${addBodies.length}', ...record};
+    final created = <String, dynamic>{'id': 'rec_added_${addBodies.length}', ...record};
+    // M11-T2：入库成功即写进桩数据（云端 sg_records 是真增行）。没有它，「写后
+    // 静默对账」重读会把刚加的那条抹掉，测不出对账终态。
+    final cur = records;
+    if (cur != null) records = <dynamic>[...cur, created];
+    return created;
   }
 
   @override
@@ -552,7 +561,16 @@ class StubHealthApi implements HealthApi {
   @override
   Future<Map<String, dynamic>> deleteFoodRecord(String id) async {
     deletedIds.add(id);
+    if (deleteGate != null) await deleteGate!.future;
     if (deleteError != null) throw deleteError!;
+    // M11-T2：删成功即从桩数据里摘掉该行——否则「写后静默对账」重读会把已删条目
+    // 又取回来，测不出对账终态（云端 sg_records 是真删）。
+    final kept = records;
+    if (kept != null) {
+      records = kept
+          .where((e) => '${(e is Map ? e['id'] : null) ?? ''}' != id)
+          .toList();
+    }
     return <String, dynamic>{'ok': true};
   }
 

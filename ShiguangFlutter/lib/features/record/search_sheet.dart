@@ -128,11 +128,14 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
     };
     final pending =
         controller.addRecord(widget.date, body, pendingKey: pendingKey);
-    // addRecord 同步登记在途后立即重绘 → pending 期按钮禁用 +「请稍候…」
+    // addRecord 的乐观落位与在途登记都在同步段完成，此处重绘即得新数据。
     if (mounted) setState(() {});
+    // M11-T2：toast 移到乐观位之后、回包之前（≙ H5 js/app.js:677「已添加 …
+    // 可继续添加」先响，失败再补一条「添加失败」）。同键在途的丢弃支由上面
+    // isInFlight 预检拦住（H5 靠 btn.disabled，同形），故此处不再判返回值。
+    _toast('已添加 ${f['name'] ?? ''} · 可继续添加');
     try {
-      // false = 同键重复提交被控制器丢弃（理论上已被禁用拦住），不出 toast
-      if (await pending) _toast('已添加 ${f['name'] ?? ''} · 可继续添加');
+      await pending;
     } on ApiException catch (e) {
       _toast('添加失败：${e.message}');
     } catch (_) {

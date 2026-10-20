@@ -5,9 +5,10 @@ import 'app/auth_state.dart';
 import 'app/root_container.dart';
 import 'app/shell.dart';
 import 'app/theme.dart';
+import 'data/swr_cache.dart' show swrCacheProvider;
 import 'features/auth/login_screen.dart';
 
-void main() {
+Future<void> main() async {
   // M5-T8 结转 C：绑定必须先于任何插件面。flutter_local_notifications 22.3.1
   // 的 FlutterLocalNotificationsPlugin() **构造期**即 setMethodCallHandler
   // （platform_channel.dart:589 断言 _binaryMessenger!=null||binding!=null），
@@ -25,6 +26,11 @@ void main() {
   // init→sync(on: enabled())，fire-and-forget——内部已 try/catch，不挡启动。
   // 测试环境不走 main()，插件面天然零波及（调度动作单测用 FakePort）。
   bootstrapReminders(container);
+  // M11-T3：冷启动磁盘播种——必须在这里、runApp 之前 await。
+  // 放 AuthGate.bootstrap 里有两个实测后果：① widget 测试的 pumpAndSettle 不驱动
+  // 真实平台通道 IO，登录态用例整批停在 splash（auth_expiry 实测）；② 首帧已经
+  // 画过一次骨架再改数，等于没省到。放这儿：一次 prefs 读（毫秒级）换首帧直显。
+  await container.read(swrCacheProvider).hydrate();
   runApp(UncontrolledProviderScope(
     container: container,
     child: const ShiguangApp(),

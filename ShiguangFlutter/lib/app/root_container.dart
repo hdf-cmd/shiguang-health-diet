@@ -29,6 +29,8 @@ import '../data/api_client.dart';
 import '../data/auth_api.dart';
 import '../data/health_api.dart';
 import '../data/token_store.dart';
+import '../data/swr_cache.dart' show SwrCache, swrCacheProvider;
+import '../data/swr_disk.dart' show PrefsSwrDisk, SwrDisk, swrDiskProvider;
 import '../features/home/home_controller.dart' show healthApiProvider;
 import '../features/notifications/reminder_scheduler.dart';
 import '../features/record/food_freq.dart';
@@ -46,12 +48,16 @@ ProviderContainer buildRootContainer({
   Dio? dio,
   void Function()? onSessionExpired,
   FoodFreqStore? foodFreqStore,
+  SwrDisk? swrDisk,
 }) {
   // I1 断环（原 main.dart 的 late final 技巧，随拼装一并搬来）：
   // ApiClient 的过期回调要读 container，而 container 的 overrides 又要引用
   // apiClient → 先声明 late final、构造回调时只捕获闭包、随后回填。
   late final ProviderContainer container;
   final store = tokenStore ?? SecureTokenStore();
+  // M11-T3：SWR 磁盘后层。disk 与 cache 必须共用同一实例（cache 是 disk 的唯一
+  // 写者），故先建局部变量再两处 override 同引用。
+  final disk = swrDisk ?? PrefsSwrDisk();
   final apiClient = ApiClient(
     tokenStore: store,
     dio: dio, // null → ApiClient 内部 defaultDio()（15s 三超时）
@@ -75,6 +81,9 @@ ProviderContainer buildRootContainer({
       healthApiProvider.overrideWithValue(HealthApi(apiClient)),
       foodFreqStoreProvider.overrideWithValue(
           foodFreqStore ?? PrefsFoodFreqStore()),
+      // M11-T3：磁盘后层 + 带盘的 SWR 缓存（同一 disk 实例）
+      swrDiskProvider.overrideWithValue(disk),
+      swrCacheProvider.overrideWithValue(SwrCache(disk: disk)),
     ],
     // M3 终审 Important-3：Riverpod 3 的容器级默认是指数退避自动重试
     // （element.dart:772 `origin.retry ?? container.retry ?? defaultRetry`，

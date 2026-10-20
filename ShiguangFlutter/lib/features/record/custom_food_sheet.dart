@@ -337,6 +337,7 @@ class _CustomFoodSheetState extends ConsumerState<_CustomFoodSheet> {
         // （口径同 food_lib_sheet 归类/删除链、weight_log_card :145 定式；
         // 键名两处约定，不交叉 import 防环）。
         ref.read(swrCacheProvider).invalidate('foods.custom');
+        invalidateFoodLibrary(ref); // M11-T1：入库即从快照重建，无需重开弹层
       }
       if (mounted) Navigator.of(context).pop(); // :1242 入库成功即关（先于记入，
       // 使「记入失败」不再提供重复入库的重入口——与 H5 close-then-add 同形）

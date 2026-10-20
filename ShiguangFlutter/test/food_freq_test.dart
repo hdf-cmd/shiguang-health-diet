@@ -154,7 +154,11 @@ void main() {
       expect(api.datesFetched, isEmpty);
     });
 
-    test('部分日期失败：成功日照常聚合可用，但不打初始化标记（下次冷启补齐）', () async {
+    test('部分日期失败：成功日聚合可用**并照常打标记**（M11-T5 裁决改钉）', () async {
+      // 旧钉（M7 时代）要求 failures==0 才落标记，后果是弱网下标记永不落盘
+      // → 每次冷启动重放 30 请求（老大 10-19 反馈「每次都慢」的直接机制）。
+      // M11-T5 裁决：有任一日聚合成功即标记；差异登记＝个别失败日不计入频次
+      // （只影响排序，不影响任何数据正确性面）。
       final store = _MemoryStore();
       final api = _RecordsByDate(
         records: [
@@ -165,7 +169,28 @@ void main() {
       final c = _container(store: store, api: api, now: DateTime(2026, 9, 25, 12));
       await c.read(foodFreqProvider.notifier).ensureLoaded();
       expect(c.read(foodFreqProvider), {'鸡胸': 29});
-      expect(await store.isInitialized('u_freq'), isFalse);
+      expect(await store.isInitialized('u_freq'), isTrue);
+
+      // 标记落盘即根治「每次冷启重放」：换一个 Notifier（≙ 冷启动重开弹层）
+      // 且用**全新 api 桩**——二次开层必须一条记录请求都不发，直接回放 29 次。
+      final api2 = _RecordsByDate(records: const []);
+      final c2 = _container(store: store, api: api2);
+      await c2.read(foodFreqProvider.notifier).ensureLoaded();
+      expect(c2.read(foodFreqProvider), {'鸡胸': 29});
+      expect(api2.datesFetched, isEmpty);
+      expect(api.datesFetched.length, 30); // 首跑逐日发起（含失败那天）
+    });
+
+    test('回填并发峰值受限（≤6 且确为并发，不退回串行）', () async {
+      final store = _MemoryStore();
+      final api = _RecordsByDate(records: [
+        {'name': '米饭'}
+      ]);
+      final c = _container(store: store, api: api);
+      await c.read(foodFreqProvider.notifier).ensureLoaded();
+      expect(api.datesFetched.length, 30); // 窗口未被限流吞掉
+      expect(api.peak, lessThanOrEqualTo(kFreqInitConcurrency));
+      expect(api.peak, greaterThan(1)); // 反「串行化」伪绿：峰值必须 >1
     });
 
     test('全部失败：state 保持空（列表原序），不落标记且允许本会话重试', () async {
@@ -305,9 +330,19 @@ class _RecordsByDate implements HealthApi {
   List<Map<String, dynamic>> searchResult = const [];
   bool addFails = false;
 
+  /// 并发探针：getMealRecords 内挂 1ms 真实让出，记录同时在途峰值。
+  /// 限流实现若退化成串行，peak==1 即被「峰值>1」钉抓出；限流失效，
+  /// peak==30 被「≤kFreqInitConcurrency」钉抓出。
+  int active = 0;
+  int peak = 0;
+
   @override
   Future<List<dynamic>> getMealRecords(String date) async {
     datesFetched.add(date);
+    active++;
+    if (active > peak) peak = active;
+    await Future<void>.delayed(const Duration(milliseconds: 1));
+    active--;
     if (failAll || failDates.contains(date)) {
       throw ApiException('网络异常');
     }

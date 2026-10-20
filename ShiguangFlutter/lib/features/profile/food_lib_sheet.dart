@@ -59,6 +59,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
 import '../../data/swr_cache.dart' show swrCacheProvider;
+// M11-T1 搜索快照失效入口（同 features/record 的 custom_food_sheet 用法）。
+import '../record/record_controller.dart' show invalidateFoodLibrary;
 import '../../domain/js_compat.dart' show jsNumText, jsOr;
 import '../common/food_thumb.dart';
 import '../common/skeleton.dart' show SkeletonBar;
@@ -366,6 +368,8 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
       // M9：写路径「先删键再刷新」（对照 weight_log_card :145 定式）——
       // 否则 :1363 重取的 _render 会先拿旧缓存显出来。
       ref.read(swrCacheProvider).invalidate(foodsCustomCacheKey);
+      // M11-T1：搜索快照按餐次各存一份，归类一变即失真 → 整族失效
+      invalidateFoodLibrary(ref);
       // :1362 三态文案：breakfast→早餐 / snack→零食 / 其余(lunch 档，含 dinner)→正餐
       _toast('已归到${_kindLabels[kind] ?? '正餐'} · 搜索时只在对应餐次出现');
       await _render(); // :1363 成功后重取
@@ -421,6 +425,7 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
       await ref.read(healthApiProvider).deleteCustomFood(id);
       if (!mounted) return;
       ref.read(swrCacheProvider).invalidate(foodsCustomCacheKey); // M9 写路径删键
+      invalidateFoodLibrary(ref); // M11-T1：删掉的自定义食物不得留在搜索快照里
       _toast('已删除'); // :1374 逐字
       await _render(); // :1375
     } on ApiException catch (e) {
@@ -452,6 +457,9 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
       }
       await ref.read(healthApiProvider).setHiddenFoods(ids);
       if (!mounted) return;
+      // M11-T1：hiddenFoods 参与云端搜索过滤（index.js:59），搜索快照必须重取；
+      // 下面的「引用别名翻转」只同步 `foods.builtin` 管理列表，覆盖不到快照。
+      invalidateFoodLibrary(ref);
       item['hidden'] = !wasHidden; // :1392 本地 cache 翻转（不发重取）——
       // M9：_builtin 与 SwrCache 键 `foods.builtin` 同 List 同 Map 引用，
       // 翻转即会话缓存更新，跨弹层开关一致（foods.builtin 不删键：钉⑥口径）

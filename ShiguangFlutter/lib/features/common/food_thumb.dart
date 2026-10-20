@@ -5,6 +5,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../app/theme.dart';
@@ -43,9 +44,18 @@ class FoodThumb extends StatelessWidget {
           gaplessPlayback: true,
           errorBuilder: (_, _, _) => fallback);
     } else if (s.startsWith('http://') || s.startsWith('https://')) {
-      img = Image.network(s,
-          width: size, height: size, fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => fallback);
+      // M11-T6：磁盘缓存（cached_network_image）。内置库 35 条全带 https 图，
+      // 一次搜索最多 ~55 行同时拉图；旧实现只有 Flutter 内存缓存，重开弹层即
+      // 重拉。老大裁定「体积无所谓，体验第一」（APK 19.48MB → +1~2MB）。
+      img = CachedNetworkImage(
+        imageUrl: s,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        // 加载中留空（≙ H5 img 未加载完时的占位观感），失败仍回退 emoji
+        placeholder: (_, _) => SizedBox(width: size, height: size),
+        errorWidget: (_, _, _) => fallback,
+      );
     } else {
       return fallback;
     }
