@@ -188,11 +188,16 @@ async function callDeepSeek(apiKey, imageDataUrl, strict) {
         ]
       })
     });
-    if (!resp.ok) return null;
+    if (!resp.ok) {
+      console.log("DEEPSEEK_HTTP", resp.status);
+      return null;
+    }
     const data = await resp.json();
     const msg = data && data.choices && data.choices[0] && data.choices[0].message;
     return (msg && msg.content) || null;
   } catch (e) {
+    if (e && e.name === "AbortError") console.log("DEEPSEEK_TIMEOUT", e.name);
+    else console.log("DEEPSEEK_ERR", e && e.name);
     return null;
   } finally {
     clearTimeout(timer);
@@ -316,37 +321,37 @@ async function handle(path, method, params, body, uid) {
   }
 
   /* ---- 运动记录（sg_exercises）：刻意运动单独记，消耗计入当日报销额度 ---- */
-/* M13：拍照识菜。图片只用于识别，不落库。 */
-if (path === "/ai/food-scan" && method === "POST") {
-  const apiKey = process.env.DEEPSEEK_API_KEY || "";
-  if (!apiKey) return { ok: false, message: "识别服务未配置" };
-  const image = String(body.image || "");
-  if (!kAiImagePrefix.test(image) || image.length > kAiImageMaxChars) {
-    return { ok: false, message: "图片格式不支持或过大" };
+  /* M13：拍照识菜。图片只用于识别，不落库。 */
+  if (path === "/ai/food-scan" && method === "POST") {
+    const apiKey = process.env.DEEPSEEK_API_KEY || "";
+    if (!apiKey) return { ok: false, message: "识别服务未配置" };
+    const image = String(body.image || "");
+    if (!kAiImagePrefix.test(image) || image.length > kAiImageMaxChars) {
+      return { ok: false, message: "图片格式不支持或过大" };
+    }
+    const prof = await getOrCreateProfile(uid);
+    const d = today();
+    const used = prof.aiScanDate === d ? (Number(prof.aiScanCount) || 0) : 0;
+    if (used >= kAiScanDailyLimit) {
+      return { ok: false, message: "今日识别次数已用完（" + kAiScanDailyLimit + " 次）" };
+    }
+    // 先计数再调用：失败也占一次，防止坏图反复刷成本
+    await profiles.where({ uid }).update({ aiScanDate: d, aiScanCount: used + 1, updatedAt: Date.now() });
+    let result = null;
+    for (let attempt = 0; attempt < 2 && !result; attempt++) {
+      const text = await callDeepSeek(apiKey, image, attempt > 0);
+      const parsed = parseModelJson(text);
+      if (!parsed) continue;
+      const v = validateScanResult(parsed);
+      if (v.ok) result = v;
+    }
+    if (!result) return { ok: false, message: "没认出来，换张更清楚的图或手动填写" };
+    return {
+      ok: true, dish: result.dish, confidence: result.confidence,
+      per100: result.per100, note: result.note,
+      quota: { used: used + 1, limit: kAiScanDailyLimit }
+    };
   }
-  const prof = await getOrCreateProfile(uid);
-  const d = today();
-  const used = prof.aiScanDate === d ? (Number(prof.aiScanCount) || 0) : 0;
-  if (used >= kAiScanDailyLimit) {
-    return { ok: false, message: "今日识别次数已用完（" + kAiScanDailyLimit + " 次）" };
-  }
-  // 先计数再调用：失败也占一次，防止坏图反复刷成本
-  await profiles.where({ uid }).update({ aiScanDate: d, aiScanCount: used + 1, updatedAt: Date.now() });
-  let result = null;
-  for (let attempt = 0; attempt < 2 && !result; attempt++) {
-    const text = await callDeepSeek(apiKey, image, attempt > 0);
-    const parsed = parseModelJson(text);
-    if (!parsed) continue;
-    const v = validateScanResult(parsed);
-    if (v.ok) result = v;
-  }
-  if (!result) return { ok: false, message: "没认出来，换张更清楚的图或手动填写" };
-  return {
-    ok: true, dish: result.dish, confidence: result.confidence,
-    per100: result.per100, note: result.note,
-    quota: { used: used + 1, limit: kAiScanDailyLimit }
-  };
-}
 
 if (path === "/foods/custom" && method === "POST") {
     const name = String(body.name || "").trim().slice(0, 60);
@@ -389,18 +394,25 @@ if (path === "/foods/custom" && method === "POST") {
     const meals = Array.isArray(body.meals)
       ? body.meals.map(String).filter(m => ["breakfast", "lunch", "dinner", "snack"].indexOf(m) > -1).slice(0, 4)
       : [];
+    const img = String(body.image || "");
+    if (img && (!kAiImagePrefix.test(img) || img.length > kAiImageMaxChars)) {
+      return { ok: false, message: "图片格式不支持或过大" };
+    }
     const fields = {
       kcal, grams, unit, meals,
       protein: +p0.toFixed(1), carb: +c0.toFixed(1), fat: +f0.toFixed(1),
       portion: String(body.portion || (grams ? grams + unit : "1 份")).slice(0, 60),
       emoji: String(body.emoji || "") || emojiFor(name),
-      image: String(body.image || "").slice(0, 300000),
+      image: img,
       updatedAt: Date.now()
     };
     const emoji = fields.emoji;
     const found = await db.collection("custom_foods").where({ uid, name }).limit(1).get();
     if (found.data && found.data[0]) {
-      await db.collection("custom_foods").doc(found.data[0]._id).update(fields);
+      // 扫码没有归类意图：更新已有条目时保留原有 meals，不清空用户餐次标签
+      const patch = { ...fields };
+      delete patch.meals;
+      await db.collection("custom_foods").doc(found.data[0]._id).update(patch);
       return { ok: true, id: found.data[0]._id, updated: true, emoji };
     }
     if (BUILTIN_FOODS.some(f => f.name === name)) {
