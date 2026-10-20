@@ -47,6 +47,21 @@ class StubHealthApi implements HealthApi {
     this.libBuiltins,
   });
 
+  /// M12-③：食物频次（/diet/records/freq）桩。默认空表；用例按需赋值。
+  Map<String, int> foodFreqCounts = const {};
+  bool foodFreqComplete = true;
+  int foodFreqCalls = 0;
+
+  @override
+  Future<Map<String, dynamic>> getFoodFreq() async {
+    foodFreqCalls++;
+    return {
+      'counts': foodFreqCounts,
+      'scanned': foodFreqCounts.values.fold<int>(0, (a, b) => a + b),
+      'complete': foodFreqComplete,
+    };
+  }
+
   /// 成功返回体（null 时按全零汇总/空记录处理）
   Map<String, dynamic>? summary;
   List<dynamic>? records;

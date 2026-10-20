@@ -1,5 +1,7 @@
 const cloud = require("@cloudbase/node-sdk");
 const crypto = require("crypto");
+// M12-③ 食物频次聚合（纯逻辑，tests/records-freq.test.js 覆盖）
+const { countNames, collectAll } = require("./freq");
 
 const app = cloud.init({
   env: cloud.SYMBOL_CURRENT_ENV,
@@ -403,6 +405,18 @@ if (path === "/foods/custom" && method === "POST") {
     return (recs.data || []).map(r => ({
       id: r._id, meal: r.meal, name: r.name, portion: r.portion, kcal: r.kcal, emoji: r.emoji, image: r.image || "", protein: r.protein || 0, carb: r.carb || 0, fat: r.fat || 0
     }));
+  }
+
+  /* 食物频次（M12-③）：全史按菜名计数，一次往返替代客户端的逐日回填（原 30 请求）。
+   * 分页收集（单次 get 上限 1000）；被 maxPages 截断时 complete=false 显式上报，
+   * 客户端据此知道这是下界而非全量。 */
+  if (path === "/diet/records/freq" && method === "GET") {
+    const { records, complete } = await collectAll(async (skip, limit) => {
+      const res = await db.collection("sg_records")
+        .where({ uid }).orderBy("createdAt", "asc").skip(skip).limit(limit).get();
+      return res.data || [];
+    });
+    return { counts: countNames(records), scanned: records.length, complete };
   }
 
   if (path === "/diet/records" && method === "POST") {

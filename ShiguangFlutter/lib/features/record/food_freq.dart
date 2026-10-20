@@ -1,22 +1,24 @@
 // ShiguangFlutter/lib/features/record/food_freq.dart
-// 「常吃排序」（老大 2026-09-25 拍板方案 B）：
-// ① 首次使用拉最近 30 天云端记录（/diet/records 只读，逐日并发）聚合出
-//    {菜名: 次数} 落本地 prefs 并打初始化标记；② App 内每记一笔同名 +1；
-// ③ 食物列表按频次**稳定降序**——常吃在前，同频次/零频次保持云端原序。
+// 「常吃排序 + 吃过次数」（M12 改版）：
+// ① 首次使用拉一次 `/diet/records/freq`（云函数按 uid 全史聚合 {菜名: 次数}）
+//    落本地 prefs 并打初始化标记；M11 前的「逐日 30 请求」整体删除。
+// ② App 内每记一笔同名 +1；③ 食物列表按频次**稳定降序**，搜索结果与食物库
+//    行尾徽标共用同一份计数。
 // 键用菜名：云端记录（sg_records）只有 name 没有食物库 id，H5 历史也只能
 // 按名字聚合；名字同时是列表条目的天然匹配键。
-// 云函数零改动（排序纯客户端，历史走既有只读路由）。
+// 计数口径（老大 2026-10-20 裁决）＝**全部历史**，不是近 30 天；因此常吃排序
+// 也按全史排——当年定 30 天窗口的唯一理由是「要发 30 次请求」，该前提被
+// M12-③ 一次往返消掉。若要「最近常吃的排前面」，另加时间衰减再议。
 
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../home/home_controller.dart' show healthApiProvider, todayProvider;
+import '../home/home_controller.dart' show healthApiProvider;
 // M7-T8 分账号键的 uid 源（文件级环 profile_providers ↔ … Dart 合法，
 // exercise_controller 同注先例）。
 import '../profile/profile_providers.dart' show profileProvider;
-import '../../domain/dates.dart';
 
 /// 按频次稳定降序。counts 缺项按 0；不修改入参列表。
 List<Map<String, dynamic>> sortFoodByFreq(
@@ -36,30 +38,20 @@ List<Map<String, dynamic>> sortFoodByFreq(
   return indexed.map((i) => list[i]).toList(growable: false);
 }
 
-/// 把逐日记录聚合成 {菜名: 总次数}。空名/无名条目不计。
-Map<String, int> aggregateFreqFromRecords(
-  Map<String, List<Map<String, dynamic>>> recordsByDate,
-) {
+/// 解析云函数 freq 响应：`counts` 缺失/非对象返回 null（调用方按失败处理，
+/// 不把「空表」当成「一道菜都没吃过」——M11 静默降级的教训）。
+Map<String, int>? parseFoodFreqCounts(Object? raw) {
+  if (raw is! Map) return null;
   final out = <String, int>{};
-  for (final recs in recordsByDate.values) {
-    for (final r in recs) {
-      final name = (r['name'] as String? ?? '').trim();
-      if (name.isEmpty) continue;
-      out[name] = (out[name] ?? 0) + 1;
-    }
-  }
+  raw.forEach((k, v) {
+    if (v is num) out['$k'] = v.toInt();
+  });
   return out;
-}
-
-/// 以 [end] 为最后一天、往前共 [days] 天的本地 ISO 日期表（含 end，降序）。
-List<String> recentIsoDates(DateTime end, int days) {
-  return List.generate(days, (i) => localIso(end.subtract(Duration(days: i))));
 }
 
 /// 常吃计数持久层。生产用 SharedPreferences（[PrefsFoodFreqStore]），
 /// 测试注入内存实现——组合根模式同 M2 TokenStore。
-/// M7-T8（T4 池收口）：prefs 键分账号——uid 由 [FoodFreqNotifier] 经
-/// profileProvider 解析后传入（≙ actualDeficitKeyFor 的 `uid||'anon'` 档）。
+/// 键分账号（M7-T8）：uid 由 [FoodFreqNotifier] 经 profileProvider 解析后传入。
 abstract class FoodFreqStore {
   Future<Map<String, int>> loadCounts(String uid);
   Future<void> saveCounts(String uid, Map<String, int> counts);
@@ -72,23 +64,26 @@ class PrefsFoodFreqStore implements FoodFreqStore {
   Future<SharedPreferences>? _inst;
   Future<SharedPreferences> get _prefs => _inst ??= SharedPreferences.getInstance();
 
-  // ===== M7-T8 分账号键（不迁移旧键）=====
-  // 新键 `sg_food_freq_counts_<uid>`（init 标记同法分账号——否则 B 账号读到
-  // A 的标记即直返空计数、30 天回填永不触发）。**注销旧全局键**
-  // `sg_food_freq_counts`/`sg_food_freq_init_v1`：不迁移其内容——ensureLoaded
-  // 的 30 天云端回填机制可自重建，迁移属 YAGNI；任一方法触盘时读到旧键即删
-  // （见 [_purgeLegacy] 注释登记）。
+  // ===== M12：键升 v2（计数口径由「近 30 天」改「全史」）=====
+  // v1 的分账号键（`sg_food_freq_counts_<uid>` / `sg_food_freq_init_v1_<uid>`）
+  // 与更早的全局键一律读到即删：v1 标记若被当成「已初始化」，老用户会永远
+  // 停在 30 天计数上看不到全史数。任何方法触盘时顺手清理（见 [_purgeLegacy]）。
   static const _kCountsLegacy = 'sg_food_freq_counts';
   static const _kInitLegacy = 'sg_food_freq_init_v1';
   static String _kCounts(String uid) =>
-      'sg_food_freq_counts_${uid.isEmpty ? 'anon' : uid}';
+      'sg_food_freq_counts_v2_${uid.isEmpty ? 'anon' : uid}';
   static String _kInit(String uid) =>
-      'sg_food_freq_init_v1_${uid.isEmpty ? 'anon' : uid}';
+      'sg_food_freq_init_v2_${uid.isEmpty ? 'anon' : uid}';
 
-  /// 旧全局键读到即删（键分账号后旧键永不再被读取，留着只占位/串号）。
+  static bool _isLegacy(String k) =>
+      (k.startsWith(_kCountsLegacy) && !k.startsWith('sg_food_freq_counts_v2_')) ||
+      k.startsWith(_kInitLegacy);
+
+  /// 旧键读到即删（v2 键与 v2 无关键不动）。
   Future<void> _purgeLegacy(SharedPreferences p) async {
-    if (p.containsKey(_kCountsLegacy)) await p.remove(_kCountsLegacy);
-    if (p.containsKey(_kInitLegacy)) await p.remove(_kInitLegacy);
+    for (final k in p.getKeys().toList()) {
+      if (_isLegacy(k)) await p.remove(k);
+    }
   }
 
   @override
@@ -127,41 +122,11 @@ class PrefsFoodFreqStore implements FoodFreqStore {
   }
 }
 
-/// 初始化窗口：近 30 天（老大拍板 B 方案）。
-const int kFreqInitDays = 30;
-
-/// 回填并发上限（M11-T5）：30 路同时打网关会挤在同一时刻抢连接与云函数并发，
-/// 把「打开搜索弹层」这一次真正的读请求排在后面；限到 6 路后总耗时仍远小于
-/// 逐日串行，且不再与首页/搜索请求抢道。
-const int kFreqInitConcurrency = 6;
-
-/// 定宽 worker 池：`limit` 个工人轮流从 [items] 取活，保证同时在途数 ≤ limit。
-/// 不用 `Future.wait(items.map(...))`——那写法一次性创建全部 Future，等于全并发。
-Future<void> _runLimited<T>(
-  List<T> items,
-  int limit,
-  Future<void> Function(T item) body,
-) async {
-  var cursor = 0;
-  Future<void> worker() async {
-    while (true) {
-      final i = cursor++;
-      if (i >= items.length) return;
-      await body(items[i]);
-    }
-  }
-
-  await Future.wait([
-    for (var w = 0; w < (limit < items.length ? limit : items.length); w++)
-      worker(),
-  ]);
-}
-
 final foodFreqStoreProvider = Provider<FoodFreqStore>(
     (ref) => throw UnimplementedError('组合根注入'));
 
 /// 频次计数状态。keepAlive（非 autoDispose）：整 App 生命周期一份。
-/// watch 方（searchProvider family）在计数变化时自动重排。
+/// watch 方（searchProvider family / 食物库行）在计数变化时自动重排/重绘。
 final foodFreqProvider =
     NotifierProvider<FoodFreqNotifier, Map<String, int>>(FoodFreqNotifier.new);
 
@@ -188,10 +153,10 @@ class FoodFreqNotifier extends Notifier<Map<String, int>> {
     }
   }
 
-  /// 幂等：标记已落盘即直返回放（M11-T5 根治点——旧口径要求 30 天全成功才落
-  /// 标记，弱网下永不落盘 ⇒ 每次冷启动重放 30 请求）。失败容忍：部分日期取回
-  /// 即用并落标记（频次只决定排序，少算一天的代价远小于每次冷启重放）；
-  /// 全失败返回空且不标记，本次按无频次原序显示，下次冷启再补齐。
+  /// 幂等：标记已落盘即直返回放。未初始化时发 1 次 freq 请求（全史计数）。
+  /// 响应缺 `counts` 或网络失败 → 不落标记、本会话可再试（[state] 保持空，
+  /// 列表按云端原序显示）。`complete=false`（服务端翻页被截断）照用计数并
+  /// 落标记：结果是下界，但重复查询只会得到同样的下界。
   Future<void> ensureLoaded() async {
     if (_started) return;
     _started = true;
@@ -201,27 +166,16 @@ class FoodFreqNotifier extends Notifier<Map<String, int>> {
       state = await store.loadCounts(uid);
       return;
     }
-    final api = ref.read(healthApiProvider);
-    // 时钟走 todayProvider（测试可固定窗口，跨零点重开弹层即新窗口）
-    final dates = recentIsoDates(
-        DateTime.parse(ref.read(todayProvider)), kFreqInitDays);
-    final byDate = <String, List<Map<String, dynamic>>>{};
-    await _runLimited(dates, kFreqInitConcurrency, (d) async {
-      try {
-        final recs = await api.getMealRecords(d);
-        byDate[d] = recs.map((e) => Map<String, dynamic>.from(e)).toList();
-      } catch (_) {
-        // 该日失败：跳过，按已成功日聚合（见上：不再因此拒绝落标记）
-      }
-    });
-    if (byDate.isEmpty) {
-      _started = false; // 全失败：本会话内下次开弹层可再试
-      return;
+    try {
+      final data = await ref.read(healthApiProvider).getFoodFreq();
+      final counts = parseFoodFreqCounts(data['counts']);
+      if (counts == null) throw const FormatException('freq 响应缺 counts');
+      state = counts;
+      await store.saveCounts(uid, counts);
+      await store.markInitialized(uid);
+    } catch (_) {
+      _started = false; // 本会话内下次开弹层可再试
     }
-    final counts = aggregateFreqFromRecords(byDate);
-    state = counts;
-    await store.saveCounts(uid, counts);
-    await store.markInitialized(uid);
   }
 
   bool _started = false;

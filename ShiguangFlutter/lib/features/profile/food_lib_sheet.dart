@@ -53,6 +53,8 @@
 // listFoodsCalls 递增——缓存只免「开层首帧等待」，不免切回重取）；内置 tab
 // :1322 ||短路由「单层一次」升为「会话一次」；失败支文案与重试链不动。
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -67,8 +69,10 @@ import '../common/skeleton.dart' show SkeletonBar;
 import '../common/sheet.dart' show showShiguangSheet;
 import '../common/sheet_toast.dart';
 import '../common/stagger.dart' show Stagger;
+import '../common/eaten_badge.dart';
 import '../home/home_controller.dart' show healthApiProvider, plateDateProvider;
 import '../record/custom_food_sheet.dart' show cfMealMap, openCustomFoodSheet;
+import '../record/food_freq.dart' show foodFreqProvider;
 
 @visibleForTesting
 const libCloseKey = Key('lib-close'); // index.html:567 #lib-close
@@ -204,7 +208,15 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
     final builtin = cache.read<List<dynamic>>(foodsBuiltinCacheKey);
     if (builtin != null) _builtin = builtin;
     // ≙ openFoodLib 尾行 renderLibList()（M9-A3 改为首帧后双路并行预取）
-    WidgetsBinding.instance.addPostFrameCallback((_) => _prefetch());
+    // M12-④：同时补拉全史计数（幂等；已初始化则零请求），行尾「吃过 N 次」用。
+    // 旁路降级同 SearchSheet：初始化失败（无网络/无注入）只是没有徽标，不打断管理弹层。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(ref
+          .read(foodFreqProvider.notifier)
+          .ensureLoaded()
+          .catchError((Object _) {}));
+      _prefetch();
+    });
   }
 
   @override
@@ -485,6 +497,8 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
   @override
   Widget build(BuildContext context) {
     final sheetH = MediaQuery.sizeOf(context).height * 0.72;
+    // M12-④：全史计数（观察式——初始化完成/记一笔 +1 后行尾徽标自动刷新）
+    final counts = ref.watch(foodFreqProvider);
     // M9-T8：sheet-head 标题「我的食物库」+ ✕（index.html:565-568）与内层
     // SafeArea 由 showShiguangSheet 承载，本地副本删除；0.72h 内容高经 helper
     // Flexible 槽承接（超出 78% 上限时按约束回缩，Expanded 列表自适应）。
@@ -529,7 +543,7 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
                       style: const TextStyle(
                           fontSize: Tokens.textXs, color: Tokens.ink3)),
                 ),
-              Expanded(child: _body()),
+              Expanded(child: _body(counts)),
               // 层底常驻「＋ 添加自定义食物」（index.html:574 #lib-add：在
               // #lib-list 之外，双 tab/加载/失败态均在；文案逐字，
               // btn-primary btn-block ≙ FilledButton 拉伸 + margin-top sp3）
@@ -554,7 +568,7 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
 
   /// #lib-list 区四态（M9-A2：:1305 加载中换 3 行卡形骨架 / :1319 空态 /
   /// :1325 行族 / :1337 失败+重试——error 支文案逻辑不动）
-  Widget _body() {
+  Widget _body(Map<String, int> counts) {
     if (_loading) {
       // 骨架条替「加载中…」文本（钉 M9-T4 首帧观测面：key lib-skeleton）；
       // 纯静态不排持续帧——pumpAndSettle 不死等（SkeletonBar 头注口径）
@@ -603,7 +617,7 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
         // PressableScale——行内删除钮/归类 chip 双手势，外层 Pressable
         // 在手势竞技场必输=假反馈（T5 裁定「无 onTap 不包」延伸）。
         itemBuilder: (_, i) {
-          final row = _customRow(_custom[i]);
+          final row = _customRow(_custom[i], counts);
           return i < 8 ? Stagger(index: i, child: row) : row;
         },
       );
@@ -614,16 +628,17 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
       separatorBuilder: (_, _) => const SizedBox(height: Tokens.sp2),
       // M9-T6：同 custom 支——前 8 行 Stagger，行不包 Pressable（裁定同上）。
       itemBuilder: (_, i) {
-        final row = _builtinRow(list[i]);
+        final row = _builtinRow(list[i], counts);
         return i < 8 ? Stagger(index: i, child: row) : row;
       },
     );
   }
 
   /// 自定义行（:1310-1319）：thumb + 名/meta/餐次钮组 + 删除钮
-  Widget _customRow(dynamic f) {
+  Widget _customRow(dynamic f, Map<String, int> counts) {
     final m = (f as Map).cast<String, dynamic>();
     final id = '${m['id']}';
+    final eaten = counts['${m['name'] ?? ''}'] ?? 0; // M12-④ 全史次数
     final grams = m['grams'] is num ? m['grams'] as num : 0;
     final unit = m['unit'] == 'ml' ? 'ml' : 'g'; // cfUnitOf :1186
     String n(String k) => m[k] is num ? jsNumText(m[k] as num) : '${m[k] ?? 0}';
@@ -649,11 +664,24 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(m['name'] as String? ?? '', // :1314
-                    style: const TextStyle(
-                        fontSize: Tokens.textMd,
-                        fontWeight: FontWeight.w700,
-                        color: Tokens.ink)),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(m['name'] as String? ?? '', // :1314
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: Tokens.textMd,
+                              fontWeight: FontWeight.w700,
+                              color: Tokens.ink)),
+                    ),
+                    if (eaten > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(left: Tokens.sp2),
+                        child: EatenCountBadge(count: eaten),
+                      ),
+                  ],
+                ),
                 const SizedBox(height: Tokens.sp1),
                 Text(meta, // :1315
                     style: const TextStyle(
@@ -692,9 +720,10 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
   }
 
   /// 内置行（:1325-1335）：thumb + 名/meta + 移除⇄恢复钮；hidden 行置灰
-  Widget _builtinRow(dynamic f) {
+  Widget _builtinRow(dynamic f, Map<String, int> counts) {
     final m = (f as Map).cast<String, dynamic>();
     final id = '${m['id']}';
+    final eaten = counts['${m['name'] ?? ''}'] ?? 0; // M12-④ 全史次数
     final hidden = m['hidden'] == true;
     final kcal = m['kcal'] is num ? jsNumText(m['kcal'] as num) : '${m['kcal']}';
     return Opacity(
@@ -716,11 +745,24 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(m['name'] as String? ?? '', // :1329
-                      style: const TextStyle(
-                          fontSize: Tokens.textMd,
-                          fontWeight: FontWeight.w700,
-                          color: Tokens.ink)),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(m['name'] as String? ?? '', // :1329
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontSize: Tokens.textMd,
+                                fontWeight: FontWeight.w700,
+                                color: Tokens.ink)),
+                      ),
+                      if (eaten > 0)
+                        Padding(
+                          padding: const EdgeInsets.only(left: Tokens.sp2),
+                          child: EatenCountBadge(count: eaten),
+                        ),
+                    ],
+                  ),
                   const SizedBox(height: Tokens.sp1),
                   Text('${m['meta'] ?? ''} · $kcal kcal', // :1330
                       style: const TextStyle(

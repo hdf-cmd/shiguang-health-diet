@@ -78,6 +78,11 @@ class HealthApi {
     return data is List ? data : const <dynamic>[];
   }
 
+  /// 食物频次（M12-③）：云函数按 uid 全史聚合 {counts:{菜名:次数}, complete}，
+  /// 一次往返取代原先的逐日回填（30 请求）。
+  Future<Map<String, dynamic>> getFoodFreq() =>
+      _client.call('/diet/records/freq');
+
   /// 新增一条饮食记录（js/api.js:322 addFoodRecord：record 原样进 body）
   Future<Map<String, dynamic>> addFoodRecord(Map<String, dynamic> record) =>
       _client.call('/diet/records', method: 'POST', body: record);

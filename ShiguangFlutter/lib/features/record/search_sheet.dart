@@ -155,6 +155,8 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
   Widget build(BuildContext context) {
     final query = (keyword: _keyword, meal: widget.meal);
     final results = ref.watch(searchProvider(query));
+    // M12-④：行尾「吃过 N 次」——与常吃排序同一份全史计数
+    final counts = ref.watch(foodFreqProvider);
 
     // M9-T8：弹层标题「记一笔 · <餐次>」+ ✕（原 ValueKey('sheet-close')
     // IconButton，tooltip「关闭」）由 showShiguangSheet 标题行承载，本地
@@ -275,7 +277,7 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
                           itemCount: foods.length,
                           separatorBuilder: (_, _) =>
                               const SizedBox(height: Tokens.sp2),
-                          itemBuilder: (_, i) => _foodTile(foods[i]),
+                          itemBuilder: (_, i) => _foodTile(foods[i], counts),
                         ),
                 ),
               ),
@@ -292,11 +294,12 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
 
   /// 结果行：emoji/缩略 + 名 + meta + kcal + 动作按钮
   /// （js/app.js:634-643）
-  Widget _foodTile(Map<String, dynamic> f) {
+  Widget _foodTile(Map<String, dynamic> f, Map<String, int> counts) {
     final isPer100 = f['per100'] is Map;
     final actionText =
         isPer100 ? (f['unit'] == 'ml' ? '按毫升加' : '按克加') : '添加';
     final kcal = (f['kcal'] as num?) ?? 0;
+    final eaten = counts['${f['name'] ?? ''}'] ?? 0; // M12-④ 全史次数
     return Container(
       padding: const EdgeInsets.all(Tokens.sp3),
       decoration: BoxDecoration(
@@ -328,7 +331,14 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
                 ),
                 const SizedBox(height: Tokens.sp1),
                 Text(
-                  '${f['meta'] ?? ''}',
+                  // M12-④：次数**放在 meta 前**——搜索行右侧被 kcal+按钮占满，
+                  // 名字列仅 ~110dp，次数跟在 meta 后面会被省略号吃掉（真机实测
+                  // 「吃过…」看不见数字）；放在前面则先舍 meta 尾巴、数字恒可见。
+                  eaten > 0
+                      ? (('${f['meta'] ?? ''}').isEmpty
+                          ? '吃过 $eaten 次'
+                          : '吃过 $eaten 次 · ${f['meta']}')
+                      : '${f['meta'] ?? ''}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style:
