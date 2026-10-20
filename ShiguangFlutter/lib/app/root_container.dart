@@ -25,6 +25,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/ai_provider_store.dart';
 import '../data/api_client.dart';
 import '../data/auth_api.dart';
 import '../data/health_api.dart';
@@ -81,6 +82,8 @@ ProviderContainer buildRootContainer({
       healthApiProvider.overrideWithValue(HealthApi(apiClient)),
       foodFreqStoreProvider.overrideWithValue(
           foodFreqStore ?? PrefsFoodFreqStore()),
+      // M14：用户自带 AI 厂商 Key（secure storage，键 sg_ai_provider_v1）
+      aiProviderStoreProvider.overrideWithValue(SecureAiProviderStore()),
       // M11-T3：磁盘后层 + 带盘的 SWR 缓存（同一 disk 实例）
       swrDiskProvider.overrideWithValue(disk),
       swrCacheProvider.overrideWithValue(SwrCache(disk: disk)),
