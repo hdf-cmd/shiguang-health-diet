@@ -8,7 +8,7 @@
 // 是生产装配。本文件把拼装收敛成唯一入口，main() 与测试调同一个函数，
 // 差异只在参数：
 //   - 不传参 = 真实链路（SecureTokenStore + 默认 Dio + PrefsFoodFreqStore +
-//     过期回调接 authState.forceAnon），main() 走这条；
+//     SecureAiProviderStore + 过期回调接 authState.forceAnon），main() 走这条；
 //   - 传参 = 测试桩，端到端用例注入内存 TokenStore 与假 dio，零网络。
 //
 // 行为对照 H5：web 侧没有 ProviderContainer，依赖装配等价物是
@@ -18,8 +18,8 @@
 // 的自动退避重试（见下方 retry 注释）。
 //
 // 分层约束：本文件是**唯一**允许把 data 层具体实现（SecureTokenStore /
-// PrefsFoodFreqStore）与 UI 状态（authStateProvider）缝在一起的地方；
-// features/* 只依赖 provider，不 import 具体实现。
+// PrefsFoodFreqStore / SecureAiProviderStore）与 UI 状态（authStateProvider）
+// 缝在一起的地方；features/* 只依赖 provider，不 import 具体实现。
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show debugPrint;

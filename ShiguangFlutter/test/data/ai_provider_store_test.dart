@@ -70,9 +70,24 @@ void main() {
     final c = await store.load();
     expect(c!.enabled, isTrue);
     expect(c.id, 'deepseek');
+    expect(c.model, 'deepseek-flash');
     expect(c.key, 'sk-12345678');
     await store.clear();
     expect(await store.load(), isNull);
+  });
+
+  // 键名钉死为字面量（不引用 SecureAiProviderStore.storageKey）：
+  // 改常量值 / 换键名时本用例必红，防「读写键一起漂移、测试却恒绿」。
+  test('读取键 sg_ai_provider_v1：合法 JSON → 非 null 且字段正确', () async {
+    final s = _MemStorage()
+      ..seed('sg_ai_provider_v1',
+          '{"enabled":true,"id":"deepseek","model":"deepseek-chat","key":"sk-seeded"}');
+    final c = await SecureAiProviderStore(storage: s).load();
+    expect(c, isNotNull);
+    expect(c!.enabled, isTrue);
+    expect(c.id, 'deepseek');
+    expect(c.model, 'deepseek-chat');
+    expect(c.key, 'sk-seeded');
   });
 
   test('坏 JSON / 缺字段 → null（按未配置处理）', () async {
