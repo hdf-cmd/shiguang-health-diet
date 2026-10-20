@@ -114,6 +114,14 @@ void main() {
         .isUsable, isFalse);
   });
 
+  test('isUsable：未知/下线厂商 id → 不可用（存量配置回退内置）', () {
+    expect(
+        const AiProviderConfig(
+                enabled: true, id: 'nope', model: 'm', key: 'sk-12345678')
+            .isUsable,
+        isFalse);
+  });
+
   test('读盘异常 → null（按未配置处理，不打断识菜）', () async {
     final s = _MemStorage()..failRead = true;
     expect(await SecureAiProviderStore(storage: s).load(), isNull);

@@ -15,6 +15,10 @@ import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+/// 云端 ai.js AI_PROVIDERS 的厂商 id 白名单（客户端镜像）。未知/已下线
+/// 厂商的存量配置按「不可用」处理：识菜自动回退内置通道（spec §3.2）。
+const kAiProviderIds = <String>{'deepseek', 'qwen', 'kimi', 'zhipu', 'doubao'};
+
 /// 用户自带厂商的一份配置（设置页的完整形态：开关 + 厂商 + 模型 + Key）。
 class AiProviderConfig {
   const AiProviderConfig({
@@ -29,10 +33,14 @@ class AiProviderConfig {
   final String model;
   final String key;
 
-  /// 真正可用于请求的判定：开关开且三项齐全。设置页可保存半成品
-  /// （例如先选厂商、还没填 Key），但扫描请求不能带上去。
+  /// 真正可用于请求的判定：开关开 + 厂商在 [kAiProviderIds] 白名单 +
+  /// 三项齐全。设置页可保存半成品（例如先选厂商、还没填 Key），但扫描请求
+  /// 不能带上去；未知厂商的存量配置同样按不可用回退内置。
   bool get isUsable =>
-      enabled && id.isNotEmpty && model.isNotEmpty && key.isNotEmpty;
+      enabled &&
+      kAiProviderIds.contains(id) &&
+      model.isNotEmpty &&
+      key.isNotEmpty;
 
   Map<String, dynamic> toJson() =>
       {'enabled': enabled, 'id': id, 'model': model, 'key': key};

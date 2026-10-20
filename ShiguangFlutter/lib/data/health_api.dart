@@ -158,6 +158,7 @@ class HealthApi {
   /* ---------- 拍照识菜（M13；云函数 /ai/food-scan 与 /foods/custom/upsert） ---------- */
 
   /// 拍照识菜（M13）：云函数调 DeepSeek，返回 {dish,confidence,per100,note,quota}
+  /// （自定义通道无 quota 字段——配额只在内置通道计数）。
   /// 云端函数部署后 60s（spec §2.5），客户端按请求放宽到 30s（其它路由仍默认 15s）。
   ///
   /// M14：可选自带 provider；不可用/未配置时**整键省略**，回退内置通道。

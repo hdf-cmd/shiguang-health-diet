@@ -27,6 +27,7 @@ void main() {
   test('配置可用 → body 含 provider；不可用/未配置 → 不含', () async {
     await api.scanFood('data:image/jpeg;base64,AAA',
         provider: const AiProviderConfig(enabled: true, id: 'deepseek', model: 'deepseek-flash', key: 'sk-12345678'));
+    expect(adapter.envelopes.last['body']['image'], 'data:image/jpeg;base64,AAA');
     expect(adapter.envelopes.last['body']['provider'],
         {'id': 'deepseek', 'model': 'deepseek-flash', 'key': 'sk-12345678'});
 

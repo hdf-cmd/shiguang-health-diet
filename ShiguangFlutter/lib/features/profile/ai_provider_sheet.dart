@@ -13,6 +13,9 @@
 //   保存必须重填——否则空输入会沿用上一家的 Key，造成跨厂商泄漏。
 // - 保存前模型名与 key 都 trim；有效 key 为空一律拒绝保存（任何开关状态下都
 //   不落空凭据），开关开时 trim 后模型为空也拒绝（硬线 2）。
+// - 格式校验镜像云函数 ai.js：模型名须匹配 ^[A-Za-z0-9._:/-]{1,60}$、Key 须
+//   8–200 位且不含空白。不镜像的话用户会看到「已保存」，识菜却永远被云端以
+//   「请填写有效的模型名 / API Key 格式不正确」拒绝。
 // - 行内错误随开关/厂商/模型/Key 任一输入变化清除，避免「改了还不消失」。
 // - 「清除」= 清存储 + 开关置 false + 清空输入（brief Step 2），不留
 //   「开着但没有 key」的悬挂态；厂商回到 DeepSeek。
@@ -52,6 +55,12 @@ const aiClearKey = Key('ai-clear');
 
 /// DeepSeek 默认模型名（spec §2.2：服务端唯一已验证的默认值）。
 const _deepseekDefaultModel = 'deepseek-flash';
+
+/// 模型名格式（逐字镜像云函数 ai.js 的 kProviderModelPattern）。
+final _modelPattern = RegExp(r'^[A-Za-z0-9._:/-]{1,60}$');
+
+/// 云函数要求 Key 无空白（ai.js:74 的 `/\s/.test(key)`）。
+final _whitespacePattern = RegExp(r'\s');
 
 /// 厂商选项（id 必须与云函数 ai.js AI_PROVIDERS 的键一致，顺序即下拉顺序）。
 const _providerOptions = <({String id, String name})>[
@@ -204,6 +213,16 @@ class _AiProviderSheetState extends State<_AiProviderSheet> {
     // 也防把已存凭据静默写成空串。
     if (key.isEmpty || (_enabled && model.isEmpty)) {
       setState(() => _error = '请填写模型名与 API Key');
+      return;
+    }
+    // 格式校验与云端同款：否则本地「已保存」，识菜却被云端拒绝。
+    // 模型为空只在开关关时允许（配置保留不启用），此时云端也不会收到它。
+    if (model.isNotEmpty && !_modelPattern.hasMatch(model)) {
+      setState(() => _error = '模型名只能含字母、数字和 . _ : / -（1–60 字）');
+      return;
+    }
+    if (key.length < 8 || key.length > 200 || _whitespacePattern.hasMatch(key)) {
+      setState(() => _error = 'API Key 需 8–200 位且不含空格');
       return;
     }
     setState(() {

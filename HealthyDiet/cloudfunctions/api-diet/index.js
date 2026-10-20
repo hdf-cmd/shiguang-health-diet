@@ -355,6 +355,9 @@ async function handle(path, method, params, body, uid) {
     for (let attempt = 0; attempt < 2 && !result; attempt++) {
       const r = await callDeepSeek(apiKey, image, attempt > 0, target, logTag);
       lastStatus = r.status;
+      // 401/403（Key 无效/无权限）重试必败，429（限流）重试只会加重；直接收手，
+      // 错误映射仍走下方 providerErrorMessage。
+      if (lastStatus === 401 || lastStatus === 403 || lastStatus === 429) break;
       const parsed = parseModelJson(r.text);
       if (!parsed) continue;
       const v = validateScanResult(parsed);

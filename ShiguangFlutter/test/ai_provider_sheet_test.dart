@@ -17,7 +17,9 @@
 // ⑪ 切厂商必须重填 Key：已存 key 与输入一并清空、旧提示消失；空 Key 保存
 //    被拒且 store 原样（不跨厂商复用旧凭据），重填后落新厂商配置；
 // ⑫ 短 Key（≤4 位）不整串回显；行内错误随开关/模型/Key/厂商任一变化清除；
-// ⑬ 已有合法配置被清空模型后保存 → 被拒，store 仍是原配置。
+// ⑬ 已有合法配置被清空模型后保存 → 被拒，store 仍是原配置；
+// ⑭ 格式校验镜像云端：模型名含空格 / Key 仅 3 位 → 保存被拒、零落库
+//    （否则本地「已保存」，识菜永远被云端拒绝）。
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -197,6 +199,36 @@ void main() {
     await tester.pump();
     expect(await store.load(), isNull);
     expect(find.text('请填写模型名与 API Key'), findsOneWidget);
+  });
+
+  /* ---------- ⑭ 格式校验镜像云端（防「已保存」但识菜必失败） ---------- */
+
+  testWidgets('模型名含空格 → 保存被拒、零落库', (tester) async {
+    final store = _MemStore();
+    await _pumpSheet(tester, store);
+    await tester.tap(find.byKey(const Key('ai-switch')));
+    await _pickProvider(tester, '通义千问');
+    await tester.enterText(find.byKey(const Key('ai-model')), 'qwen vl max');
+    await tester.enterText(find.byKey(const Key('ai-key')), 'sk-12345678');
+    await tester.tap(find.byKey(const Key('ai-save')));
+    await tester.pump();
+    expect(store.saves, 0, reason: '模型名格式不符不应触碰存储');
+    expect(await store.load(), isNull);
+    expect(find.text('模型名只能含字母、数字和 . _ : / -（1–60 字）'), findsOneWidget);
+  });
+
+  testWidgets('Key 仅 3 位 → 保存被拒、零落库', (tester) async {
+    final store = _MemStore();
+    await _pumpSheet(tester, store);
+    await tester.tap(find.byKey(const Key('ai-switch')));
+    await _pickProvider(tester, '通义千问');
+    await tester.enterText(find.byKey(const Key('ai-model')), 'qwen-vl-max');
+    await tester.enterText(find.byKey(const Key('ai-key')), 'abc');
+    await tester.tap(find.byKey(const Key('ai-save')));
+    await tester.pump();
+    expect(store.saves, 0, reason: 'Key 过短不应触碰存储');
+    expect(await store.load(), isNull);
+    expect(find.text('API Key 需 8–200 位且不含空格'), findsOneWidget);
   });
 
   /* ---------- ③ 说明文案（控制者硬线 1） ---------- */
