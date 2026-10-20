@@ -25,12 +25,18 @@
 // 该宿主形态，不得改为路由根 body）。两个入口（记一笔搜索框 📷 / 食物库
 // 「📷 拍照添加」）共用本函数：前者 recordMeal=true（date/meal 用弹层入参），
 // 后者 recordMeal=false（date=plateDateProvider、meal='lunch'）。
+// M14-T5：识菜前读用户自带厂商配置（设备级密存），随 scanFood 发出；只有
+// isUsable（开关开 + id/model/key 齐全）才真正带键（HealthApi 内判定）。
+// 存储不可用/未注入按「未配置」回退内置通道——Key 配置是可选增强，
+// 不能把存储故障升级成识菜失败。
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart' show ImageSource;
 
 import '../../app/theme.dart';
+import '../../data/ai_provider_store.dart'
+    show AiProviderConfig, aiProviderStoreProvider;
 import '../../data/api_client.dart' show ApiException;
 import '../../data/swr_cache.dart' show swrCacheProvider;
 import '../../domain/constants.dart' show mealNames;
@@ -145,6 +151,16 @@ Future<void> openFoodScanFlow(
   final img = picked.dataUrl;
   if (img == null) return; // 选图取消=静默
 
+  // M14-T5：读自带厂商配置（设备级密存）。读盘失败/未注入一律按未配置，
+  // 回退内置通道——配置是可选增强，不能打断识菜主链路。
+  AiProviderConfig? provider;
+  try {
+    provider = await ref.read(aiProviderStoreProvider).load();
+  } catch (_) {
+    provider = null;
+  }
+  if (!context.mounted) return;
+
   // 识别中（不可关闭）：根 navigator 上 push，关层时按同一 navigator 弹回。
   final navigator = Navigator.of(context, rootNavigator: true);
   showDialog<void>(
@@ -174,7 +190,7 @@ Future<void> openFoodScanFlow(
 
   final Map<String, dynamic> scan;
   try {
-    scan = await ref.read(healthApiProvider).scanFood(img);
+    scan = await ref.read(healthApiProvider).scanFood(img, provider: provider);
   } catch (e) {
     navigator.pop(); // 关识别中
     if (!context.mounted) return;

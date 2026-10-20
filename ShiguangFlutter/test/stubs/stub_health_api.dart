@@ -594,6 +594,11 @@ class StubHealthApi implements HealthApi {
   ApiException? scanError;
   int scanCalls = 0;
 
+  /// M14-T5：最近一次 scanFood 收到的 provider（桩不消费它，只记录）。
+  /// 设置页测试靠它断言「配置真的透传到识别请求」——若桩继续忽略 provider，
+  /// 接线测试会恒绿，测不出漏接线。
+  AiProviderConfig? lastScanProvider;
+
   /// upsertCustomFood 最近一次入参（按最后一次覆盖；成功/失败都先记录=请求已发出）
   Map<String, dynamic>? lastUpsertBody;
   int upsertCalls = 0;
@@ -611,6 +616,7 @@ class StubHealthApi implements HealthApi {
   Future<Map<String, dynamic>> scanFood(
       String imageDataUrl, {AiProviderConfig? provider}) async {
     scanCalls++;
+    lastScanProvider = provider; // M14-T5：记录透传面（桩本身不消费）
     if (scanError != null) throw scanError!;
     return scanResult;
   }

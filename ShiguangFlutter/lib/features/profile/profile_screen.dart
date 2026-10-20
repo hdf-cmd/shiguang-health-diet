@@ -23,6 +23,7 @@ import '../common/food_thumb.dart';
 import '../common/sheet.dart' show showShiguangSheet;
 import '../common/sheet_toast.dart' show SheetToast;
 import '../notifications/reminder_scheduler.dart';
+import 'ai_provider_sheet.dart' show openAiProviderSheet;
 import 'body_profile_card.dart' show BodyProfileCard;
 import 'food_lib_sheet.dart' show openFoodLibSheet;
 import 'profile_edit_sheet.dart'
@@ -180,6 +181,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             FilledButton.tonal(
               onPressed: () => openFoodLibSheet(context, ref),
               child: const Text('食物库'),
+            ),
+            const SizedBox(height: Tokens.sp3),
+            // M14-T5：AI 识菜设置入口（用户自带厂商 Key；spec §3.2
+            // 「我的 → AI 识菜设置」）。开层即生产函数，存储由组合根注入。
+            FilledButton.tonal(
+              key: const Key('ai-settings'),
+              onPressed: () => openAiProviderSheet(context, ref),
+              child: const Text('AI 识菜设置'),
             ),
             const SizedBox(height: Tokens.sp3),
             // 退出登录（index.html:456「退出登录」，danger 色）
