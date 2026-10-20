@@ -61,4 +61,24 @@ void main() {
     expect(adapter.envelopes.last['body']['provider'],
         {'id': 'qwen', 'model': 'qwen-plus', 'key': 'sk-12345678'});
   });
+
+  test('cozeChat → /ai/coze-chat；message/date/useTodaySummary/conversationId', () async {
+    await api.cozeChat('今天晚餐吃什么？',
+        date: '2026-10-20', useTodaySummary: true);
+    expect(adapter.envelopes.last['path'], '/ai/coze-chat');
+    expect(adapter.envelopes.last['method'], 'POST');
+    expect(adapter.envelopes.last['body'], {
+      'message': '今天晚餐吃什么？',
+      'useTodaySummary': true,
+      'date': '2026-10-20',
+    });
+
+    await api.cozeChat('继续',
+        conversationId: 'conv1', useTodaySummary: false);
+    expect(adapter.envelopes.last['body'], {
+      'message': '继续',
+      'conversationId': 'conv1',
+      'useTodaySummary': false,
+    });
+  });
 }

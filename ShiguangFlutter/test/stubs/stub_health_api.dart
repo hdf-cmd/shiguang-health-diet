@@ -651,6 +651,36 @@ class StubHealthApi implements HealthApi {
     return estimateResult;
   }
 
+  /* ---------- P3 扣子饮食助手：cozeChat ---------- */
+
+  Map<String, dynamic> cozeResult = <String, dynamic>{
+    'ok': true,
+    'reply': '今天的蛋白质还差 53g，晚餐加 120g 瘦牛肉。',
+    'conversationId': 'conv1',
+  };
+  ApiException? cozeError;
+  int cozeCalls = 0;
+  String? lastCozeMessage;
+  String? lastCozeConversationId;
+  String? lastCozeDate;
+  bool? lastCozeUseSummary;
+
+  @override
+  Future<Map<String, dynamic>> cozeChat(
+    String message, {
+    String? conversationId,
+    bool useTodaySummary = true,
+    String? date,
+  }) async {
+    cozeCalls++;
+    lastCozeMessage = message;
+    lastCozeConversationId = conversationId;
+    lastCozeUseSummary = useTodaySummary;
+    lastCozeDate = date;
+    if (cozeError != null) throw cozeError!;
+    return cozeResult;
+  }
+
   @override
   Future<Map<String, dynamic>> upsertCustomFood(
       Map<String, dynamic> food) async {

@@ -30,6 +30,8 @@ void main() {
     await useBigSurface(tester);
     await tester.pumpWidget(harness());
     expect(find.text('今日盘子'), findsOneWidget);
+    // AI 饮食助手入口已迁出「我的」页，改由全局圆形头像承载。
+    expect(find.byKey(const Key('ai-fab')), findsOneWidget);
     await tester.tap(find.text('我的').first);
     await tester.pumpAndSettle();
     // M1 占位 PlaceholderScreen('我的（M2 接入）') 已被 ProfileScreen 替换：
@@ -39,6 +41,7 @@ void main() {
     expect(find.text('当前体重'), findsNothing);
     expect(find.text('消息提醒 · 系统通知'), findsOneWidget);
     expect(find.text('食物库'), findsOneWidget);
+    expect(find.byKey(const Key('ai-chat')), findsNothing);
     expect(find.text('退出登录'), findsOneWidget);
   });
 

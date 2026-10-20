@@ -1,5 +1,6 @@
 // ShiguangFlutter/lib/app/shell.dart
 import 'package:flutter/material.dart';
+import '../features/chat/ai_assistant_fab.dart';
 import '../features/home/home_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/record/record_screen.dart';
@@ -38,14 +39,20 @@ class ShellState extends State<Shell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: PageView(
-        controller: _controller,
-        onPageChanged: (i) => setState(() => _index = i),
-        children: const [
-          HomeScreen(),
-          RecordScreen(),
-          ReportScreen(),
-          ProfileScreen(),
+      body: Stack(
+        children: [
+          PageView(
+            controller: _controller,
+            onPageChanged: (i) => setState(() => _index = i),
+            children: const [
+              HomeScreen(),
+              RecordScreen(),
+              ReportScreen(),
+              ProfileScreen(),
+            ],
+          ),
+          // 悬浮层只画头像：空区不参与命中，不挡 PageView 滑动。
+          const Positioned.fill(child: AiAssistantFab()),
         ],
       ),
       bottomNavigationBar: SafeArea(

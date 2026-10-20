@@ -204,6 +204,28 @@ class HealthApi {
         timeout: const Duration(seconds: 20),
       );
 
+  /// 扣子饮食助手（P3）：云函数内部收 SSE 后返回
+  /// {ok, reply, conversationId}；服务端最多等 25s，客户端放宽到 30s。
+  /// 今日摘要由云端按 uid 取数，客户端只传开关和日期。
+  Future<Map<String, dynamic>> cozeChat(
+    String message, {
+    String? conversationId,
+    bool useTodaySummary = true,
+    String? date,
+  }) =>
+      _client.call(
+        '/ai/coze-chat',
+        method: 'POST',
+        body: <String, dynamic>{
+          'message': message,
+          if (conversationId != null && conversationId.isNotEmpty)
+            'conversationId': conversationId,
+          'useTodaySummary': useTodaySummary,
+          if (date != null && date.isNotEmpty) 'date': date,
+        },
+        timeout: const Duration(seconds: 30),
+      );
+
   /// 扫码入库（M13）：按菜名 upsert，回 {ok,id|skipped,emoji}
   Future<Map<String, dynamic>> upsertCustomFood(Map<String, dynamic> food) =>
       _client.call('/foods/custom/upsert', method: 'POST', body: food);

@@ -25,6 +25,12 @@
          SCHEDULE_EXACT_ALARM / USE_EXACT_ALARM，绕开 Android 14 精确闹钟授权。 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- P4b：flutter_tts 在 Android 11+ 需要能发现系统 TTS 服务。 -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
     <application
         android:label="食光"
         android:name="${applicationName}"

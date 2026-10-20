@@ -8,6 +8,10 @@ const {
   providerErrorMessage,
   buildEstimateMessages, validateEstimateResult, resolveAiChannel, chatRequestBody,
 } = require("./ai");
+// P3：扣子智能体（纯逻辑在 coze.js，node --test 覆盖）
+const {
+  buildTodaySummaryContext, buildCozeChatBody, createCozeStreamParser,
+} = require("./coze");
 
 const app = cloud.init({
   env: cloud.SYMBOL_CURRENT_ENV,
@@ -211,6 +215,77 @@ async function callDeepSeek(apiKey, imageDataUrl, strict, target, logTag) {
 /* M15：文本估算（菜名 → 每 100g 营养），与识菜共用 callChat 的超时/解析/错误口径。 */
 async function callAiText(apiKey, name, strict, target, logTag) {
   return callChat(apiKey, buildEstimateMessages(name, strict), target, logTag);
+}
+
+/* P3：扣子 v3/chat 流式调用。云函数内部收流、拼完整回复，再以非流式返回 App，
+   一次对话只消耗扣子侧 1 次 API 调用（免费版累计 100 条）。 */
+function cozeStatusMessage(status) {
+  if (status === 401 || status === 403) return "AI 助手未授权，请检查令牌";
+  if (status === 429) return "AI 助手额度或频率受限，请稍后再试";
+  if (status === 400) return "AI 助手请求不合法";
+  return "AI 助手服务异常（HTTP " + status + "）";
+}
+
+async function callCozeChat(pat, payload) {
+  const started = Date.now();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 25000);
+  try {
+    const resp = await fetch("https://api.coze.cn/v3/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + pat,
+      },
+      signal: controller.signal,
+      body: JSON.stringify(payload),
+    });
+    console.log("COZE_TIMING headers", Date.now() - started, resp.status);
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => "");
+      console.log("COZE_HTTP", resp.status, text.slice(0, 200));
+      return { ok: false, message: cozeStatusMessage(resp.status) };
+    }
+    const contentType = resp.headers.get("content-type") || "";
+    if (!contentType.includes("text/event-stream")) {
+      const text = await resp.text().catch(() => "");
+      let message = "AI 助手服务异常";
+      try {
+        const j = JSON.parse(text);
+        message = j.message || j.msg || message;
+      } catch (_) {}
+      console.log("COZE_NON_SSE", resp.status, text.slice(0, 200));
+      return { ok: false, message };
+    }
+    if (!resp.body || typeof resp.body.getReader !== "function") {
+      return { ok: false, message: "AI 助手不支持流式响应" };
+    }
+    const parser = createCozeStreamParser({
+      onFirstText: () => console.log("COZE_TIMING first_text", Date.now() - started),
+    });
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      parser.feed(decoder.decode(value, { stream: true }));
+    }
+    parser.feed(decoder.decode());
+    const result = parser.finish();
+    console.log("COZE_TIMING coze_done", Date.now() - started, result.ok ? "ok" : "fail");
+    if (!result.ok) console.log("COZE_FAIL", result.message);
+    return result;
+  } catch (e) {
+    console.log("COZE_TIMING error", Date.now() - started);
+    if (e && e.name === "AbortError") {
+      console.log("COZE_TIMEOUT");
+      return { ok: false, message: "AI 助手响应超时，请重试" };
+    }
+    console.log("COZE_ERR", e && e.message ? String(e.message).slice(0, 120) : "");
+    return { ok: false, message: "AI 助手网络异常" };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function handle(path, method, params, body, uid) {
@@ -417,6 +492,47 @@ async function handle(path, method, params, body, uid) {
       ok: true, dish: result.dish,
       per100: result.per100, note: result.note,
       quota: isCustom ? undefined : { used: used + 1, limit: kAiScanDailyLimit }
+    };
+  }
+
+  /* P3：扣子饮食助手。云函数按 uid 取当天摘要拼上下文；PAT/BotID 只存云端环境变量。 */
+  if (path === "/ai/coze-chat" && method === "POST") {
+    const routeStarted = Date.now();
+    const message = String(body.message || "").trim();
+    if (!message) return { ok: false, message: "请输入问题" };
+    if (message.length > 500) return { ok: false, message: "问题太长，请控制在 500 字以内" };
+    const botId = String(process.env.COZE_BOT_ID || "").trim();
+    const pat = String(process.env.COZE_PAT || "").trim();
+    if (!botId || !pat) return { ok: false, message: "AI 助手未配置" };
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(String(body.date || ""))
+      ? String(body.date) : today();
+    const useTodaySummary = body.useTodaySummary !== false;
+    let context = "";
+    if (useTodaySummary) {
+      try {
+        const [summary, records, exercises] = await Promise.all([
+          handle("/diet/summary", "GET", { date }, {}, uid),
+          handle("/diet/records", "GET", { date }, {}, uid),
+          handle("/diet/exercises", "GET", { date }, {}, uid),
+        ]);
+        const profile = await getOrCreateProfile(uid);
+        context = buildTodaySummaryContext({ date, summary, records, exercises, profile });
+      } catch (e) {
+        // 摘要取数失败不阻断对话：Bot 会按“看不到今日记录”回答。
+        console.log("COZE_CONTEXT_ERR", e && e.message ? String(e.message).slice(0, 120) : "");
+      }
+    }
+    console.log("COZE_TIMING context", Date.now() - routeStarted);
+    const content = context ? context + "\n\n用户问题：" + message : message;
+    const conversationId = String(body.conversationId || "").trim();
+    const payload = buildCozeChatBody({ botId, userId: uid, content, conversationId });
+    const result = await callCozeChat(pat, payload);
+    console.log("COZE_TIMING route_done", Date.now() - routeStarted, result.ok ? "ok" : "fail");
+    if (!result.ok) return { ok: false, message: result.message };
+    return {
+      ok: true,
+      reply: result.reply,
+      conversationId: result.conversationId || conversationId || "",
     };
   }
 
