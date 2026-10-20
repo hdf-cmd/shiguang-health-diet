@@ -13,7 +13,11 @@
 // ⑧ 设置页保存的配置真的透传到 scanFood（StubHealthApi.lastScanProvider）——
 //    桩必须记录 provider，否则本条恒绿；
 // ⑨ 未配置 → scanFood 收到 null（回退内置通道）；
-// ⑩ 我的页存在「AI 识菜设置」入口。
+// ⑩ 我的页存在「AI 识菜设置」入口；
+// ⑪ 切厂商必须重填 Key：已存 key 与输入一并清空、旧提示消失；空 Key 保存
+//    被拒且 store 原样（不跨厂商复用旧凭据），重填后落新厂商配置；
+// ⑫ 短 Key（≤4 位）不整串回显；行内错误随开关/模型/Key/厂商任一变化清除；
+// ⑬ 已有合法配置被清空模型后保存 → 被拒，store 仍是原配置。
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -167,6 +171,7 @@ void main() {
     expect(
         tester.widget<Switch>(find.byKey(const Key('ai-switch'))).value, isFalse);
     expect(_fieldText(tester, 'ai-key'), isEmpty);
+    expect(_fieldText(tester, 'ai-model'), isEmpty, reason: '清除也清空模型输入');
   });
 
   /* ---------- ② 不完整配置拒绝 ---------- */
@@ -327,6 +332,120 @@ void main() {
 
     expect(api.scanCalls, 1);
     expect(api.lastScanProvider, isNull);
+  });
+
+  /* ---------- ⑪ 切厂商必须重填 Key（防跨厂商复用） ---------- */
+
+  testWidgets('已存 DeepSeek Key → 切到 qwen：旧 Key 作废，空 Key 保存被拒，重填才落库',
+      (tester) async {
+    final store = _MemStore(const AiProviderConfig(
+        enabled: true,
+        id: 'deepseek',
+        model: 'deepseek-chat',
+        key: 'sk-deepseek-5678'));
+    await _pumpSheet(tester, store);
+    expect(find.text('•••• 5678'), findsOneWidget);
+
+    await _pickProvider(tester, '通义千问');
+    expect(find.text('•••• 5678'), findsNothing,
+        reason: '切厂商即清掉「已保存 ••••xxxx」提示');
+    expect(find.text('粘贴该厂商的 API Key'), findsOneWidget,
+        reason: '占位回到未保存态，要求重填');
+    expect(_fieldText(tester, 'ai-key'), isEmpty);
+
+    // 只填模型即保存 → 被拒；store 仍是原 DeepSeek 配置（旧 Key 不外流、也不被写空）
+    await tester.enterText(find.byKey(const Key('ai-model')), 'qwen-vl-max');
+    await tester.tap(find.byKey(const Key('ai-save')));
+    await tester.pump();
+    expect(store.saves, 0, reason: '空 Key 保存应被拒，不触碰存储');
+    final kept = await store.load();
+    expect(kept!.id, 'deepseek');
+    expect(kept.model, 'deepseek-chat');
+    expect(kept.key, 'sk-deepseek-5678');
+    expect(find.byKey(const Key('ai-error')), findsOneWidget);
+
+    // 重填新厂商 Key → 正常落库
+    await tester.enterText(find.byKey(const Key('ai-key')), 'sk-qwen-9999');
+    await tester.tap(find.byKey(const Key('ai-save')));
+    await tester.pumpAndSettle();
+    final c = await store.load();
+    expect(c!.enabled, isTrue);
+    expect(c.id, 'qwen');
+    expect(c.model, 'qwen-vl-max');
+    expect(c.key, 'sk-qwen-9999');
+  });
+
+  /* ---------- ⑫ 短 Key 全遮 + 行内错误随输入清除 ---------- */
+
+  testWidgets('短 Key（≤4 位）不整串回显，占位仅「••••」', (tester) async {
+    final store = _MemStore(const AiProviderConfig(
+        enabled: true, id: 'qwen', model: 'qwen-vl-max', key: 'abcd'));
+    await _pumpSheet(tester, store);
+    expect(find.text('•••• abcd'), findsNothing, reason: '短 Key 整串回显等于泄露');
+    expect(find.text('••••'), findsOneWidget);
+  });
+
+  testWidgets('行内错误随开关/模型/Key/厂商任一变化清除', (tester) async {
+    final store = _MemStore();
+    await _pumpSheet(tester, store);
+    final error = find.byKey(const Key('ai-error'));
+
+    // 制造错误：开关开 + 模型有值 + Key 空 → 保存被拒
+    await tester.tap(find.byKey(const Key('ai-switch')));
+    await tester.enterText(find.byKey(const Key('ai-model')), 'm');
+    await tester.tap(find.byKey(const Key('ai-save')));
+    await tester.pump();
+    expect(error, findsOneWidget);
+
+    // 拨开关 → 清
+    await tester.tap(find.byKey(const Key('ai-switch')));
+    await tester.pump();
+    expect(error, findsNothing);
+
+    // 重新制造错误，改模型 → 清
+    await tester.tap(find.byKey(const Key('ai-switch')));
+    await tester.tap(find.byKey(const Key('ai-save')));
+    await tester.pump();
+    expect(error, findsOneWidget);
+    await tester.enterText(find.byKey(const Key('ai-model')), 'm2');
+    await tester.pump();
+    expect(error, findsNothing);
+
+    // 重新制造错误，改 Key → 清
+    await tester.tap(find.byKey(const Key('ai-save')));
+    await tester.pump();
+    expect(error, findsOneWidget);
+    await tester.enterText(find.byKey(const Key('ai-key')), 'k');
+    await tester.pump();
+    expect(error, findsNothing);
+
+    // 重新制造错误，切厂商 → 清
+    await tester.enterText(find.byKey(const Key('ai-key')), '');
+    await tester.tap(find.byKey(const Key('ai-save')));
+    await tester.pump();
+    expect(error, findsOneWidget);
+    await _pickProvider(tester, '通义千问');
+    expect(error, findsNothing);
+  });
+
+  /* ---------- ⑬ 已有合法配置清空模型 → 拒绝且不覆盖 ---------- */
+
+  testWidgets('已有合法配置 + 开关开 + 清空模型 → 保存被拒，store 仍是原配置',
+      (tester) async {
+    final store = _MemStore(const AiProviderConfig(
+        enabled: true,
+        id: 'qwen',
+        model: 'qwen-vl-max',
+        key: 'sk-abcdef1234'));
+    await _pumpSheet(tester, store);
+    await tester.enterText(find.byKey(const Key('ai-model')), '');
+    await tester.tap(find.byKey(const Key('ai-save')));
+    await tester.pump();
+    expect(store.saves, 0, reason: '模型为空应被拒，不触碰存储');
+    final kept = await store.load();
+    expect(kept!.model, 'qwen-vl-max');
+    expect(kept.key, 'sk-abcdef1234');
+    expect(find.text('请填写模型名与 API Key'), findsOneWidget);
   });
 
   /* ---------- ⑩ 我的页入口 ---------- */

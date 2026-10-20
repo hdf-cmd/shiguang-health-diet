@@ -7,9 +7,13 @@
 //   DeepSeek 预填 deepseek-flash（服务端已验证的唯一默认值），其余厂商留空
 //   强制手填（各家视觉模型 id 常变，不写死）。**切换厂商时模型重置**——
 //   DeepSeek 回填默认名、其余清空，防带着上一家型号误用（硬线 3）。
-// - Key 输入密文；已保存时输入框留空、占位显示「•••• 末4位」（明文不回填），
-//   编辑即覆盖；不编辑直接保存 = 保留原 key。
-// - 保存前模型名与 key 都 trim；trim 后为空按不完整处理（硬线 2）。
+// - Key 输入密文；已保存时输入框留空、占位显示「•••• 末4位」（明文不回填；
+//   短 key ≤4 位只显示「••••」，不整串回显），编辑即覆盖；同一厂商下不编辑
+//   直接保存 = 保留原 key。**切换厂商视为换凭据**：已存 key 与输入一并清空，
+//   保存必须重填——否则空输入会沿用上一家的 Key，造成跨厂商泄漏。
+// - 保存前模型名与 key 都 trim；有效 key 为空一律拒绝保存（任何开关状态下都
+//   不落空凭据），开关开时 trim 后模型为空也拒绝（硬线 2）。
+// - 行内错误随开关/厂商/模型/Key 任一输入变化清除，避免「改了还不消失」。
 // - 「清除」= 清存储 + 开关置 false + 清空输入（brief Step 2），不留
 //   「开着但没有 key」的悬挂态；厂商回到 DeepSeek。
 // - 文案三条逐字：Key 只存本机加密存储/经服务器转发不保存（spec §3.2）、
@@ -109,6 +113,9 @@ class _AiProviderSheetState extends State<_AiProviderSheet> {
   @override
   void initState() {
     super.initState();
+    // 输入一变就清行内错误：用户已经改了，旧提示不该继续挂着。
+    _model.addListener(_clearErrorOnEdit);
+    _key.addListener(_clearErrorOnEdit);
     _prefill();
   }
 
@@ -142,13 +149,18 @@ class _AiProviderSheetState extends State<_AiProviderSheet> {
     });
   }
 
-  /// Key 占位：已保存只露末 4 位（spec §3.2 密文口径）。
+  /// 任一输入框变化时清掉行内错误（listener 挂在两个 controller 上）。
+  void _clearErrorOnEdit() {
+    if (_error == null) return;
+    setState(() => _error = null);
+  }
+
+  /// Key 占位：已保存只露末 4 位（spec §3.2 密文口径）；短 key 整串回显
+  /// 等于没遮，一律只显示「••••」。
   String get _keyHint {
     if (_savedKey.isEmpty) return '粘贴该厂商的 API Key';
-    final tail = _savedKey.length <= 4
-        ? _savedKey
-        : _savedKey.substring(_savedKey.length - 4);
-    return '•••• $tail';
+    if (_savedKey.length <= 4) return '••••';
+    return '•••• ${_savedKey.substring(_savedKey.length - 4)}';
   }
 
   /// 厂商下拉：弹 SimpleDialog 五项；**选中即重置模型**（硬线 3）。
@@ -171,8 +183,11 @@ class _AiProviderSheetState extends State<_AiProviderSheet> {
     if (!mounted || picked == null || picked == _providerId) return;
     setState(() {
       _providerId = picked;
-      // 切换厂商时模型重置：DeepSeek 回填默认名，其余清空。
+      // 切换厂商 = 换凭据：模型重置（硬线 3）；已存 key 与输入一并清空，
+      // 用户必须重填——否则保存时空输入会沿用上一家的 Key（跨厂商泄漏）。
       _model.text = picked == 'deepseek' ? _deepseekDefaultModel : '';
+      _key.clear();
+      _savedKey = '';
       _error = null;
     });
   }
@@ -182,9 +197,12 @@ class _AiProviderSheetState extends State<_AiProviderSheet> {
     if (_busy) return;
     final model = _model.text.trim();
     final typedKey = _key.text.trim();
-    // 输入框为空 = 沿用已存 key（占位只露末 4 位，用户没重填不代表要删 key）。
+    // 输入框为空 = 沿用已存 key（同厂商下用户没重填不代表要删 key；切厂商时
+    // _savedKey 已被清空，不会拿到上一家的凭据）。
     final key = typedKey.isEmpty ? _savedKey : typedKey;
-    if (_enabled && (model.isEmpty || key.isEmpty)) {
+    // 有效 key 为空一律拒绝（含开关关时）：既防空输入在切厂商后复用旧 key，
+    // 也防把已存凭据静默写成空串。
+    if (key.isEmpty || (_enabled && model.isEmpty)) {
       setState(() => _error = '请填写模型名与 API Key');
       return;
     }
@@ -307,8 +325,12 @@ class _AiProviderSheetState extends State<_AiProviderSheet> {
                 Switch(
                   key: aiSwitchKey,
                   value: _enabled,
-                  onChanged:
-                      _busy ? null : (v) => setState(() => _enabled = v),
+                  onChanged: _busy
+                      ? null
+                      : (v) => setState(() {
+                            _enabled = v;
+                            _error = null; // 输入变化即清旧错误
+                          }),
                 ),
               ],
             ),
