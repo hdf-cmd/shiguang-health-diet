@@ -11,7 +11,7 @@
 //   （不记账）；skipped="builtin" → 不入库、不失效缓存，但照常记账 + toast
 //   「内置库已有「X」，本条未重复入库」；成功入库 → 失效 foods.custom 与搜索
 //   快照（invalidateFoodLibrary）；recordMeal=true 再走 addRecord（M11 乐观记账，
-//   emoji 取 upsert 回包），记账失败 toast「已入库，本餐记入失败」仍关层。
+//   emoji 取 upsert 回包），记账失败 toast「已入库，本餐记入失败：…」仍关层。
 // 入口差异：recordMeal=false（食物库入口）只入库不记账。
 // toast 走层内 OverlayEntry（SheetToast，food_lib_sheet._toast 同模式）。与既有
 // 弹层不同，本层**保存成功/内置同名提示后会立即 pop**；H5 的 #toast 是全局
@@ -471,9 +471,14 @@ class _FoodScanSheetState extends ConsumerState<FoodScanSheet> {
           pendingKey:
               'scan:${name}_${DateTime.now().millisecondsSinceEpoch}',
         );
-      } catch (_) {
-        // 入库已成功（不重复入库）；仅本餐记入失败，仍关层
-        _toast('已入库，本餐记入失败');
+      } catch (e) {
+        // 入库已成功（不重复入库）；仅本餐记入失败，仍关层。
+        // spec §3.4-4 文案带原因；用户在在途关层时 State 已销毁，_toast 走
+        // Overlay.of(context) 会抛，故 mounted 守卫后再 toast。
+        if (mounted) {
+          _toast('已入库，本餐记入失败：'
+              '${jsOr(e is ApiException ? e.message : null, '网络异常')}');
+        }
       }
     }
     if (!mounted) return;

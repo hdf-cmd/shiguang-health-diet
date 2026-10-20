@@ -157,7 +157,7 @@ class HealthApi {
   /* ---------- 拍照识菜（M13；云函数 /ai/food-scan 与 /foods/custom/upsert） ---------- */
 
   /// 拍照识菜（M13）：云函数调 DeepSeek，返回 {dish,confidence,per100,note,quota}
-  /// 云端函数超时 60s，客户端按请求放宽到 30s（其它路由仍默认 15s）。
+  /// 云端函数部署后 60s（spec §2.5），客户端按请求放宽到 30s（其它路由仍默认 15s）。
   Future<Map<String, dynamic>> scanFood(String imageDataUrl) => _client.call(
         '/ai/food-scan',
         method: 'POST',

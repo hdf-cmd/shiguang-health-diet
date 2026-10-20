@@ -2,7 +2,7 @@ const cloud = require("@cloudbase/node-sdk");
 const crypto = require("crypto");
 // M12-③ 食物频次聚合（纯逻辑，tests/records-freq.test.js 覆盖）
 const { countNames, collectAll } = require("./freq");
-// M13：拍照识菜纯逻辑（解析/校验/限流常量，tests/ai.test.js 覆盖）
+// M13：拍照识菜纯逻辑（解析/校验/限流常量，tests/ai-scan.test.js 覆盖）
 const { parseModelJson, validateScanResult, kAiScanDailyLimit, kAiImageMaxChars, kAiImagePrefix } = require("./ai");
 
 const app = cloud.init({

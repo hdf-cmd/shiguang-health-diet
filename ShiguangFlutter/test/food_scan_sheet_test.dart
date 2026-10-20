@@ -167,6 +167,13 @@ void main() {
     expect(api.lastUpsertBody!['kcal'], 312);
     expect(api.lastUpsertBody!['portion'], '200g');
     expect(api.lastUpsertBody!['image'], startsWith('data:image/jpeg;base64,'));
+    // 记账体四键：date/meal 取入口入参、portion 按份、emoji 取 upsert 回包
+    // （桩默认 '🍗'）而非写死——钉「emoji 来自入库回包」这条链
+    expect(api.addBodies.single['date'], '2026-10-25');
+    expect(api.addBodies.single['meal'], 'lunch');
+    expect(api.addBodies.single['emoji'], isNotEmpty);
+    expect(api.addBodies.single['emoji'], api.upsertResult['emoji']);
+    expect(api.addBodies.single['portion'], '200g');
     expect(api.addBodies.single['kcal'], 312);
     expect(api.addBodies.single['image'], api.lastUpsertBody!['image']);
   });
