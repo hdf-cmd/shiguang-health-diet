@@ -94,12 +94,19 @@ void main() {
       (tester) async {
     await pumpReport(tester, StubHealthApi(weekReport: kWeek));
 
-    // min 4%：0 kcal 柱高 = 140*.04 = 5.6px（不是 0）
+    // min 4%：0 kcal 柱高 = 140*.04 = 5.6px（不是 0）。
+    // 🔴 M10 卫生修复（**改动前既有缺陷，非本批引入**）：原写死 index 2，而
+    // weekTodayIndex=weekday-1（周一=0，report.dart:142），**每逢周三 todayIdx==2**
+    // 即撞上今天柱——_barDecoration 今天支返回 LinearGradient（color 恒 null，
+    // week_chart.dart:161-174），本断言必红。M9 收官日 09-27 是周日，故当时全绿。
+    // 零 kcal 柱有 2/5 两根，按下方 normalIdx 同款守卫择「非今天」者，与运行日无关。
+    final zeroIdx =
+        [2, 5].firstWhere((i) => i != weekTodayIndex(DateTime.now()));
     final zeroBar = tester
-        .widget<Container>(find.byKey(const ValueKey('week-bar-fill-2')))
+        .widget<Container>(find.byKey(ValueKey('week-bar-fill-$zeroIdx')))
         .decoration! as BoxDecoration;
-    expect(tester.getSize(find.byKey(const ValueKey('week-bar-fill-2'))).height,
-        closeTo(expectBarPx(2), 0.5));
+    expect(tester.getSize(find.byKey(ValueKey('week-bar-fill-$zeroIdx'))).height,
+        closeTo(expectBarPx(zeroIdx), 0.5));
     expect(zeroBar.color, Tokens.primarySoft);
 
     // 非今天且非 over 的柱（kcal<=target：2/5/6 中挑一个不是今天的）
