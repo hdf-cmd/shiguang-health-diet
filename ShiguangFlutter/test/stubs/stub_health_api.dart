@@ -573,6 +573,55 @@ class StubHealthApi implements HealthApi {
     };
   }
 
+  /* ---------- M13 拍照识菜：scanFood / upsertCustomFood ---------- */
+
+  /// 识菜成功返回体（云 /ai/food-scan 形状：{ok,dish,confidence,per100,note,quota}）。
+  /// 用例可按需改字段（如 confidence:'low'）；scanError 非空时整支抛。
+  Map<String, dynamic> scanResult = <String, dynamic>{
+    'ok': true,
+    'dish': '蒜薹鸡块',
+    'confidence': 'high',
+    'per100': <String, dynamic>{
+      'kcal': 156,
+      'protein': 8.6,
+      'carb': 7.4,
+      'fat': 9.8,
+    },
+    'note': '',
+    'quota': <String, dynamic>{'used': 1, 'limit': 50},
+  };
+  ApiException? scanError;
+  int scanCalls = 0;
+
+  /// upsertCustomFood 最近一次入参（按最后一次覆盖；成功/失败都先记录=请求已发出）
+  Map<String, dynamic>? lastUpsertBody;
+  int upsertCalls = 0;
+
+  /// upsert 成功返回体（云形状 {ok,id|skipped,emoji}）；upsertError 非空时整支抛
+  Map<String, dynamic> upsertResult = <String, dynamic>{
+    'ok': true,
+    'id': 'new_1',
+    'created': true,
+    'emoji': '🍗',
+  };
+  ApiException? upsertError;
+
+  @override
+  Future<Map<String, dynamic>> scanFood(String imageDataUrl) async {
+    scanCalls++;
+    if (scanError != null) throw scanError!;
+    return scanResult;
+  }
+
+  @override
+  Future<Map<String, dynamic>> upsertCustomFood(
+      Map<String, dynamic> food) async {
+    upsertCalls++;
+    lastUpsertBody = Map<String, dynamic>.of(food);
+    if (upsertError != null) throw upsertError!;
+    return upsertResult;
+  }
+
   @override
   Future<Map<String, dynamic>> deleteFoodRecord(String id) async {
     deletedIds.add(id);
