@@ -585,13 +585,21 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
                       style: FilledButton.styleFrom(
                           padding: const EdgeInsets.symmetric(
                               horizontal: Tokens.sp2)),
-                      onPressed: () => openFoodScanFlow(
-                        context,
-                        ref,
-                        date: ref.read(plateDateProvider),
-                        meal: 'lunch', // 同 #lib-add 链路默认档（:1218 正餐）
-                        recordMeal: false,
-                      ),
+                      // M13-T7 修复轮（评审 Important#1）：流程结束（含保存
+                      // 入库）必须按 renderLibList 语义重取——此前保存返回后
+                      // _custom 与「自定义 N 条」仍是旧快照（空库还停在空态），
+                      // 须切 tab/重开层才见新数据。取消/失败支同样重取一次，
+                      // 与层内其它「用户显式动作后重取」同口径。
+                      onPressed: () async {
+                        await openFoodScanFlow(
+                          context,
+                          ref,
+                          date: ref.read(plateDateProvider),
+                          meal: 'lunch', // 同 #lib-add 链路默认档（:1218 正餐）
+                          recordMeal: false,
+                        );
+                        if (mounted) await _render(); // :1308 自定义重取
+                      },
                       child: const Text('📷 拍照添加'),
                     ),
                   ),

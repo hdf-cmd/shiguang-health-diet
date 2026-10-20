@@ -7,7 +7,9 @@
 // ② scanError=ApiException('网络异常') → 「识别失败：网络异常」、不打开
 //    FoodScanSheet；「手动填写」落自定义食物表单；
 // ③ 食物库层底「📷 拍照添加」（lib-scan-add）存在且走同一流程
-//    （recordMeal=false、date=plateDateProvider、meal='lunch'）。
+//    （recordMeal=false、date=plateDateProvider、meal='lunch'）；
+// ④ 修复轮（评审 Important#1）：食物库入口扫码保存入库、表单关闭返回后
+//    必须重取自定义列表——listFoodsCalls 增加、空态消失、sub 计数更新；
 // 选图一律经 scanImagePickProvider 注入固定 dataURL（不拉起系统选择器）；
 // 识别经 StubHealthApi.scanFood（scanResult/scanError/scanCalls）。
 import 'package:flutter/material.dart';
@@ -24,7 +26,7 @@ import 'package:shiguang_flutter/features/record/custom_food_sheet.dart'
 import 'package:shiguang_flutter/features/record/food_freq.dart'
     show FoodFreqStore, foodFreqStoreProvider;
 import 'package:shiguang_flutter/features/record/food_scan_sheet.dart'
-    show FoodScanSheet, scanImagePickProvider;
+    show FoodScanSheet, scanImagePickProvider, scanSaveKey;
 import 'package:shiguang_flutter/features/record/search_sheet.dart'
     show SearchSheet;
 
@@ -55,6 +57,41 @@ class _MemStore implements FoodFreqStore {
 
 /// 固定选图回包（≙ 生产 512px/q75 压缩后的 dataURL；字段口径同 PickedImageData）
 /// 直接以记录字面量注入 scanImagePickProvider.overrideWithValue，不引私有类型。
+
+/// 食物库入口地基（③/④ 共用）：建容器 + 挂 _LibHost + 点开「我的食物库」层。
+/// 返回容器供用例预置 plateDate / 直读 plateDateProvider；api 由用例持有以
+/// 断言调用面（listFoodsCalls / scanCalls / upsertCalls）。
+Future<ProviderContainer> pumpLib(
+  WidgetTester tester,
+  StubHealthApi api, {
+  String? plateDate,
+}) async {
+  await useBigSurface(tester);
+  final container = ProviderContainer(
+    overrides: [
+      healthApiProvider.overrideWithValue(api),
+      foodFreqStoreProvider.overrideWithValue(_MemStore()),
+      scanImagePickProvider.overrideWithValue(
+          (_) async => (dataUrl: 'data:image/jpeg;base64,AAA', failure: null)),
+    ],
+    retry: (_, _) => null,
+  );
+  addTearDown(container.dispose);
+  if (plateDate != null) {
+    container.read(plateDateProvider.notifier).state = plateDate;
+  }
+  await tester.pumpWidget(UncontrolledProviderScope(
+    container: container,
+    child: MaterialApp(
+      theme: shiguangTheme(),
+      home: const _LibHost(),
+    ),
+  ));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('open-lib'));
+  await tester.pumpAndSettle();
+  return container;
+}
 
 void main() {
   Widget searchApp(StubHealthApi api) => ProviderScope(
@@ -142,31 +179,9 @@ void main() {
 
   testWidgets('③ 食物库「📷 拍照添加」在层底、走同一流程：'
       'recordMeal=false，date=plate 日期，meal=lunch', (tester) async {
-    await useBigSurface(tester);
     const plateDate = '2026-10-01';
     final api = StubHealthApi(libCustomFoods: <Map<String, dynamic>>[]);
-    final container = ProviderContainer(
-      overrides: [
-        healthApiProvider.overrideWithValue(api),
-        foodFreqStoreProvider.overrideWithValue(_MemStore()),
-        scanImagePickProvider.overrideWithValue(
-            (_) async => (dataUrl: 'data:image/jpeg;base64,AAA', failure: null)),
-      ],
-      retry: (_, _) => null,
-    );
-    addTearDown(container.dispose);
-    container.read(plateDateProvider.notifier).state = plateDate;
-
-    await tester.pumpWidget(UncontrolledProviderScope(
-      container: container,
-      child: MaterialApp(
-        theme: shiguangTheme(),
-        home: const _LibHost(),
-      ),
-    ));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('open-lib'));
-    await tester.pumpAndSettle();
+    await pumpLib(tester, api, plateDate: plateDate);
 
     // 层底双钮：左保留原「＋ 添加自定义食物」，右新增「📷 拍照添加」
     expect(find.text('＋ 添加自定义食物'), findsOneWidget);
@@ -187,6 +202,51 @@ void main() {
     expect(sheet.meal, 'lunch');
     expect(find.textContaining('保存后记入'), findsNothing,
         reason: 'recordMeal=false 不显示记账提示');
+  });
+
+  testWidgets('④ 食物库扫码入库保存后返回：按 renderLibList 重取列表'
+      '（listFoodsCalls 增加、空态消失、「自定义 N 条」更新；'
+      '修复前停留在旧值/空态，须切 tab 或重开层）', (tester) async {
+    final api = StubHealthApi(libCustomFoods: <Map<String, dynamic>>[]);
+    await pumpLib(tester, api, plateDate: '2026-10-01');
+
+    // 进入流程前：首开预取 1 次，空库空态与「自定义 0 条」在场
+    final before = api.listFoodsCalls;
+    expect(before, 1);
+    expect(find.text('还没有自定义食物\n点下方按钮添加你的常吃菜'), findsOneWidget);
+    expect(find.text('自定义 0 条 · 点餐次标签可改归类'), findsOneWidget);
+
+    await tester.tap(find.byKey(libScanAddKey));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('从相册选'));
+    await tester.pumpAndSettle(); // 识别 → 确认表单
+    expect(find.byType(FoodScanSheet), findsOneWidget);
+    expect(api.scanCalls, 1);
+
+    // 桩 upsert 只记 body 不落库：手工写入模拟「云端已落库」（本钉锁端上
+    // 保存后重取链，非桩仿真度；对照 food_lib_sheet_test T9结转钉 同法）
+    api.libCustomFoods!.insert(
+        0,
+        StubHealthApi.cfFoodMap(
+            id: 'scan_1',
+            name: '蒜薹鸡块',
+            kcal: 312,
+            grams: 200,
+            portion: '200g'));
+
+    await tester.tap(find.byKey(scanSaveKey));
+    await tester.pumpAndSettle(); // upsert → pop 表单 → 回食物库层 → _render 重取
+
+    expect(api.upsertCalls, 1);
+    expect(api.addBodies, isEmpty, reason: 'food_lib 入口只入库不记账');
+    expect(api.listFoodsCalls, greaterThan(before),
+        reason: 'openFoodScanFlow 结束后必须重取'
+            '（修复前该数停在 before，列表停留空态直到切 tab/重开层）');
+    expect(find.text('我的食物库'), findsOneWidget, reason: '重取不关层');
+    expect(find.text('还没有自定义食物\n点下方按钮添加你的常吃菜'), findsNothing);
+    expect(find.text('蒜薹鸡块'), findsOneWidget, reason: '重取回包已见新入库行');
+    expect(find.text('自定义 1 条 · 点餐次标签可改归类'), findsOneWidget,
+        reason: 'sub 行按新取数重写（修复前仍是「自定义 0 条」）');
   });
 }
 
