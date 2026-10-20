@@ -17,7 +17,14 @@
 // 弹层不同，本层**保存成功/内置同名提示后会立即 pop**；H5 的 #toast 是全局
 // 元素，关层不打断（js/app.js:35），故 dispose 不硬摘在播的 toast——由
 // onDone（2400ms 动画结束）自删，否则这两条提示会被 pop 动画吞掉。
-// 分层：openFoodScanFlow（选来源→识别中→开表单）由 M13-T7 在本文件续建。
+// 分层：openFoodScanFlow（M13-T7）——选来源（SimpleDialog「拍照/从相册选」，
+// 取消静默）→ 选图注入面（scanImagePickProvider，512px/q75）→ 不可关闭的
+// 「识别中…」对话框 → scanFood；失败关对话框并弹「识别失败：{msg}」
+// （「手动填写」落 openCustomFoodSheet /「取消」静默）；成功关对话框后**经
+// showShiguangSheet 开本表单**（toast 依赖根 Navigator Overlay，T6 已验证
+// 该宿主形态，不得改为路由根 body）。两个入口（记一笔搜索框 📷 / 食物库
+// 「📷 拍照添加」）共用本函数：前者 recordMeal=true（date/meal 用弹层入参），
+// 后者 recordMeal=false（date=plateDateProvider、meal='lunch'）。
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -30,7 +37,9 @@ import '../../domain/constants.dart' show mealNames;
 import '../../domain/js_compat.dart' show jsNumText, jsNumber, jsOr;
 import '../common/food_thumb.dart';
 import '../common/image_pick.dart';
+import '../common/sheet.dart' show showShiguangSheet;
 import '../common/sheet_toast.dart';
+import 'custom_food_sheet.dart' show openCustomFoodSheet;
 import 'food_scan_math.dart';
 import 'record_controller.dart'
     show healthApiProvider, invalidateFoodLibrary, recordControllerProvider;
@@ -79,6 +88,168 @@ Future<PickedImageData> _defaultScanImagePick(ImageSource source) =>
 /// 选图注入面：widget 测试覆盖为固定返回（不拉起系统选择器）。
 final scanImagePickProvider =
     Provider<ScanImagePick>((ref) => _defaultScanImagePick);
+
+/// 识菜入口全流程（M13-T7）：选来源 → 选图 → 识别 → 成功开确认表单 /
+/// 失败弹提示。入口层（记一笔搜索弹层 / 我的食物库）只负责传 date/meal 与
+/// recordMeal，不重复流程细节。
+///
+/// - 来源选择用 SimpleDialog「拍照 / 从相册选」（原生来源区分，H5 无此步，
+///   R4 差异登记）；点外/返回取消 → null → 静默返回，零请求。
+/// - 选图失败沿用既有选图口径（T5/T7 逐字）：「图片仍过大，请换一张」/
+///   「图片处理失败」；选图本身取消（dataUrl=null）静默。
+/// - 识别中对话框 barrierDismissible=false + PopScope 拦返回键（不可关闭）；
+///   scanFood 抛错 → 关掉它再弹「识别失败：{msg||网络异常}」，「手动填写」
+///   落既有自定义食物表单（date/meal 同入参），「取消」静默。
+/// - 识别成功 → 关识别中 → showShiguangSheet 开 [FoodScanSheet]；宿主必须是
+///   showShiguangSheet（T6 头注：保存链 toast 依赖根 Navigator Overlay）。
+Future<void> openFoodScanFlow(
+  BuildContext context,
+  WidgetRef ref, {
+  required String date,
+  required String meal,
+  bool recordMeal = true,
+}) async {
+  final source = await showDialog<ImageSource>(
+    context: context,
+    builder: (ctx) => SimpleDialog(
+      title: const Text('识菜照片'),
+      children: [
+        SimpleDialogOption(
+          onPressed: () => Navigator.of(ctx).pop(ImageSource.camera),
+          child: const Text('拍照'),
+        ),
+        SimpleDialogOption(
+          onPressed: () => Navigator.of(ctx).pop(ImageSource.gallery),
+          child: const Text('从相册选'),
+        ),
+      ],
+    ),
+  );
+  if (source == null || !context.mounted) return; // 取消=静默
+
+  final picked = await ref.read(scanImagePickProvider)(source);
+  if (!context.mounted) return;
+  if (picked.failure == ImagePickFailure.tooLargeEncoded) {
+    _flowToast(context, '图片仍过大，请换一张');
+    return;
+  }
+  if (picked.failure == ImagePickFailure.readFailed) {
+    _flowToast(context, '图片处理失败');
+    return;
+  }
+  final img = picked.dataUrl;
+  if (img == null) return; // 选图取消=静默
+
+  // 识别中（不可关闭）：根 navigator 上 push，关层时按同一 navigator 弹回。
+  final navigator = Navigator.of(context, rootNavigator: true);
+  showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => const PopScope(
+      canPop: false,
+      child: Dialog(
+        child: Padding(
+          padding: EdgeInsets.all(Tokens.sp5),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              SizedBox(width: Tokens.sp3),
+              Text('识别中…', style: TextStyle(fontSize: Tokens.textMd)),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+
+  final Map<String, dynamic> scan;
+  try {
+    scan = await ref.read(healthApiProvider).scanFood(img);
+  } catch (e) {
+    navigator.pop(); // 关识别中
+    if (!context.mounted) return;
+    await _showScanError(context, ref, e, date: date, meal: meal);
+    return;
+  }
+  navigator.pop(); // 关识别中
+  if (!context.mounted) return;
+  await showShiguangSheet<void>(
+    context,
+    title: '确认食物',
+    child: FoodScanSheet(
+      date: date,
+      meal: meal,
+      scan: scan,
+      initialImage: img,
+      recordMeal: recordMeal,
+    ),
+  );
+}
+
+/// 识菜失败提示（M13-T7）：「识别失败：{msg}」+「手动填写」/「取消」。
+/// 手动填写落既有自定义食物表单，不另造入参面；取消静默零请求。
+Future<void> _showScanError(
+  BuildContext context,
+  WidgetRef ref,
+  Object error, {
+  required String date,
+  required String meal,
+}) async {
+  final msg = jsOr(error is ApiException ? error.message : null, '网络异常');
+  final manual = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: Tokens.surface,
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(Tokens.radiusLg)),
+      content: Text('识别失败：$msg',
+          style: const TextStyle(fontSize: Tokens.textMd, color: Tokens.ink2)),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(false),
+          child: const Text('取消',
+              style: TextStyle(color: Tokens.ink3, fontSize: Tokens.textMd)),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(true),
+          child: const Text('手动填写',
+              style: TextStyle(
+                  color: Tokens.primaryDeep,
+                  fontSize: Tokens.textMd,
+                  fontWeight: FontWeight.w700)),
+        ),
+      ],
+    ),
+  );
+  if (manual != true || !context.mounted) return;
+  await openCustomFoodSheet(
+    context,
+    date: date,
+    meal: meal,
+    onSaved: () {}, // H5 无「识别失败→手动填」上游，落库后不发重查
+  );
+}
+
+/// 入口层 toast（选图失败用）：走根 Overlay 的 SheetToast——两入口都处于
+/// 弹层内，SnackBar 会被弹层遮挡（sheet_toast 头注定式）。
+void _flowToast(BuildContext context, String msg) {
+  final overlay = Overlay.of(context, rootOverlay: true);
+  late final OverlayEntry entry;
+  entry = OverlayEntry(
+    builder: (_) => SheetToast(
+      msg: msg,
+      onDone: () {
+        if (entry.mounted) entry.remove();
+      },
+    ),
+  );
+  overlay.insert(entry);
+}
 
 class FoodScanSheet extends ConsumerStatefulWidget {
   const FoodScanSheet({

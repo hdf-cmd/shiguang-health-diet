@@ -26,6 +26,7 @@ import '../../domain/constants.dart';
 import '../common/food_thumb.dart';
 import '../common/sheet.dart' show showShiguangSheet;
 import 'custom_food_sheet.dart';
+import 'food_scan_sheet.dart' show openFoodScanFlow;
 import 'portion_sheet.dart';
 import 'food_freq.dart';
 import 'record_controller.dart';
@@ -188,6 +189,21 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
                     ),
                   ),
                   const SizedBox(width: Tokens.sp2),
+                  // M13-T7：拍照识菜入口（简报 key sheet-scan-open）。记一笔
+                  // 入口 recordMeal=true——date/meal 用弹层入参（≙ 本弹层其他
+                  // 记入同源，消跨午夜双轨）。识别成功由 openFoodScanFlow 以
+                  // showShiguangSheet 打开确认表单，盖在本弹层之上。
+                  IconButton(
+                    key: const ValueKey('sheet-scan-open'),
+                    tooltip: '拍照识菜',
+                    icon: const Icon(Icons.photo_camera_outlined),
+                    onPressed: () => openFoodScanFlow(
+                      context,
+                      ref,
+                      date: widget.date,
+                      meal: widget.meal,
+                    ),
+                  ),
                   OutlinedButton(
                     key: const ValueKey('sheet-cf-open'),
                     onPressed: () => openCustomFoodSheet(

@@ -73,6 +73,7 @@ import '../common/eaten_badge.dart';
 import '../home/home_controller.dart' show healthApiProvider, plateDateProvider;
 import '../record/custom_food_sheet.dart' show cfMealMap, openCustomFoodSheet;
 import '../record/food_freq.dart' show foodFreqProvider;
+import '../record/food_scan_sheet.dart' show openFoodScanFlow;
 
 @visibleForTesting
 const libCloseKey = Key('lib-close'); // index.html:567 #lib-close
@@ -97,6 +98,9 @@ const libRetryKey = Key('lib-retry'); // :1339 #lib-retry
 
 @visibleForTesting
 const libAddKey = Key('lib-add'); // index.html:574 #lib-add（层底常驻钮）
+
+@visibleForTesting
+const libScanAddKey = Key('lib-scan-add'); // M13-T7：拍照识菜入口（层底右钮）
 
 @visibleForTesting
 const libSkeletonKey = Key('lib-skeleton'); // M9-A2：加载态骨架区（替「加载中…」）
@@ -544,21 +548,54 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
                           fontSize: Tokens.textXs, color: Tokens.ink3)),
                 ),
               Expanded(child: _body(counts)),
-              // 层底常驻「＋ 添加自定义食物」（index.html:574 #lib-add：在
-              // #lib-list 之外，双 tab/加载/失败态均在；文案逐字，
-              // btn-primary btn-block ≙ FilledButton 拉伸 + margin-top sp3）
+              // 层底常驻按钮行（index.html:574 #lib-add：在 #lib-list 之外，
+              // 双 tab/加载/失败态均在；文案逐字，btn-primary btn-block ≙
+              // FilledButton 拉伸 + margin-top sp3）。
+              // M13-T7：左右平分——左「＋ 添加自定义食物」保留原链路
+              // （pop(true) → openFoodLibSheet 续开自定义表单）；右「📷 拍照
+              // 添加」走 openFoodScanFlow（recordMeal=false：只入库不记账，
+              // date=plate 日期、meal=默认正餐档，与 #lib-add 链路同源）。
               const SizedBox(height: Tokens.sp3),
-              FilledButton(
-                key: libAddKey,
-                // ≙ js/app.js:1347 closeFoodLib() → openCustomFoodSheet(true)
-                // 关层带 true 回执，由 openFoodLibSheet 接续开表单；
-                // _addPopped 闸防关闭动画窗口连点二次 pop（见字段注）。
-                onPressed: () {
-                  if (_addPopped) return;
-                  _addPopped = true;
-                  Navigator.of(context).pop(true);
-                },
-                child: const Text('＋ 添加自定义食物'),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton(
+                      key: libAddKey,
+                      // 双钮平分后每钮只剩半行宽：沿用主题 24 横内边距时
+                      // 「＋ 添加自定义食物」在 360–390dp 屏会折两行，故两支
+                      // 同收 sp2 紧凑内边距（文字样式仍随主题）。
+                      style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: Tokens.sp2)),
+                      // ≙ js/app.js:1347 closeFoodLib() → openCustomFoodSheet(true)
+                      // 关层带 true 回执，由 openFoodLibSheet 接续开表单；
+                      // _addPopped 闸防关闭动画窗口连点二次 pop（见字段注）。
+                      onPressed: () {
+                        if (_addPopped) return;
+                        _addPopped = true;
+                        Navigator.of(context).pop(true);
+                      },
+                      child: const Text('＋ 添加自定义食物'),
+                    ),
+                  ),
+                  const SizedBox(width: Tokens.sp2),
+                  Expanded(
+                    child: FilledButton.tonal(
+                      key: libScanAddKey,
+                      style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: Tokens.sp2)),
+                      onPressed: () => openFoodScanFlow(
+                        context,
+                        ref,
+                        date: ref.read(plateDateProvider),
+                        meal: 'lunch', // 同 #lib-add 链路默认档（:1218 正餐）
+                        recordMeal: false,
+                      ),
+                      child: const Text('📷 拍照添加'),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
