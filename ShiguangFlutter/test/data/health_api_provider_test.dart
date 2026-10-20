@@ -45,4 +45,20 @@ void main() {
             enabled: true, id: 'deepseek', model: 'deepseek-flash', key: ''));
     expect(adapter.envelopes.last['body'].containsKey('provider'), isFalse);
   });
+
+  test('estimateFood → /ai/food-estimate；菜名与 provider 信封同口径', () async {
+    await api.estimateFood('番茄炒蛋');
+    expect(adapter.envelopes.last['path'], '/ai/food-estimate');
+    expect(adapter.envelopes.last['method'], 'POST');
+    expect(adapter.envelopes.last['body'], {'name': '番茄炒蛋'});
+
+    await api.estimateFood('番茄炒蛋',
+        provider: const AiProviderConfig(
+            enabled: true,
+            id: 'qwen',
+            model: 'qwen-plus',
+            key: 'sk-12345678'));
+    expect(adapter.envelopes.last['body']['provider'],
+        {'id': 'qwen', 'model': 'qwen-plus', 'key': 'sk-12345678'});
+  });
 }

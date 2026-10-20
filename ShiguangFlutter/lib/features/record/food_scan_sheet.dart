@@ -20,7 +20,8 @@
 // 分层：openFoodScanFlow（M13-T7）——选来源（SimpleDialog「拍照/从相册选」，
 // 取消静默）→ 选图注入面（scanImagePickProvider，512px/q75）→ 不可关闭的
 // 「识别中…」对话框 → scanFood；失败关对话框并弹「识别失败：{msg}」
-// （「手动填写」落 openCustomFoodSheet /「取消」静默）；成功关对话框后**经
+// （M15：「按菜名估算」→ 文本估算弹窗 → 成功后复用本表单（fromText）；
+// 弹窗内「直接手填」落 openCustomFoodSheet /「取消」静默）；成功关对话框后**经
 // showShiguangSheet 开本表单**（toast 依赖根 Navigator Overlay，T6 已验证
 // 该宿主形态，不得改为路由根 body）。两个入口（记一笔搜索框 📷 / 食物库
 // 「📷 拍照添加」）共用本函数：前者 recordMeal=true（date/meal 用弹层入参），
@@ -82,6 +83,20 @@ const scanPickPhotoKey = Key('scan-pick-photo');
 @visibleForTesting
 const scanRemovePhotoKey = Key('scan-remove-photo');
 
+/* ---------- M15：识别失败后的按菜名估算 ---------- */
+
+@visibleForTesting
+const estimateNameKey = Key('estimate-name');
+
+@visibleForTesting
+const estimateGramsKey = Key('estimate-grams');
+
+@visibleForTesting
+const estimateSubmitKey = Key('estimate-submit');
+
+@visibleForTesting
+const estimateManualKey = Key('estimate-manual');
+
 /// 选图注入面（T7 识图与表单换图共用）：入参来源，返回压缩 dataURL/失败态。
 typedef ScanImagePick = Future<PickedImageData> Function(ImageSource source);
 
@@ -109,8 +124,9 @@ final scanImagePickProvider = Provider<ScanImagePick>((ref) {
 /// - 选图失败沿用既有选图口径（T5/T7 逐字）：「图片仍过大，请换一张」/
 ///   「图片处理失败」；选图本身取消（dataUrl=null）静默。
 /// - 识别中对话框 barrierDismissible=false + PopScope 拦返回键（不可关闭）；
-///   scanFood 抛错 → 关掉它再弹「识别失败：{msg||网络异常}」，「手动填写」
-///   落既有自定义食物表单（date/meal 同入参），「取消」静默。
+///   scanFood 抛错 → 关掉它再弹「识别失败：{msg||网络异常}」，「按菜名估算」
+///   → 估算弹窗（M15）→ 成功后开 [FoodScanSheet]（fromText=true、克数预填、
+///   无照片块）；弹窗内「直接手填」落既有自定义食物表单，「取消」静默。
 /// - 识别成功 → 关识别中 → showShiguangSheet 开 [FoodScanSheet]；宿主必须是
 ///   showShiguangSheet（T6 头注：保存链 toast 依赖根 Navigator Overlay）。
 Future<void> openFoodScanFlow(
@@ -194,7 +210,8 @@ Future<void> openFoodScanFlow(
   } catch (e) {
     navigator.pop(); // 关识别中
     if (!context.mounted) return;
-    await _showScanError(context, ref, e, date: date, meal: meal);
+    await _showScanError(context, e,
+        date: date, meal: meal, recordMeal: recordMeal);
     return;
   }
   navigator.pop(); // 关识别中
@@ -212,17 +229,17 @@ Future<void> openFoodScanFlow(
   );
 }
 
-/// 识菜失败提示（M13-T7）：「识别失败：{msg}」+「手动填写」/「取消」。
-/// 手动填写落既有自定义食物表单，不另造入参面；取消静默零请求。
+/// 识菜失败提示（M13-T7 / M15）：「识别失败：{msg}」+「按菜名估算」/「取消」。
+/// 估算弹窗内保留「直接手填」旧兜底；取消静默零请求。
 Future<void> _showScanError(
   BuildContext context,
-  WidgetRef ref,
   Object error, {
   required String date,
   required String meal,
+  required bool recordMeal,
 }) async {
   final msg = jsOr(error is ApiException ? error.message : null, '网络异常');
-  final manual = await showDialog<bool>(
+  final estimate = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
       backgroundColor: Tokens.surface,
@@ -238,7 +255,7 @@ Future<void> _showScanError(
         ),
         TextButton(
           onPressed: () => Navigator.of(ctx).pop(true),
-          child: const Text('手动填写',
+          child: const Text('按菜名估算',
               style: TextStyle(
                   color: Tokens.primaryDeep,
                   fontSize: Tokens.textMd,
@@ -247,13 +264,212 @@ Future<void> _showScanError(
       ],
     ),
   );
-  if (manual != true || !context.mounted) return;
-  await openCustomFoodSheet(
-    context,
-    date: date,
-    meal: meal,
-    onSaved: () {}, // H5 无「识别失败→手动填」上游，落库后不发重查
+  if (estimate != true || !context.mounted) return;
+  await _showEstimateSheet(context,
+      date: date, meal: meal, recordMeal: recordMeal);
+}
+
+/// 估算结果：done 复用识菜确认表单；manual 落既有自定义食物表单。
+sealed class _EstimateResult {
+  const _EstimateResult();
+}
+
+class _EstimateDone extends _EstimateResult {
+  const _EstimateDone(this.scan, this.grams);
+  final Map<String, dynamic> scan;
+  final int grams;
+}
+
+class _EstimateManual extends _EstimateResult {
+  const _EstimateManual(this.name);
+  final String name;
+}
+
+/// 估算弹窗关闭后的分流：成功 → 确认表单（无照片、克数预填）；
+/// 「直接手填」→ 自定义食物表单（菜名带过去）。
+Future<void> _showEstimateSheet(
+  BuildContext context, {
+  required String date,
+  required String meal,
+  required bool recordMeal,
+}) async {
+  final result = await showDialog<_EstimateResult>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => const _EstimateDialog(),
   );
+  if (result == null || !context.mounted) return;
+  if (result is _EstimateManual) {
+    await openCustomFoodSheet(
+      context,
+      date: date,
+      meal: meal,
+      initialName: result.name,
+      onSaved: () {}, // 既有兜底路径，落库后不发重查
+    );
+    return;
+  }
+  if (result is _EstimateDone) {
+    await showShiguangSheet<void>(
+      context,
+      title: '确认食物',
+      child: FoodScanSheet(
+        date: date,
+        meal: meal,
+        scan: result.scan,
+        initialImage: '',
+        initialGrams: result.grams,
+        recordMeal: recordMeal,
+        fromText: true,
+      ),
+    );
+  }
+}
+
+/// 按菜名估算弹窗（M15）：菜名 + 这一份克数 → 云函数估算每 100g 营养。
+/// 失败原地提示可重试；「直接手填」保留旧自定义表单入口。
+class _EstimateDialog extends ConsumerStatefulWidget {
+  const _EstimateDialog();
+
+  @override
+  ConsumerState<_EstimateDialog> createState() => _EstimateDialogState();
+}
+
+class _EstimateDialogState extends ConsumerState<_EstimateDialog> {
+  final TextEditingController _name = TextEditingController();
+  final TextEditingController _grams = TextEditingController(text: '200');
+  String? _error;
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _grams.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_busy) return;
+    final name = _name.text.trim();
+    final grams = int.tryParse(_grams.text.trim()) ?? 0;
+    if (name.isEmpty) {
+      setState(() => _error = '请填写菜名');
+      return;
+    }
+    if (grams < 1 || grams > 2000) {
+      setState(() => _error = '克数需在 1–2000 之间');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    // 读盘失败按未配置处理，回退内置通道（同识菜口径）。
+    AiProviderConfig? provider;
+    try {
+      provider = await ref.read(aiProviderStoreProvider).load();
+    } catch (_) {
+      provider = null;
+    }
+    if (!mounted) return;
+    try {
+      final scan =
+          await ref.read(healthApiProvider).estimateFood(name, provider: provider);
+      if (!mounted) return;
+      Navigator.of(context).pop(_EstimateDone(scan, grams));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = '估算失败：${jsOr(e is ApiException ? e.message : null, '网络异常')}';
+      });
+    }
+  }
+
+  void _manual() {
+    if (_busy) return;
+    Navigator.of(context).pop(_EstimateManual(_name.text.trim()));
+  }
+
+  static const _label = TextStyle(
+      fontSize: Tokens.textSm, fontWeight: FontWeight.w700, color: Tokens.ink);
+  static const _sub = TextStyle(fontSize: Tokens.textXs, color: Tokens.ink3);
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: Tokens.surface,
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(Tokens.radiusLg)),
+      title: const Text('按菜名估算',
+          style: TextStyle(
+              fontSize: Tokens.textLg,
+              fontWeight: FontWeight.w800,
+              color: Tokens.ink)),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('输入菜名和这一份的克数，AI 按每 100g 估算营养。',
+                style: _sub),
+            const SizedBox(height: Tokens.sp3),
+            const Text('菜名', style: _label),
+            const SizedBox(height: Tokens.sp1),
+            TextField(
+              key: estimateNameKey,
+              controller: _name,
+              enabled: !_busy,
+              maxLength: 30,
+              decoration: const InputDecoration(
+                  hintText: '如：番茄炒蛋', isDense: true, counterText: ''),
+            ),
+            const SizedBox(height: Tokens.sp3),
+            const Text('这一份克数', style: _label),
+            const SizedBox(height: Tokens.sp1),
+            TextField(
+              key: estimateGramsKey,
+              controller: _grams,
+              enabled: !_busy,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: const InputDecoration(
+                  hintText: '如：200', isDense: true, suffixText: 'g'),
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                key: estimateManualKey,
+                onPressed: _busy ? null : _manual,
+                child: const Text('直接手填',
+                    style: TextStyle(color: Tokens.ink3, fontSize: Tokens.textSm)),
+              ),
+            ),
+            if (_error != null)
+              Text(_error!,
+                  style: const TextStyle(
+                      fontSize: Tokens.textSm, color: Tokens.danger)),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.of(context).pop(),
+          child: const Text('取消',
+              style: TextStyle(color: Tokens.ink3, fontSize: Tokens.textMd)),
+        ),
+        TextButton(
+          key: estimateSubmitKey,
+          onPressed: _busy ? null : _submit,
+          child: Text(_busy ? '估算中…' : '估算营养',
+              style: const TextStyle(
+                  color: Tokens.primaryDeep,
+                  fontSize: Tokens.textMd,
+                  fontWeight: FontWeight.w700)),
+        ),
+      ],
+    );
+  }
 }
 
 /// 入口层 toast（选图失败用）：走根 Overlay 的 SheetToast——两入口都处于
@@ -286,6 +502,8 @@ class FoodScanSheet extends ConsumerStatefulWidget {
     required this.scan,
     required this.initialImage,
     this.recordMeal = true,
+    this.initialGrams,
+    this.fromText = false,
   });
 
   /// 记入目标日期（≙ 调用方上下文日期；食物库入口不记账时仅作占位）
@@ -303,6 +521,12 @@ class FoodScanSheet extends ConsumerStatefulWidget {
   /// true=入库 + 记入本餐（记一笔入口）；false=只入库（食物库入口）
   final bool recordMeal;
 
+  /// 这一份克数初值；null → 200g（识菜默认）。M15 文本估算把用户输入的克数带进来。
+  final int? initialGrams;
+
+  /// M15：按菜名估算（无照片）。固定显示「估算值，请核对」，隐藏入库照片块。
+  final bool fromText;
+
   @override
   ConsumerState<FoodScanSheet> createState() => _FoodScanSheetState();
 }
@@ -318,7 +542,7 @@ class _FoodScanSheetState extends ConsumerState<FoodScanSheet> {
   late final TextEditingController _name =
       TextEditingController(text: '${widget.scan['dish'] ?? ''}'.trim());
   late final TextEditingController _grams =
-      TextEditingController(text: '200'); // spec：默认 200g
+      TextEditingController(text: '${widget.initialGrams ?? 200}'); // 识菜默认 200g
   late final TextEditingController _kcal100 =
       TextEditingController(text: _initNum('kcal'));
   late final TextEditingController _protein100 =
@@ -336,6 +560,13 @@ class _FoodScanSheetState extends ConsumerState<FoodScanSheet> {
   OverlayEntry? _toastEntry;
 
   bool get _lowConfidence => '${widget.scan['confidence']}' == 'low';
+
+  /// 文本估算没有置信度可言：固定提示，防止用户把估算当识别结果。
+  bool get _showConfidenceWarning => widget.fromText || _lowConfidence;
+
+  String get _confidenceWarning => widget.fromText
+      ? '估算值，请核对菜名与数值'
+      : '识别把握不大，请核对菜名与数值';
 
   /// 模型的一句话说明（可空）
   String get _note => '${widget.scan['note'] ?? ''}'.trim();
@@ -537,49 +768,51 @@ class _FoodScanSheetState extends ConsumerState<FoodScanSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // 入库照片（spec §3.3 顶部；默认=识别图）
-            const Text('入库照片', style: _label),
-            const Text('默认用识别图；换图不重新识别', style: _sub),
-            const SizedBox(height: Tokens.sp1),
-            Row(
-              children: [
-                // 有图画图、坏图/空图回退 🍽️（FoodThumb 既有语义）
-                FoodThumb(source: _image, emoji: '🍽️', size: 56),
-                const SizedBox(width: Tokens.sp3),
-                Expanded(
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          key: scanPickPhotoKey,
-                          onPressed:
-                              _busy || _picking ? null : _pickPhoto,
-                          child: Text(_picking ? '选图中…' : '从本地选一张'),
+            if (!widget.fromText) ...[
+              // 入库照片（spec §3.3 顶部；默认=识别图）
+              const Text('入库照片', style: _label),
+              const Text('默认用识别图；换图不重新识别', style: _sub),
+              const SizedBox(height: Tokens.sp1),
+              Row(
+                children: [
+                  // 有图画图、坏图/空图回退 🍽️（FoodThumb 既有语义）
+                  FoodThumb(source: _image, emoji: '🍽️', size: 56),
+                  const SizedBox(width: Tokens.sp3),
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            key: scanPickPhotoKey,
+                            onPressed: _busy || _picking ? null : _pickPhoto,
+                            child: Text(_picking ? '选图中…' : '从本地选一张'),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: Tokens.sp2),
-                      OutlinedButton(
-                        key: scanRemovePhotoKey,
-                        onPressed: _busy || _picking || _image.isEmpty
-                            ? null
-                            : () => setState(() => _image = ''),
-                        child: const Text('移除'),
-                      ),
-                    ],
+                        const SizedBox(width: Tokens.sp2),
+                        OutlinedButton(
+                          key: scanRemovePhotoKey,
+                          onPressed: _busy || _picking || _image.isEmpty
+                              ? null
+                              : () => setState(() => _image = ''),
+                          child: const Text('移除'),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
-            ),
-            if (_lowConfidence) ...[
+                ],
+              ),
+            ],
+            if (_showConfidenceWarning) ...[
               const SizedBox(height: Tokens.sp2),
-              // spec §3.3：low → 黄字提示
-              const Text('识别把握不大，请核对菜名与数值',
-                  style: TextStyle(fontSize: Tokens.textSm, color: Tokens.warn)),
+              // spec §3.3：low → 黄字；M15 文本估算固定提示
+              Text(_confidenceWarning,
+                  style: const TextStyle(
+                      fontSize: Tokens.textSm, color: Tokens.warn)),
             ],
             if (_note.isNotEmpty) ...[
               const SizedBox(height: Tokens.sp1),
               // 模型的一句话说明（如「偏油」「含较多汤汁」），只作参考
-              Text('识别备注：$_note',
+              Text('${widget.fromText ? '估算备注' : '识别备注'}：$_note',
                   style: const TextStyle(
                       fontSize: Tokens.textXs, color: Tokens.ink3)),
             ],

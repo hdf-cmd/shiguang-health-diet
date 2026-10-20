@@ -26,7 +26,14 @@ import 'package:shiguang_flutter/features/record/custom_food_sheet.dart'
 import 'package:shiguang_flutter/features/record/food_freq.dart'
     show FoodFreqStore, foodFreqStoreProvider;
 import 'package:shiguang_flutter/features/record/food_scan_sheet.dart'
-    show FoodScanSheet, scanImagePickProvider, scanSaveKey;
+    show
+        FoodScanSheet,
+        estimateGramsKey,
+        estimateManualKey,
+        estimateNameKey,
+        estimateSubmitKey,
+        scanImagePickProvider,
+        scanSaveKey;
 import 'package:shiguang_flutter/features/record/search_sheet.dart'
     show SearchSheet;
 
@@ -157,8 +164,8 @@ void main() {
     expect(find.byType(FoodScanSheet), findsNothing);
   });
 
-  testWidgets('② 识别失败 → 「识别失败：网络异常」，不打开表单；'
-      '「手动填写」落自定义食物表单', (tester) async {
+  testWidgets('② 识别失败 → 「按菜名估算」→ 估算成功开确认表单'
+      '（fromText、克数预填、无照片块）', (tester) async {
     final api = StubHealthApi()..scanError = ApiException('网络异常');
     await tester.pumpWidget(searchApp(api));
     await tester.pumpAndSettle();
@@ -169,12 +176,93 @@ void main() {
     expect(find.textContaining('识别失败'), findsOneWidget);
     expect(find.text('识别失败：网络异常'), findsOneWidget);
     expect(find.text('取消'), findsOneWidget);
-    expect(find.text('手动填写'), findsOneWidget);
+    expect(find.text('按菜名估算'), findsOneWidget);
+    expect(find.text('手动填写'), findsNothing);
 
-    await tester.tap(find.text('手动填写'));
+    await tester.tap(find.text('按菜名估算'));
     await tester.pumpAndSettle();
-    expect(find.text('自定义食物'), findsOneWidget); // 既有表单标题
+    expect(find.byKey(estimateNameKey), findsOneWidget);
+    expect(find.byKey(estimateGramsKey), findsOneWidget);
+
+    await tester.enterText(find.byKey(estimateNameKey), ' 番茄炒蛋 ');
+    await tester.enterText(find.byKey(estimateGramsKey), '150');
+    await tester.tap(find.byKey(estimateSubmitKey));
+    await tester.pumpAndSettle();
+
+    expect(api.estimateCalls, 1);
+    expect(api.lastEstimateName, '番茄炒蛋');
+    expect(api.lastEstimateProvider, isNull, reason: '未配置自带 Key 走内置通道');
+    expect(find.byType(FoodScanSheet), findsOneWidget);
+    final sheet = tester.widget<FoodScanSheet>(find.byType(FoodScanSheet));
+    expect(sheet.fromText, isTrue);
+    expect(sheet.initialGrams, 150);
+    expect(find.text('确认食物'), findsOneWidget);
+    expect(find.text('番茄炒蛋'), findsOneWidget);
+    expect(find.textContaining('150 kcal'), findsOneWidget); // 100/100g × 150g
+    expect(find.text('估算值，请核对菜名与数值'), findsOneWidget);
+    expect(find.text('入库照片'), findsNothing, reason: '文本估算没有照片');
+  });
+
+  testWidgets('②a 估算弹窗校验：空菜名 / 克数越界不发请求', (tester) async {
+    final api = StubHealthApi()..scanError = ApiException('网络异常');
+    await tester.pumpWidget(searchApp(api));
+    await tester.pumpAndSettle();
+    await tapScanFromSheet(tester);
+    await tester.tap(find.text('按菜名估算'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(estimateSubmitKey));
+    await tester.pump();
+    expect(find.text('请填写菜名'), findsOneWidget);
+    expect(api.estimateCalls, 0);
+
+    await tester.enterText(find.byKey(estimateNameKey), '番茄炒蛋');
+    await tester.enterText(find.byKey(estimateGramsKey), '0');
+    await tester.tap(find.byKey(estimateSubmitKey));
+    await tester.pump();
+    expect(find.text('克数需在 1–2000 之间'), findsOneWidget);
+    expect(api.estimateCalls, 0);
+    expect(find.byType(FoodScanSheet), findsNothing);
+  });
+
+  testWidgets('②b 「直接手填」保留旧兜底：关估算弹窗并开自定义食物表单，'
+      '菜名带过去', (tester) async {
+    final api = StubHealthApi()..scanError = ApiException('网络异常');
+    await tester.pumpWidget(searchApp(api));
+    await tester.pumpAndSettle();
+    await tapScanFromSheet(tester);
+    await tester.tap(find.text('按菜名估算'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byKey(estimateNameKey), '妈妈牌红烧肉');
+    await tester.tap(find.byKey(estimateManualKey));
+    await tester.pumpAndSettle();
+
+    expect(api.estimateCalls, 0);
+    expect(find.text('自定义食物'), findsOneWidget);
     expect(find.byKey(cfNameKey), findsOneWidget);
+    expect(
+        tester.widget<TextField>(find.byKey(cfNameKey)).controller!.text,
+        '妈妈牌红烧肉');
+  });
+
+  testWidgets('②c 估算失败 → 弹窗内提示，停留可重试，不打开确认表单', (tester) async {
+    final api = StubHealthApi()..scanError = ApiException('网络异常');
+    api.estimateError = ApiException('今日识别次数已用完（50 次）');
+    await tester.pumpWidget(searchApp(api));
+    await tester.pumpAndSettle();
+    await tapScanFromSheet(tester);
+    await tester.tap(find.text('按菜名估算'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byKey(estimateNameKey), '番茄炒蛋');
+    await tester.tap(find.byKey(estimateSubmitKey));
+    await tester.pumpAndSettle();
+
+    expect(api.estimateCalls, 1);
+    expect(find.text('估算失败：今日识别次数已用完（50 次）'), findsOneWidget);
+    expect(find.byKey(estimateNameKey), findsOneWidget, reason: '弹窗不关，可改菜名重试');
+    expect(find.byType(FoodScanSheet), findsNothing);
   });
 
   testWidgets('③ 食物库「📷 拍照添加」在层底、走同一流程：'

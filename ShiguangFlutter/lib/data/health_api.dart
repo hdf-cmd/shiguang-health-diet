@@ -182,6 +182,28 @@ class HealthApi {
         timeout: const Duration(seconds: 30),
       );
 
+  /// 按菜名估算（M15）：云函数 /ai/food-estimate，返回
+  /// {ok,dish,per100,note,quota}；provider 口径与 scanFood 完全一致
+  /// （可用才整键带，未配置/半成品整键省略）。服务端 12s 超时，客户端放宽到 20s。
+  Future<Map<String, dynamic>> estimateFood(
+    String name, {
+    AiProviderConfig? provider,
+  }) =>
+      _client.call(
+        '/ai/food-estimate',
+        method: 'POST',
+        body: <String, dynamic>{
+          'name': name,
+          if (provider != null && provider.isUsable)
+            'provider': <String, dynamic>{
+              'id': provider.id,
+              'model': provider.model,
+              'key': provider.key,
+            },
+        },
+        timeout: const Duration(seconds: 20),
+      );
+
   /// 扫码入库（M13）：按菜名 upsert，回 {ok,id|skipped,emoji}
   Future<Map<String, dynamic>> upsertCustomFood(Map<String, dynamic> food) =>
       _client.call('/foods/custom/upsert', method: 'POST', body: food);

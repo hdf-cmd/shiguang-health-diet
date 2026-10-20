@@ -5,7 +5,8 @@ const { countNames, collectAll } = require("./freq");
 // M13：拍照识菜纯逻辑（解析/校验/限流常量，tests/ai-scan.test.js 覆盖）
 const {
   parseModelJson, validateScanResult, kAiScanDailyLimit, kAiImageMaxChars, kAiImagePrefix,
-  validateProviderConfig, providerTarget, providerErrorMessage,
+  providerErrorMessage,
+  buildEstimateMessages, validateEstimateResult, resolveAiChannel, chatRequestBody,
 } = require("./ai");
 
 const app = cloud.init({
@@ -163,7 +164,7 @@ const AI_SYSTEM_PROMPT = [
   '{"dish":"菜名","confidence":"high|medium|low","per100":{"kcal":0,"protein":0,"carb":0,"fat":0},"note":"一句话说明"}'
 ].join("\n");
 
-async function callDeepSeek(apiKey, imageDataUrl, strict, target, logTag) {
+async function callChat(apiKey, messages, target, logTag) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 12000);
   try {
@@ -171,29 +172,21 @@ async function callDeepSeek(apiKey, imageDataUrl, strict, target, logTag) {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey },
       signal: controller.signal,
-      body: JSON.stringify({
-        model: target.model,
-        temperature: 0.2,
-        max_tokens: 300,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: AI_SYSTEM_PROMPT },
-          { role: "user", content: [
-            { type: "text", text: strict
-                ? "上一次结果不合法。请严格按 JSON 输出，并保证 4P+4C+9F 与热量相差不超过 25%。"
-                : "请识别这道菜。" },
-            { type: "image_url", image_url: { url: imageDataUrl } }
-          ] }
-        ]
-      })
+      body: JSON.stringify(chatRequestBody(target, messages))
     });
     if (!resp.ok) {
-      console.log(logTag, resp.status);
+      const errText = await resp.text().catch(() => "");
+      console.log(logTag, resp.status, errText.slice(0, 200));
       return { text: null, status: resp.status };
     }
     const data = await resp.json();
-    const msg = data && data.choices && data.choices[0] && data.choices[0].message;
-    return { text: (msg && msg.content) || null, status: 200 };
+    const choice = data && data.choices && data.choices[0];
+    const msg = choice && choice.message;
+    return {
+      text: (msg && msg.content) || null,
+      status: 200,
+      finishReason: (choice && choice.finish_reason) || "",
+    };
   } catch (e) {
     if (e && e.name === "AbortError") console.log(logTag, "TIMEOUT");
     else console.log(logTag, "ERROR");
@@ -201,6 +194,23 @@ async function callDeepSeek(apiKey, imageDataUrl, strict, target, logTag) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function callDeepSeek(apiKey, imageDataUrl, strict, target, logTag) {
+  return callChat(apiKey, [
+    { role: "system", content: AI_SYSTEM_PROMPT },
+    { role: "user", content: [
+      { type: "text", text: strict
+          ? "上一次结果不合法。请严格按 JSON 输出，并保证 4P+4C+9F 与热量相差不超过 25%。"
+          : "请识别这道菜。" },
+      { type: "image_url", image_url: { url: imageDataUrl } }
+    ] }
+  ], target, logTag);
+}
+
+/* M15：文本估算（菜名 → 每 100g 营养），与识菜共用 callChat 的超时/解析/错误口径。 */
+async function callAiText(apiKey, name, strict, target, logTag) {
+  return callChat(apiKey, buildEstimateMessages(name, strict), target, logTag);
 }
 
 async function handle(path, method, params, body, uid) {
@@ -323,21 +333,9 @@ async function handle(path, method, params, body, uid) {
   /* M13：拍照识菜。图片只用于识别，不落库。 */
   if (path === "/ai/food-scan" && method === "POST") {
     const image = String(body.image || "");
-    const custom = body.provider;
-    let apiKey = "", target = null, logTag = "DEEPSEEK_HTTP", isCustom = false;
-    if (custom) {
-      const v = validateProviderConfig(custom);
-      if (!v.ok) return { ok: false, message: v.message };
-      target = providerTarget(v.id);
-      target = { url: target.url, model: v.model };
-      apiKey = v.key;
-      logTag = "AI_PROVIDER_HTTP " + v.id;
-      isCustom = true;
-    } else {
-      apiKey = process.env.DEEPSEEK_API_KEY || "";
-      if (!apiKey) return { ok: false, message: "识别服务未配置" };
-      target = providerTarget("deepseek");
-    }
+    const channel = resolveAiChannel(body.provider, process.env.DEEPSEEK_API_KEY || "");
+    if (!channel.ok) return { ok: false, message: channel.message };
+    const { apiKey, target, logTag, isCustom } = channel;
     // 图片校验（不变）
     if (!kAiImagePrefix.test(image) || image.length > kAiImageMaxChars) {
       return { ok: false, message: "图片格式不支持或过大" };
@@ -359,9 +357,14 @@ async function handle(path, method, params, body, uid) {
       // 错误映射仍走下方 providerErrorMessage。
       if (lastStatus === 401 || lastStatus === 403 || lastStatus === 429) break;
       const parsed = parseModelJson(r.text);
-      if (!parsed) continue;
+      if (!parsed) {
+        const raw = typeof r.text === "string" ? r.text : "";
+        console.log(logTag, "PARSE_FAIL", raw.length, r.finishReason || "");
+        continue;
+      }
       const v = validateScanResult(parsed);
       if (v.ok) result = v;
+      else console.log(logTag, "INVALID", v.reason);
     }
     if (!result) {
       if (isCustom && lastStatus !== 200) return { ok: false, message: providerErrorMessage(lastStatus) };
@@ -369,6 +372,49 @@ async function handle(path, method, params, body, uid) {
     }
     return {
       ok: true, dish: result.dish, confidence: result.confidence,
+      per100: result.per100, note: result.note,
+      quota: isCustom ? undefined : { used: used + 1, limit: kAiScanDailyLimit }
+    };
+  }
+
+  /* M15：按菜名估算（文本）。与识菜共用厂商通道与每日配额；菜名以用户输入为准。 */
+  if (path === "/ai/food-estimate" && method === "POST") {
+    const name = String(body.name || "").trim().slice(0, 30);
+    if (!name) return { ok: false, message: "请填写菜名" };
+    const channel = resolveAiChannel(body.provider, process.env.DEEPSEEK_API_KEY || "");
+    if (!channel.ok) return { ok: false, message: channel.message };
+    const { apiKey, target, logTag, isCustom } = channel;
+    // 配额：只有内置通道计数（与识菜共用一个每日额度）
+    let used = 0;
+    if (!isCustom) {
+      const prof = await getOrCreateProfile(uid);
+      const d = today();
+      used = prof.aiScanDate === d ? (Number(prof.aiScanCount) || 0) : 0;
+      if (used >= kAiScanDailyLimit) return { ok: false, message: "今日识别次数已用完（" + kAiScanDailyLimit + " 次）" };
+      await profiles.where({ uid }).update({ aiScanDate: d, aiScanCount: used + 1, updatedAt: Date.now() });
+    }
+    let result = null, lastStatus = 0;
+    for (let attempt = 0; attempt < 2 && !result; attempt++) {
+      const r = await callAiText(apiKey, name, attempt > 0, target, logTag);
+      lastStatus = r.status;
+      // 401/403（Key 无效/无权限）重试必败，429（限流）重试只会加重；直接收手。
+      if (lastStatus === 401 || lastStatus === 403 || lastStatus === 429) break;
+      const parsed = parseModelJson(r.text);
+      if (!parsed) {
+        const raw = typeof r.text === "string" ? r.text : "";
+        console.log(logTag, "PARSE_FAIL", raw.length, r.finishReason || "");
+        continue;
+      }
+      const v = validateEstimateResult(parsed, name);
+      if (v.ok) result = v;
+      else console.log(logTag, "INVALID", v.reason);
+    }
+    if (!result) {
+      if (isCustom && lastStatus !== 200) return { ok: false, message: providerErrorMessage(lastStatus) };
+      return { ok: false, message: "没估算出来，换个菜名或手动填写" };
+    }
+    return {
+      ok: true, dish: result.dish,
       per100: result.per100, note: result.note,
       quota: isCustom ? undefined : { used: used + 1, limit: kAiScanDailyLimit }
     };

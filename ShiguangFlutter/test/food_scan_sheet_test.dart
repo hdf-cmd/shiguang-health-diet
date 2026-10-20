@@ -57,6 +57,8 @@ class _ScanHost extends StatelessWidget {
     required this.scan,
     required this.initialImage,
     required this.recordMeal,
+    this.initialGrams,
+    this.fromText = false,
   });
 
   final String date;
@@ -64,6 +66,8 @@ class _ScanHost extends StatelessWidget {
   final Map<String, dynamic> scan;
   final String initialImage;
   final bool recordMeal;
+  final int? initialGrams;
+  final bool fromText;
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -79,6 +83,8 @@ class _ScanHost extends StatelessWidget {
                 scan: scan,
                 initialImage: initialImage,
                 recordMeal: recordMeal,
+                initialGrams: initialGrams,
+                fromText: fromText,
               ),
             ),
             child: const Text('open-scan'),
@@ -93,6 +99,9 @@ Future<void> pumpScan(
   bool recordMeal = true,
   SwrCache? cache,
   ScanImagePick? imagePick,
+  int? initialGrams,
+  bool fromText = false,
+  String initialImage = 'data:image/jpeg;base64,AAA',
 }) async {
   await useBigSurface(tester); // 弹层限高 78%，小视口下保存钮会滚出屏
   await tester.pumpWidget(ProviderScope(
@@ -110,8 +119,10 @@ Future<void> pumpScan(
         date: '2026-10-25',
         meal: 'lunch',
         scan: api.scanResult,
-        initialImage: 'data:image/jpeg;base64,AAA',
+        initialImage: initialImage,
         recordMeal: recordMeal,
+        initialGrams: initialGrams,
+        fromText: fromText,
       ),
     ),
   ));
@@ -155,6 +166,34 @@ void main() {
       };
     await pumpScan(tester, api);
     expect(find.textContaining('识别把握不大'), findsOneWidget);
+  });
+
+  testWidgets('文本估算模式：克数预填、固定估算提示、隐藏照片块、保存按估算值入库',
+      (tester) async {
+    final api = StubHealthApi()
+      ..scanResult = {
+        'ok': true,
+        'dish': '番茄炒蛋',
+        'per100': {'kcal': 100, 'protein': 7.0, 'carb': 4.0, 'fat': 6.0},
+        'note': '按家常做法估算，含炒制用油',
+        'quota': {'used': 1, 'limit': 50},
+      };
+    await pumpScan(tester, api,
+        fromText: true, initialGrams: 150, initialImage: '');
+    expect(find.text('入库照片'), findsNothing);
+    expect(find.text('估算值，请核对菜名与数值'), findsOneWidget);
+    expect(find.textContaining('识别把握不大'), findsNothing);
+    expect(find.textContaining('估算备注：按家常做法估算'), findsOneWidget);
+    expect(find.textContaining('150 kcal'), findsOneWidget); // 100/100g × 150g
+
+    await tester.tap(find.byKey(const Key('scan-save')));
+    await tester.pumpAndSettle();
+    expect(api.lastUpsertBody!['name'], '番茄炒蛋');
+    expect(api.lastUpsertBody!['grams'], 150);
+    expect(api.lastUpsertBody!['kcal'], 150);
+    expect(api.lastUpsertBody!['image'], '');
+    expect(api.addBodies.single['kcal'], 150);
+    expect(api.addBodies.single['image'], '');
   });
 
   testWidgets('保存：upsert 入参按份、记录带同一张入库照片', (tester) async {

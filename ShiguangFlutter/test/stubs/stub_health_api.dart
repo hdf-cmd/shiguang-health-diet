@@ -621,6 +621,36 @@ class StubHealthApi implements HealthApi {
     return scanResult;
   }
 
+  /* ---------- M15 按菜名估算：estimateFood ---------- */
+
+  /// 估算成功返回体（云 /ai/food-estimate 形状：{ok,dish,per100,note,quota}）。
+  Map<String, dynamic> estimateResult = <String, dynamic>{
+    'ok': true,
+    'dish': '番茄炒蛋',
+    'per100': <String, dynamic>{
+      'kcal': 100,
+      'protein': 7.0,
+      'carb': 4.0,
+      'fat': 6.0,
+    },
+    'note': '按家常做法估算，含炒制用油',
+    'quota': <String, dynamic>{'used': 1, 'limit': 50},
+  };
+  ApiException? estimateError;
+  int estimateCalls = 0;
+  String? lastEstimateName;
+  AiProviderConfig? lastEstimateProvider;
+
+  @override
+  Future<Map<String, dynamic>> estimateFood(
+      String name, {AiProviderConfig? provider}) async {
+    estimateCalls++;
+    lastEstimateName = name;
+    lastEstimateProvider = provider;
+    if (estimateError != null) throw estimateError!;
+    return estimateResult;
+  }
+
   @override
   Future<Map<String, dynamic>> upsertCustomFood(
       Map<String, dynamic> food) async {

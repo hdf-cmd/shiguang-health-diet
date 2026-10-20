@@ -26,6 +26,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shiguang_flutter/app/auth_state.dart' show tokenStoreProvider;
 import 'package:shiguang_flutter/app/theme.dart' show shiguangTheme;
 import 'package:shiguang_flutter/data/ai_provider_store.dart';
+import 'package:shiguang_flutter/data/api_client.dart' show ApiException;
 import 'package:shiguang_flutter/data/token_store.dart' show InMemoryTokenStore;
 import 'package:shiguang_flutter/features/home/home_controller.dart'
     show healthApiProvider;
@@ -36,7 +37,11 @@ import 'package:shiguang_flutter/features/profile/ai_provider_sheet.dart'
 import 'package:shiguang_flutter/features/profile/profile_screen.dart'
     show ProfileScreen;
 import 'package:shiguang_flutter/features/record/food_scan_sheet.dart'
-    show openFoodScanFlow, scanImagePickProvider;
+    show
+        estimateNameKey,
+        estimateSubmitKey,
+        openFoodScanFlow,
+        scanImagePickProvider;
 
 import 'harness.dart' show NoopReminderScheduler, useBigSurface;
 import 'stubs/stub_health_api.dart';
@@ -350,6 +355,46 @@ void main() {
     expect(p.model, 'qwen-vl-max');
     expect(p.key, 'sk-12345678');
     expect(p.isUsable, isTrue, reason: '健康检查：可用配置才应随请求发出');
+  });
+
+  testWidgets('设置页保存的配置透传到 estimateFood（id/model/key 全对）',
+      (tester) async {
+    final store = _MemStore();
+    final api = StubHealthApi()..scanError = ApiException('网络异常');
+    await _pumpApp(tester, store: store, api: api);
+
+    // 在设置页真实保存一份可用配置
+    await tester.tap(find.text('open-settings'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('ai-switch')));
+    await _pickProvider(tester, '通义千问');
+    await tester.enterText(find.byKey(const Key('ai-model')), 'qwen-plus');
+    await tester.enterText(find.byKey(const Key('ai-key')), 'sk-12345678');
+    await tester.tap(find.byKey(const Key('ai-save')));
+    await tester.pumpAndSettle();
+    await _dismissSheet(tester);
+
+    // 识菜失败 → 按菜名估算 → 估算请求必须带同一份配置（内置通道没有识图能力时
+    // 也会走文本；这里只钉 provider 透传）
+    await tester.tap(find.text('open-scan'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('从相册选'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('识别失败'), findsOneWidget);
+    await tester.tap(find.text('按菜名估算'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(estimateNameKey), '番茄炒蛋');
+    await tester.tap(find.byKey(estimateSubmitKey));
+    await tester.pumpAndSettle();
+
+    expect(api.estimateCalls, 1);
+    final p = api.lastEstimateProvider;
+    expect(p, isNotNull, reason: '桩必须记录 provider（否则本条恒绿）');
+    expect(p!.enabled, isTrue);
+    expect(p.id, 'qwen');
+    expect(p.model, 'qwen-plus');
+    expect(p.key, 'sk-12345678');
+    expect(p.isUsable, isTrue);
   });
 
   testWidgets('未配置 → scanFood 收到 null（回退内置通道）', (tester) async {
