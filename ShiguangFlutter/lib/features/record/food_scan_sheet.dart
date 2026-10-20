@@ -27,7 +27,7 @@ import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
 import '../../data/swr_cache.dart' show swrCacheProvider;
 import '../../domain/constants.dart' show mealNames;
-import '../../domain/js_compat.dart' show jsNumText, jsOr;
+import '../../domain/js_compat.dart' show jsNumText, jsNumber, jsOr;
 import '../common/food_thumb.dart';
 import '../common/image_pick.dart';
 import '../common/sheet_toast.dart';
@@ -176,11 +176,11 @@ class _FoodScanSheetState extends ConsumerState<FoodScanSheet> {
     overlay.insert(entry);
   }
 
-  /// 文本框 → 非负数（字符类已限 [0-9.]；'1.2.3'/空串按 0，与 H5 Number||0 同形）
-  static num _numOf(TextEditingController c) {
-    final v = num.tryParse(c.text.trim());
-    return (v == null || v.isNaN) ? 0 : v;
-  }
+  /// 文本框 → 非负数（≙ H5 `Number(el.value) || 0`）。M13-T6 修复轮统一走
+  /// jsNumber：与预填/其他表单同一套 JS 全串语义（'1.2.3'/空串按 0）。
+  /// 实测 Dart 3.13.4 的 num.tryParse('160.') 同为 160，故本条是口径统一
+  /// 而非修数值差；字符类已限 [0-9.]，Number 的 0x/Infinity 面不可达。
+  static num _numOf(TextEditingController c) => jsNumber(c.text) ?? 0;
 
   int get _gramsValue => int.tryParse(_grams.text.trim()) ?? 0;
 
@@ -191,10 +191,13 @@ class _FoodScanSheetState extends ConsumerState<FoodScanSheet> {
         'fat': _numOf(_fat100),
       };
 
-  /// 实时汇总（spec §3.3 文案）：随克数/四项即时变
+  /// 实时汇总（spec §3.3 文案）：随克数/四项即时变。
+  /// 数字串形走 jsNumText——与预填同一套 JS 模板语义，整值营养素显示
+  /// `20g` 而非 Dart double 的 `20.0g`（H5 是 number 模板）。
   String get _totalText {
     final t = scanPortionTotals(_per100Values, _gramsValue);
-    return '这份 ≈ ${t.kcal} kcal · 蛋白 ${t.protein}g / 碳水 ${t.carb}g / 脂肪 ${t.fat}g';
+    return '这份 ≈ ${jsNumText(t.kcal)} kcal · 蛋白 ${jsNumText(t.protein)}g / '
+        '碳水 ${jsNumText(t.carb)}g / 脂肪 ${jsNumText(t.fat)}g';
   }
 
   /// 换入库照片（spec §3.2：仅换 image，不重新识别）
