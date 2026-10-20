@@ -82,9 +82,14 @@ class ApiClient {
     String method = 'GET',
     Map<String, dynamic>? params,
     Map<String, dynamic>? body,
+    Duration? timeout,
   }) async {
-    final data =
-        await callValue(path, method: method, params: params, body: body);
+    final data = await callValue(
+        path,
+        method: method,
+        params: params,
+        body: body,
+        timeout: timeout);
     return data is Map<String, dynamic> ? data : <String, dynamic>{};
   }
 
@@ -95,6 +100,7 @@ class ApiClient {
     String method = 'GET',
     Map<String, dynamic>? params,
     Map<String, dynamic>? body,
+    Duration? timeout,
   }) async {
     final effParams = params ?? const <String, dynamic>{};
     final filledPath = _fillPathParams(path, effParams);
@@ -105,13 +111,14 @@ class ApiClient {
     // "Bearer undefined"；实际登录成功必写 accessToken（js/api.js:308），
     // 该分支不可能出现，故此处 null 直接回落 PK。
     var resp = await _doFetch(filledPath, method, effParams, body,
-        t?.accessToken ?? publishableKey);
+        t?.accessToken ?? publishableKey,
+        timeout);
 
     // js/api.js:258-260：401 且本地有 token → 静默续期一次，成功则用新 token 重试一次
     if (resp.status == 401 && t != null && await _refreshToken()) {
       final t2 = await _store.read();
       resp = await _doFetch(filledPath, method, effParams, body,
-          t2?.accessToken ?? publishableKey);
+          t2?.accessToken ?? publishableKey, timeout);
     }
     // js/api.js:261：仍 401（含无 token 从未进续期的情形）→ 清 token 抛固定文案
     if (resp.status == 401) {
@@ -145,8 +152,11 @@ class ApiClient {
   /// js/api.js:244-253 的 doFetch：POST API_BASE，body 为
   /// {path, method, params, body: body||{}}，头 Content-Type json + Bearer。
   /// 此处只回传原始响应文本，解码由调用方按 js 语义选择。
+  /// [timeout] 非空时按请求覆盖收发超时（M13 扫码 30s）；为空则沿用
+  /// BaseOptions（默认 15s）。
   Future<({int status, String? raw})> _doFetch(String path, String method,
-      Map<String, dynamic> params, Map<String, dynamic>? body, String bearer) async {
+      Map<String, dynamic> params, Map<String, dynamic>? body, String bearer,
+      [Duration? timeout]) async {
     final resp = await _dio.post<String>(
       apiBase,
       data: <String, dynamic>{
@@ -159,6 +169,8 @@ class ApiClient {
         contentType: 'application/json',
         responseType: ResponseType.plain,
         headers: {'Authorization': 'Bearer $bearer'},
+        receiveTimeout: timeout,
+        sendTimeout: timeout,
         // 状态码判定全部由本类按 js 分支自行处理（validateStatus 全放行）
         validateStatus: (_) => true,
       ),

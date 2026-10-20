@@ -15,7 +15,10 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shiguang_flutter/data/api_client.dart';
 import 'package:shiguang_flutter/data/auth_api.dart';
+import 'package:shiguang_flutter/data/health_api.dart';
 import 'package:shiguang_flutter/data/token_store.dart';
+
+import '../harness.dart';
 
 /// 记录到的请求（dio 原始 RequestOptions + 解码后的请求体文本）
 class _Captured {
@@ -142,6 +145,41 @@ void main() {
       expect(dio.options.connectTimeout, const Duration(seconds: 15));
       expect(dio.options.sendTimeout, const Duration(seconds: 15));
       expect(dio.options.receiveTimeout, const Duration(seconds: 15));
+    });
+  });
+
+  group('按请求覆盖超时（M13：扫码路由 30s）', () {
+    test('可选超时：显式传 30s 透传到 Dio，未传沿用默认 15s', () async {
+      final adapter = RecordingAdapter();
+      final dio = ApiClient.defaultDio()..httpClientAdapter = adapter;
+      final api = ApiClient(tokenStore: InMemoryTokenStore(), dio: dio);
+
+      await api.call('/ai/food-scan',
+          method: 'POST', body: {'image': 'x'}, timeout: const Duration(seconds: 30));
+      expect(adapter.requests.single.receiveTimeout, const Duration(seconds: 30));
+
+      await api.call('/user/profile');
+      expect(adapter.requests.last.receiveTimeout, const Duration(seconds: 15));
+    });
+
+    test('HealthApi.scanFood 走 /ai/food-scan 且 30s；upsertCustomFood 走 /foods/custom/upsert 且沿用 15s', () async {
+      final adapter = RecordingAdapter();
+      final dio = ApiClient.defaultDio()..httpClientAdapter = adapter;
+      final api = HealthApi(ApiClient(tokenStore: InMemoryTokenStore(), dio: dio));
+
+      await api.scanFood('data:image/jpeg;base64,abc');
+      expect(adapter.requests.single.receiveTimeout, const Duration(seconds: 30));
+      expect(adapter.envelopes.single, {
+        'path': '/ai/food-scan',
+        'method': 'POST',
+        'params': {},
+        'body': {'image': 'data:image/jpeg;base64,abc'},
+      });
+
+      await api.upsertCustomFood({'name': '番茄炒蛋', 'kcal': 120});
+      expect(adapter.requests.last.receiveTimeout, const Duration(seconds: 15));
+      expect(adapter.envelopes.last['path'], '/foods/custom/upsert');
+      expect(adapter.envelopes.last['body'], {'name': '番茄炒蛋', 'kcal': 120});
     });
   });
 

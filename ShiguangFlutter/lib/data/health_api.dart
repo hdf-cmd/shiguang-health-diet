@@ -154,6 +154,21 @@ class HealthApi {
   Future<Map<String, dynamic>> addCustomFood(Map<String, dynamic> food) =>
       _client.call('/foods/custom', method: 'POST', body: food);
 
+  /* ---------- 拍照识菜（M13；云函数 /ai/food-scan 与 /foods/custom/upsert） ---------- */
+
+  /// 拍照识菜（M13）：云函数调 DeepSeek，返回 {dish,confidence,per100,note,quota}
+  /// 云端函数超时 60s，客户端按请求放宽到 30s（其它路由仍默认 15s）。
+  Future<Map<String, dynamic>> scanFood(String imageDataUrl) => _client.call(
+        '/ai/food-scan',
+        method: 'POST',
+        body: <String, dynamic>{'image': imageDataUrl},
+        timeout: const Duration(seconds: 30),
+      );
+
+  /// 扫码入库（M13）：按菜名 upsert，回 {ok,id|skipped,emoji}
+  Future<Map<String, dynamic>> upsertCustomFood(Map<String, dynamic> food) =>
+      _client.call('/foods/custom/upsert', method: 'POST', body: food);
+
   /* ---------- 我的食物库管理（M7-T4；路由 js/api.js:81-85） ---------- */
 
   /// 自定义食物全量列表（js/api.js:333 listCustomFoods；GET /foods/custom，
