@@ -252,7 +252,28 @@ void main() {
     await tester.pump(const Duration(milliseconds: 220));
     expect(api.lastUpsertBody, isNotNull); // 入库已成功
     expect(find.textContaining('已入库，本餐记入失败'), findsOneWidget);
+    // 原因必须带出来（spec §3.4-4；删掉拼接会红）
+    expect(find.textContaining('：网络异常'), findsOneWidget);
     expect(find.byType(FoodScanSheet), findsNothing); // 仍关层
+  });
+
+  testWidgets('b2. 模型 note 非空 → 表单显示「识别备注：…」；空则整行不渲染',
+      (tester) async {
+    final api = StubHealthApi()
+      ..scanResult = {
+        'ok': true,
+        'dish': '蒜薹鸡块',
+        'confidence': 'high',
+        'per100': {'kcal': 156, 'protein': 8.6, 'carb': 7.4, 'fat': 9.8},
+        'note': '偏油，含较多汤汁',
+        'quota': {'used': 1, 'limit': 50},
+      };
+    await pumpScan(tester, api);
+    expect(find.textContaining('识别备注：偏油'), findsOneWidget);
+
+    final api2 = StubHealthApi(); // 默认 note 为空串
+    await pumpScan(tester, api2);
+    expect(find.textContaining('识别备注：'), findsNothing);
   });
 
   /* ---------- 修复轮①c：校验拦截零请求 ---------- */

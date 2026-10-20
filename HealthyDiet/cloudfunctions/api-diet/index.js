@@ -385,7 +385,8 @@ if (path === "/foods/custom" && method === "POST") {
   if (path === "/foods/custom/upsert" && method === "POST") {
     const name = String(body.name || "").trim().slice(0, 60);
     const kcal = Math.max(0, Math.round(Number(body.kcal) || 0));
-    if (!name || !kcal) return { ok: false, message: "请填写食物名称和热量" };
+    if (!name) return { ok: false, message: "请填写食物名称" };
+    if (!kcal) return { ok: false, message: "热量需大于 0（每份）" };
     const grams = Math.max(0, Math.round(Number(body.grams) || 0));
     const unit = body.unit === "ml" ? "ml" : "g";
     const p0 = Math.max(0, Number(body.protein) || 0);

@@ -42,7 +42,8 @@ int jsCeil(num x) => x.toDouble().ceil();
 /// 数字（'1600.'、'.5'、'1e3' 形态均可），否则返回 null（≙ NaN，调用方走
 /// `||` 兜底）。与 jsParseFloat 前缀语义的差：'16.2.3' → NaN（前缀会得 16.2）。
 /// H5 步进/保存链是 Number(el.value)（app.js:478/:1794/:1801/:1809），必须用
-/// 本函数而非 num.tryParse（其拒绝 '1600.' 尾点形态）。
+/// 本函数而非 num.tryParse（后者虽接受 '1600.'，但会拒绝 '1e3' 之外的 JS 形态
+/// 并依赖平台实现，语义不受本仓控制）。
 /// 已知不可达面：Number 的 '0x10'→16/Infinity 字面量——输入框字符类 [0-9.]
 /// 拦住，不复刻。
 num? jsNumber(String s) {

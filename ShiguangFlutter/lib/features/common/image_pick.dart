@@ -23,10 +23,24 @@ const int kScanImageQuality = 75;
 PickedImageData classifyPicked(String? dataUrl,
     {int maxChars = kMaxDataUrlChars}) {
   if (dataUrl == null) return (dataUrl: null, failure: null);
-  if (dataUrl.length > maxChars) {
+  if (dataUrlTooLarge(dataUrl, maxChars: maxChars)) {
     return (dataUrl: null, failure: ImagePickFailure.tooLargeEncoded);
   }
   return (dataUrl: dataUrl, failure: null);
+}
+
+/// 压缩管道实例（可注入）：方法签名带默认值，测试可子类化以捕获实参。
+class ImageCompressor {
+  const ImageCompressor();
+
+  Future<PickedImageData> pick(
+    ImageSource source, {
+    int maxDim = 256,
+    int quality = 82,
+    int maxChars = kMaxDataUrlChars,
+  }) =>
+      pickCompressedImageDataUrl(source,
+          maxDim: maxDim, quality: quality, maxChars: maxChars);
 }
 
 /// 拉起系统选择器（camera/gallery 由调用方传），返回压缩后 dataURL。

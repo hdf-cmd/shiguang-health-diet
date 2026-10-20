@@ -80,14 +80,19 @@ const scanRemovePhotoKey = Key('scan-remove-photo');
 typedef ScanImagePick = Future<PickedImageData> Function(ImageSource source);
 
 /// 生产默认：走 T4 扫码参数（512px/q75）——识别图需要足够清晰；换入库照片同
-/// 走本管道（同受 maxChars 字符上限约束）。
-Future<PickedImageData> _defaultScanImagePick(ImageSource source) =>
-    pickCompressedImageDataUrl(source,
-        maxDim: kScanImageMaxDim, quality: kScanImageQuality);
+/// 走本管道（同受 maxChars 字符上限约束）。见 [scanImagePickProvider]。
+
+/// 压缩管道注入面（仅测试用）：让用例断言扫码链实际传给压缩管道的
+/// maxDim/quality，而不是只断言常量值——常量改了没接线时测试必须能红。
+final imageCompressorProvider =
+    Provider<ImageCompressor>((ref) => const ImageCompressor());
 
 /// 选图注入面：widget 测试覆盖为固定返回（不拉起系统选择器）。
-final scanImagePickProvider =
-    Provider<ScanImagePick>((ref) => _defaultScanImagePick);
+final scanImagePickProvider = Provider<ScanImagePick>((ref) {
+  final compressor = ref.watch(imageCompressorProvider);
+  return (source) => compressor.pick(source,
+      maxDim: kScanImageMaxDim, quality: kScanImageQuality);
+});
 
 /// 识菜入口全流程（M13-T7）：选来源 → 选图 → 识别 → 成功开确认表单 /
 /// 失败弹提示。入口层（记一笔搜索弹层 / 我的食物库）只负责传 date/meal 与
@@ -237,17 +242,23 @@ Future<void> _showScanError(
 
 /// 入口层 toast（选图失败用）：走根 Overlay 的 SheetToast——两入口都处于
 /// 弹层内，SnackBar 会被弹层遮挡（sheet_toast 头注定式）。
+/// 入口层提示：同一时刻只保留一条，重复失败不叠两层（SheetToast 各自 2.4s 自删）。
+OverlayEntry? _flowToastEntry;
+
 void _flowToast(BuildContext context, String msg) {
   final overlay = Overlay.of(context, rootOverlay: true);
+  _flowToastEntry?.remove();
   late final OverlayEntry entry;
   entry = OverlayEntry(
     builder: (_) => SheetToast(
       msg: msg,
       onDone: () {
         if (entry.mounted) entry.remove();
+        if (identical(_flowToastEntry, entry)) _flowToastEntry = null;
       },
     ),
   );
+  _flowToastEntry = entry;
   overlay.insert(entry);
 }
 
@@ -309,6 +320,9 @@ class _FoodScanSheetState extends ConsumerState<FoodScanSheet> {
   OverlayEntry? _toastEntry;
 
   bool get _lowConfidence => '${widget.scan['confidence']}' == 'low';
+
+  /// 模型的一句话说明（可空）
+  String get _note => '${widget.scan['note'] ?? ''}'.trim();
 
   /// 预填数字串形 ≙ JS 模板字符串（8.6→'8.6'、8.0→'8'，不漂 '8.0'）
   String _initNum(String key) {
@@ -545,6 +559,13 @@ class _FoodScanSheetState extends ConsumerState<FoodScanSheet> {
               // spec §3.3：low → 黄字提示
               const Text('识别把握不大，请核对菜名与数值',
                   style: TextStyle(fontSize: Tokens.textSm, color: Tokens.warn)),
+            ],
+            if (_note.isNotEmpty) ...[
+              const SizedBox(height: Tokens.sp1),
+              // 模型的一句话说明（如「偏油」「含较多汤汁」），只作参考
+              Text('识别备注：$_note',
+                  style: const TextStyle(
+                      fontSize: Tokens.textXs, color: Tokens.ink3)),
             ],
             const SizedBox(height: Tokens.sp3),
             // 菜名（预填模型建议，可改）

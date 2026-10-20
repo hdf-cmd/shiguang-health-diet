@@ -6,7 +6,8 @@ import 'dart:convert';
 /// H5 头像/自定义食物图 dataURL 字符上限（js/app.js:1108 逐字数字）。
 const int kMaxDataUrlChars = 280000;
 
-bool dataUrlTooLarge(String dataUrl) => dataUrl.length > kMaxDataUrlChars;
+bool dataUrlTooLarge(String dataUrl, {int maxChars = kMaxDataUrlChars}) =>
+    dataUrl.length > maxChars;
 
 /// PNG magic（89 50 4E 47）嗅探定 MIME，其余一律 jpeg——H5 同口径。
 String dataUrlOf(List<int> bytes) {
