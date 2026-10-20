@@ -2,6 +2,8 @@ const cloud = require("@cloudbase/node-sdk");
 const crypto = require("crypto");
 // M12-③ 食物频次聚合（纯逻辑，tests/records-freq.test.js 覆盖）
 const { countNames, collectAll } = require("./freq");
+// M13：拍照识菜纯逻辑（解析/校验/限流常量，tests/ai.test.js 覆盖）
+const { parseModelJson, validateScanResult, kAiScanDailyLimit, kAiImageMaxChars, kAiImagePrefix } = require("./ai");
 
 const app = cloud.init({
   env: cloud.SYMBOL_CURRENT_ENV,
@@ -150,6 +152,53 @@ function profileToClient(p) {
   };
 }
 
+const DEEPSEEK_URL = "https://api.deepseek.com/chat/completions";
+const AI_SYSTEM_PROMPT = [
+  "你是中文菜品营养估算器。",
+  "看图识别图中最主要的一道菜（若有多样，取占比最大的）。",
+  "估计可食部每 100g 的热量与三大营养素（不计骨头、餐具、包装）。",
+  "只输出一个 JSON 对象，不要 markdown、不要解释，格式：",
+  '{"dish":"菜名","confidence":"high|medium|low","per100":{"kcal":0,"protein":0,"carb":0,"fat":0},"note":"一句话说明"}'
+].join("\n");
+
+async function callDeepSeek(apiKey, imageDataUrl, strict) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
+  try {
+    const resp = await fetch(DEEPSEEK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: "deepseek-flash",
+        temperature: 0.2,
+        max_tokens: 300,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: AI_SYSTEM_PROMPT },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: strict
+                  ? "上一次结果不合法。请严格按 JSON 输出，并保证 4P+4C+9F 与热量相差不超过 25%。"
+                  : "请识别这道菜。" },
+              { type: "image_url", image_url: { url: imageDataUrl } }
+            ]
+          }
+        ]
+      })
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    const msg = data && data.choices && data.choices[0] && data.choices[0].message;
+    return (msg && msg.content) || null;
+  } catch (e) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function handle(path, method, params, body, uid) {
   /* ---- 认证（匿名可调，uid 为空） ---- */
   if (path === "/auth/register" && method === "POST") {
@@ -267,6 +316,38 @@ async function handle(path, method, params, body, uid) {
   }
 
   /* ---- 运动记录（sg_exercises）：刻意运动单独记，消耗计入当日报销额度 ---- */
+/* M13：拍照识菜。图片只用于识别，不落库。 */
+if (path === "/ai/food-scan" && method === "POST") {
+  const apiKey = process.env.DEEPSEEK_API_KEY || "";
+  if (!apiKey) return { ok: false, message: "识别服务未配置" };
+  const image = String(body.image || "");
+  if (!kAiImagePrefix.test(image) || image.length > kAiImageMaxChars) {
+    return { ok: false, message: "图片格式不支持或过大" };
+  }
+  const prof = await getOrCreateProfile(uid);
+  const d = today();
+  const used = prof.aiScanDate === d ? (Number(prof.aiScanCount) || 0) : 0;
+  if (used >= kAiScanDailyLimit) {
+    return { ok: false, message: "今日识别次数已用完（" + kAiScanDailyLimit + " 次）" };
+  }
+  // 先计数再调用：失败也占一次，防止坏图反复刷成本
+  await profiles.where({ uid }).update({ aiScanDate: d, aiScanCount: used + 1, updatedAt: Date.now() });
+  let result = null;
+  for (let attempt = 0; attempt < 2 && !result; attempt++) {
+    const text = await callDeepSeek(apiKey, image, attempt > 0);
+    const parsed = parseModelJson(text);
+    if (!parsed) continue;
+    const v = validateScanResult(parsed);
+    if (v.ok) result = v;
+  }
+  if (!result) return { ok: false, message: "没认出来，换张更清楚的图或手动填写" };
+  return {
+    ok: true, dish: result.dish, confidence: result.confidence,
+    per100: result.per100, note: result.note,
+    quota: { used: used + 1, limit: kAiScanDailyLimit }
+  };
+}
+
 if (path === "/foods/custom" && method === "POST") {
     const name = String(body.name || "").trim().slice(0, 60);
     const kcal = Math.max(0, Math.round(Number(body.kcal) || 0));
@@ -293,6 +374,40 @@ if (path === "/foods/custom" && method === "POST") {
     };
     const added = await db.collection("custom_foods").add(doc);
     return { ok: true, id: added.id, ...doc };
+  }
+
+  /* M13：按菜名 upsert（与内置库同名则不写库，只回 skipped）。 */
+  if (path === "/foods/custom/upsert" && method === "POST") {
+    const name = String(body.name || "").trim().slice(0, 60);
+    const kcal = Math.max(0, Math.round(Number(body.kcal) || 0));
+    if (!name || !kcal) return { ok: false, message: "请填写食物名称和热量" };
+    const grams = Math.max(0, Math.round(Number(body.grams) || 0));
+    const unit = body.unit === "ml" ? "ml" : "g";
+    const p0 = Math.max(0, Number(body.protein) || 0);
+    const c0 = Math.max(0, Number(body.carb) || 0);
+    const f0 = Math.max(0, Number(body.fat) || 0);
+    const meals = Array.isArray(body.meals)
+      ? body.meals.map(String).filter(m => ["breakfast", "lunch", "dinner", "snack"].indexOf(m) > -1).slice(0, 4)
+      : [];
+    const fields = {
+      kcal, grams, unit, meals,
+      protein: +p0.toFixed(1), carb: +c0.toFixed(1), fat: +f0.toFixed(1),
+      portion: String(body.portion || (grams ? grams + unit : "1 份")).slice(0, 60),
+      emoji: String(body.emoji || "") || emojiFor(name),
+      image: String(body.image || "").slice(0, 300000),
+      updatedAt: Date.now()
+    };
+    const emoji = fields.emoji;
+    const found = await db.collection("custom_foods").where({ uid, name }).limit(1).get();
+    if (found.data && found.data[0]) {
+      await db.collection("custom_foods").doc(found.data[0]._id).update(fields);
+      return { ok: true, id: found.data[0]._id, updated: true, emoji };
+    }
+    if (BUILTIN_FOODS.some(f => f.name === name)) {
+      return { ok: true, skipped: "builtin", emoji };
+    }
+    const added = await db.collection("custom_foods").add({ uid, name, ...fields, createdAt: Date.now() });
+    return { ok: true, id: added.id, created: true, emoji };
   }
 
   /* 我的食物库：列出全部自定义食物（管理界面用） */
