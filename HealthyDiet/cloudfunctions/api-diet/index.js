@@ -77,7 +77,7 @@ async function searchFoods(keyword, uid, meal) {
   const where = kw
     ? { uid, name: db.RegExp({ regexp: esc, options: "i" }) }
     : { uid };
-  const customs = await db.collection("custom_foods").where(where).limit(20).get();
+  const customs = await db.collection("custom_foods").where(where).limit(100).get();
   for (const doc of customs.data || []) {
     // 餐次过滤：已归类（有 meals）的只在对应餐次出现；未归类的旧数据保持全餐次可见
     const fm = Array.isArray(doc.meals) ? doc.meals : [];
