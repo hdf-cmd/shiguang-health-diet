@@ -44,18 +44,21 @@ void main() {
     });
   });
 
-  /* ---------- M12：prefs 键升 v2，v1（30 天窗口）计数读到即清 ---------- */
+  /* ---------- prefs 键升 v3：v1/v2 计数读到即清，强制重拉一次全史 ---------- */
 
-  group('PrefsFoodFreqStore 分账号键 v2', () {
-    test('v1 全局键与 v1 分账号键读到即删；v2 键读写，账号间不互读', () async {
+  group('PrefsFoodFreqStore 分账号键 v3', () {
+    test('v1/v2 计数与标记读到即删；v3 键读写，账号间不互读', () async {
       SharedPreferences.setMockInitialValues({
         'sg_food_freq_counts': '{"旧菜":3}',
         'sg_food_freq_init_v1': true,
         'sg_food_freq_counts_u1': '{"30天菜":7}', // v1 分账号计数（窗口语义已作废）
         'sg_food_freq_init_v1_u1': true,
+        // v2：曾被「未加载计数直接记餐」覆写成少量，必须作废重拉
+        'sg_food_freq_counts_v2_u1': '{"被覆盖的少量":1}',
+        'sg_food_freq_init_v2_u1': true,
       });
       final store = PrefsFoodFreqStore();
-      // v1 标记不得冒充已初始化——否则老用户永远看不到全史数
+      // 旧标记不得冒充已初始化——否则用户永远停在被覆盖的少量计数上
       expect(await store.isInitialized('u1'), isFalse);
       expect(await store.loadCounts('u1'), isEmpty);
       var p = await SharedPreferences.getInstance();
@@ -63,17 +66,19 @@ void main() {
       expect(p.containsKey('sg_food_freq_init_v1'), isFalse);
       expect(p.containsKey('sg_food_freq_counts_u1'), isFalse);
       expect(p.containsKey('sg_food_freq_init_v1_u1'), isFalse);
+      expect(p.containsKey('sg_food_freq_counts_v2_u1'), isFalse);
+      expect(p.containsKey('sg_food_freq_init_v2_u1'), isFalse);
 
       await store.saveCounts('u1', {'米饭': 12});
       await store.markInitialized('u1');
       p = await SharedPreferences.getInstance();
-      expect(p.getString('sg_food_freq_counts_v2_u1'), '{"米饭":12}');
-      expect(p.getBool('sg_food_freq_init_v2_u1'), isTrue);
+      expect(p.getString('sg_food_freq_counts_v3_u1'), '{"米饭":12}');
+      expect(p.getBool('sg_food_freq_init_v3_u1'), isTrue);
       expect(await store.loadCounts('u2'), isEmpty); // 他账号不互读
       expect(await store.isInitialized('u2'), isFalse);
     });
 
-    test('端到端 ensureLoaded：uid 由 profile id 解析，落 v2 键逐字', () async {
+    test('端到端 ensureLoaded：uid 由 profile id 解析，落 v3 键逐字', () async {
       SharedPreferences.setMockInitialValues({});
       final api = _FreqApi(counts: {'米饭': 4});
       final c = ProviderContainer(overrides: [
@@ -83,8 +88,8 @@ void main() {
       addTearDown(c.dispose);
       await c.read(foodFreqProvider.notifier).ensureLoaded();
       final p = await SharedPreferences.getInstance();
-      expect(p.getString('sg_food_freq_counts_v2_u_freq'), '{"米饭":4}');
-      expect(p.getBool('sg_food_freq_init_v2_u_freq'), isTrue);
+      expect(p.getString('sg_food_freq_counts_v3_u_freq'), '{"米饭":4}');
+      expect(p.getBool('sg_food_freq_init_v3_u_freq'), isTrue);
     });
   });
 
@@ -156,6 +161,30 @@ void main() {
           '2026-09-25', {'name': '米饭', 'kcal': 230}, pendingKey: 'r1');
       expect(c.read(foodFreqProvider), {'米饭': 3});
       expect(await store.loadCounts('u_freq'), {'米饭': 3});
+    });
+
+    test('计数未加载（登录后直接记餐）→ 合并磁盘全史，不得覆写成 1 次', () async {
+      // 复现 2026-10-21 事故：登出/登录后 provider 重建、内存 state 为空，
+      // 用户没先开食物库就记餐 → record 用空 state +1 整份覆写磁盘。
+      final store = _MemoryStore(initialized: true, counts: {'米饭': 50});
+      final api = _FreqApi(counts: const {});
+      final c = _container(store: store, api: api);
+      // 刻意不调用 ensureLoaded，模拟 state 尚未加载
+      await c.read(foodFreqProvider.notifier).record('米饭');
+      expect(c.read(foodFreqProvider), {'米饭': 51});
+      expect(await store.loadCounts('u_freq'), {'米饭': 51});
+      expect(api.freqCalls, 0, reason: '已初始化：回放磁盘即可，不应再发请求');
+    });
+
+    test('未初始化且云端失败：只累加本地、不抛、不落初始化标记', () async {
+      final store = _MemoryStore();
+      final api = _FreqApi(counts: {'米饭': 9})..fail = true;
+      final c = _container(store: store, api: api);
+      await c.read(foodFreqProvider.notifier).record('米饭');
+      expect(c.read(foodFreqProvider), {'米饭': 1});
+      expect(await store.loadCounts('u_freq'), {'米饭': 1});
+      expect(await store.isInitialized('u_freq'), isFalse,
+          reason: '拉取失败不得把本地少量计数标记成已初始化');
     });
 
     test('addRecord 失败 → 计数不变', () async {

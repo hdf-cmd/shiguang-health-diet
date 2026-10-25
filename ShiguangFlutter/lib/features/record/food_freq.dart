@@ -64,20 +64,21 @@ class PrefsFoodFreqStore implements FoodFreqStore {
   Future<SharedPreferences>? _inst;
   Future<SharedPreferences> get _prefs => _inst ??= SharedPreferences.getInstance();
 
-  // ===== M12：键升 v2（计数口径由「近 30 天」改「全史」）=====
-  // v1 的分账号键（`sg_food_freq_counts_<uid>` / `sg_food_freq_init_v1_<uid>`）
-  // 与更早的全局键一律读到即删：v1 标记若被当成「已初始化」，老用户会永远
-  // 停在 30 天计数上看不到全史数。任何方法触盘时顺手清理（见 [_purgeLegacy]）。
+  // ===== 键升 v3：修复「未加载计数直接记餐」覆写全史的事故 =====
+  // v2 键里可能存着被覆盖后的少量计数，且 init 标记仍为 true，导致永远不再
+  // 向云端重拉。v1/v2 的计数与标记一律读到即删，强制一次全史重拉。
   static const _kCountsLegacy = 'sg_food_freq_counts';
-  static const _kInitLegacy = 'sg_food_freq_init_v1';
+  static const _kInitLegacyV1 = 'sg_food_freq_init_v1';
+  static const _kInitLegacyV2 = 'sg_food_freq_init_v2';
   static String _kCounts(String uid) =>
-      'sg_food_freq_counts_v2_${uid.isEmpty ? 'anon' : uid}';
+      'sg_food_freq_counts_v3_${uid.isEmpty ? 'anon' : uid}';
   static String _kInit(String uid) =>
-      'sg_food_freq_init_v2_${uid.isEmpty ? 'anon' : uid}';
+      'sg_food_freq_init_v3_${uid.isEmpty ? 'anon' : uid}';
 
   static bool _isLegacy(String k) =>
-      (k.startsWith(_kCountsLegacy) && !k.startsWith('sg_food_freq_counts_v2_')) ||
-      k.startsWith(_kInitLegacy);
+      (k.startsWith(_kCountsLegacy) && !k.startsWith('sg_food_freq_counts_v3_')) ||
+      k.startsWith(_kInitLegacyV1) ||
+      k.startsWith(_kInitLegacyV2);
 
   /// 旧键读到即删（v2 键与 v2 无关键不动）。
   Future<void> _purgeLegacy(SharedPreferences p) async {
@@ -181,12 +182,23 @@ class FoodFreqNotifier extends Notifier<Map<String, int>> {
   bool _started = false;
 
   /// 记一笔成功续算：同名 +1 并落盘（删除记录不回减——"吃过"是事实）。
+  /// 🔴 写盘前必须先补齐计数：登录/换号会重建 provider，此刻内存 [state] 为空；
+  /// 若直接拿空表 +1 覆写磁盘，会把全史计数抹成「1 次」（2026-10-21 事故）。
+  /// 已初始化则回放磁盘、未初始化则尝试拉一次云端；两者都失败时以磁盘现有
+  /// 值为基底，绝不丢已有计数。
   Future<void> record(String name) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty) return;
-    final next = Map<String, int>.from(state)..[trimmed] = (state[trimmed] ?? 0) + 1;
-    state = next;
+    try {
+      await ensureLoaded();
+    } catch (_) {/* 加载是旁路：失败也要保证本次记账落盘 */}
+    final uid = await _resolveUid();
     final store = ref.read(foodFreqStoreProvider);
-    await store.saveCounts(await _resolveUid(), next);
+    final disk = await store.loadCounts(uid);
+    final base = disk.isNotEmpty ? disk : state;
+    final next = Map<String, int>.from(base)
+      ..[trimmed] = (base[trimmed] ?? 0) + 1;
+    state = next;
+    await store.saveCounts(uid, next);
   }
 }
