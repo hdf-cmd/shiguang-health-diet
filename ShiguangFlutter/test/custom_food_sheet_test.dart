@@ -14,6 +14,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:shiguang_flutter/app/theme.dart' show shiguangTheme;
 import 'package:shiguang_flutter/data/api_client.dart' show ApiException;
 import 'package:shiguang_flutter/domain/dates.dart' show todayIso;
+import 'package:shiguang_flutter/features/common/breathing_capsule.dart'
+    show debugDisableLoadingAnimations;
 import 'package:shiguang_flutter/features/common/image_pick.dart'
     show ImagePickFailure, PickedImageData;
 import 'package:shiguang_flutter/features/home/home_controller.dart'
@@ -148,6 +150,9 @@ Future<void> tapText(WidgetTester tester, String text) =>
     tapWidget(tester, find.text(text));
 
 void main() {
+  setUp(() => debugDisableLoadingAnimations = true);
+  tearDown(() => debugDisableLoadingAnimations = false);
+
   /* ---------- ① 默认值（openCustomFoodSheet :1207-1218） ---------- */
 
   testWidgets('①initialName 预填名称；meal=lunch/dinner 均归「正餐」档；单位默认克',

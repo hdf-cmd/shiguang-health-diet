@@ -23,6 +23,7 @@ import '../../domain/constants.dart'
     show waterCupMl, waterGoalMin, waterGoalMax;
 import '../../domain/js_compat.dart'
     show jsNumText, jsNumber, jsOr, jsParseFloat;
+import '../common/breathing_capsule.dart' show LoadingSpinner;
 import '../common/sheet.dart' show showShiguangSheet;
 import '../common/sheet_toast.dart' show SheetToast;
 import '../profile/profile_providers.dart' show profileProvider;
@@ -147,8 +148,12 @@ class _GoalSheetState extends ConsumerState<_GoalSheet> {
     overlay.insert(entry);
   }
 
+  bool _saving = false;
+
   /// 保存（≙ app.js:484-493）：await setWaterGoal → 关层 → invalidate → toast
   Future<void> _save() async {
+    if (_saving) return;
+    setState(() => _saving = true);
     _normField(); // ≙ 按钮点击先触发输入框 change/blur（浏览器时序近似）
     final ml = jsNumber(_ctl.text.trim()) ?? 0; // :487 Number(value)（终审 I1 统一）
     final messenger = ScaffoldMessenger.of(context);
@@ -175,6 +180,8 @@ class _GoalSheetState extends ConsumerState<_GoalSheet> {
       if (!mounted) return;
       _toastInSheet(
           '同步失败：${e is ApiException ? jsOr(e.message, '网络异常') : '网络异常'}');
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
@@ -291,8 +298,14 @@ class _GoalSheetState extends ConsumerState<_GoalSheet> {
             const SizedBox(height: Tokens.sp4), // :307 btn margin-top --sp-4
             FilledButton(
               key: goalSaveKey,
-              onPressed: _save,
-              child: const Text('保存目标'), // :307 逐字
+              onPressed: _saving ? null : _save,
+              style: FilledButton.styleFrom(
+                disabledBackgroundColor: Tokens.primaryDeep.withValues(alpha: .72),
+                disabledForegroundColor: Colors.white,
+              ),
+              child: _saving
+                  ? const LoadingSpinner()
+                  : const Text('保存目标'), // :307 逐字
             ),
           ],
         ),

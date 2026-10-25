@@ -21,6 +21,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../common/breathing_capsule.dart' show BreathingCapsule;
+
 import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
 import '../../domain/constants.dart' show waterCupMl;
@@ -210,6 +212,12 @@ class _WaterCardState extends ConsumerState<WaterCard> {
                       ],
                     ),
                     const SizedBox(height: 2), // .water-goal-edit margin-top
+                    if (loading)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 2),
+                        child: BreathingCapsule(
+                            minWidth: 64, maxWidth: 124, height: 5),
+                      ),
                     Semantics(
                       link: true,
                       child: GestureDetector(

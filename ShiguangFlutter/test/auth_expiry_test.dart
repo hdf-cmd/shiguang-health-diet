@@ -21,6 +21,8 @@ import 'package:shiguang_flutter/app/shell.dart';
 import 'package:shiguang_flutter/data/api_client.dart';
 import 'package:shiguang_flutter/data/token_store.dart';
 import 'package:shiguang_flutter/features/auth/login_screen.dart';
+import 'package:shiguang_flutter/features/common/breathing_capsule.dart'
+    show debugDisableLoadingAnimations;
 import 'package:shiguang_flutter/features/record/food_freq.dart';
 import 'package:shiguang_flutter/main.dart';
 
@@ -80,6 +82,9 @@ Future<InMemoryTokenStore> signedInExpiredStore() async {
 }
 
 void main() {
+  setUp(() => debugDisableLoadingAnimations = true);
+  tearDown(() => debugDisableLoadingAnimations = false);
+
   testWidgets(
       'Shell 内请求遇会话过期 → onSessionExpired → forceAnon → 自动弹回登录页',
       (tester) async {

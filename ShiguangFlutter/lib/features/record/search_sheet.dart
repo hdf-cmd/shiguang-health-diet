@@ -25,8 +25,10 @@ import '../../data/api_client.dart' show ApiException;
 import '../../domain/constants.dart';
 import '../common/food_thumb.dart';
 import '../common/sheet.dart' show showShiguangSheet;
+import '../common/skeleton.dart' show SkeletonBar;
 import 'custom_food_sheet.dart';
 import 'food_scan_sheet.dart' show openFoodScanFlow;
+import 'freq_loading_strip.dart';
 import 'portion_sheet.dart';
 import 'food_freq.dart';
 import 'record_controller.dart';
@@ -220,12 +222,22 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
                   ),
                 ],
               ),
-              const SizedBox(height: Tokens.sp3),
+              const FreqLoadingStrip(),
               Expanded(
                 child: results.when(
-                  loading: () => const Center(
-                    child: Text('搜索中...',
-                        style: TextStyle(color: Tokens.ink3)),
+                  loading: () => const Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text('搜索中...',
+                          style: TextStyle(
+                              color: Tokens.ink3, fontSize: Tokens.textSm)),
+                      SizedBox(height: Tokens.sp3),
+                      SkeletonBar(height: 64),
+                      SizedBox(height: Tokens.sp2),
+                      SkeletonBar(height: 64),
+                      SizedBox(height: Tokens.sp2),
+                      SkeletonBar(height: 64),
+                    ],
                   ),
                   error: (e, _) {
                     final msg = e is ApiException ? e.message : '网络异常';

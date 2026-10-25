@@ -65,6 +65,7 @@ import '../../data/swr_cache.dart' show swrCacheProvider;
 import '../record/record_controller.dart' show invalidateFoodLibrary;
 import '../../domain/js_compat.dart' show jsNumText, jsOr;
 import '../common/food_thumb.dart';
+import '../common/breathing_capsule.dart' show LoadingSpinner;
 import '../common/skeleton.dart' show SkeletonBar;
 import '../common/sheet.dart' show showShiguangSheet;
 import '../common/sheet_toast.dart';
@@ -73,6 +74,7 @@ import '../common/eaten_badge.dart';
 import '../home/home_controller.dart' show healthApiProvider, plateDateProvider;
 import '../record/custom_food_sheet.dart' show cfMealMap, openCustomFoodSheet;
 import '../record/food_freq.dart' show foodFreqProvider;
+import '../record/freq_loading_strip.dart';
 import '../record/food_scan_sheet.dart' show openFoodScanFlow;
 
 @visibleForTesting
@@ -655,27 +657,41 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
                 style: TextStyle(
                     fontSize: Tokens.textMd, color: Tokens.ink3)));
       }
-      return ListView.separated(
-        itemCount: _custom.length,
-        separatorBuilder: (_, _) => const SizedBox(height: Tokens.sp2),
-        // M9-T6（B2 接线）：前 8 行错峰入场（index=行号）。行不包
-        // PressableScale——行内删除钮/归类 chip 双手势，外层 Pressable
-        // 在手势竞技场必输=假反馈（T5 裁定「无 onTap 不包」延伸）。
-        itemBuilder: (_, i) {
-          final row = _customRow(_custom[i], counts);
-          return i < 8 ? Stagger(index: i, child: row) : row;
-        },
+      return Column(
+        children: [
+          const FreqLoadingStrip(),
+          Expanded(
+            child: ListView.separated(
+              itemCount: _custom.length,
+              separatorBuilder: (_, _) => const SizedBox(height: Tokens.sp2),
+              // M9-T6（B2 接线）：前 8 行错峰入场（index=行号）。行不包
+              // PressableScale——行内删除钮/归类 chip 双手势，外层 Pressable
+              // 在手势竞技场必输=假反馈（T5 裁定「无 onTap 不包」延伸）。
+              itemBuilder: (_, i) {
+                final row = _customRow(_custom[i], counts);
+                return i < 8 ? Stagger(index: i, child: row) : row;
+              },
+            ),
+          ),
+        ],
       );
     }
     final list = _builtin;
-    return ListView.separated(
-      itemCount: list.length,
-      separatorBuilder: (_, _) => const SizedBox(height: Tokens.sp2),
-      // M9-T6：同 custom 支——前 8 行 Stagger，行不包 Pressable（裁定同上）。
-      itemBuilder: (_, i) {
-        final row = _builtinRow(list[i], counts);
-        return i < 8 ? Stagger(index: i, child: row) : row;
-      },
+    return Column(
+      children: [
+        const FreqLoadingStrip(),
+        Expanded(
+          child: ListView.separated(
+            itemCount: list.length,
+            separatorBuilder: (_, _) => const SizedBox(height: Tokens.sp2),
+            // M9-T6：同 custom 支——前 8 行 Stagger，行不包 Pressable（裁定同上）。
+            itemBuilder: (_, i) {
+              final row = _builtinRow(list[i], counts);
+              return i < 8 ? Stagger(index: i, child: row) : row;
+            },
+          ),
+        ),
+      ],
     );
   }
 
@@ -755,9 +771,11 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
             key: libDelKey(id),
             onPressed:
                 _busy.contains('del:$id') ? null : () => _delete(id),
-            child: const Text('删除',
-                style: TextStyle(
-                    color: Tokens.danger, fontSize: Tokens.textSm)),
+            child: _busy.contains('del:$id')
+                ? const LoadingSpinner(size: 14, color: Tokens.danger)
+                : const Text('删除',
+                    style: TextStyle(
+                        color: Tokens.danger, fontSize: Tokens.textSm)),
           ),
         ],
       ),
@@ -821,10 +839,12 @@ class _FoodLibSheetState extends ConsumerState<_FoodLibSheet> {
               onPressed: _busy.contains('tog:$id')
                   ? null
                   : () => _toggleBuiltin(m),
-              child: Text(hidden ? '恢复' : '移除',
-                  style: TextStyle(
-                      color: hidden ? Tokens.primaryDeep : Tokens.danger,
-                      fontSize: Tokens.textSm)),
+              child: _busy.contains('tog:$id')
+                  ? const LoadingSpinner(size: 14, color: Tokens.ink3)
+                  : Text(hidden ? '恢复' : '移除',
+                      style: TextStyle(
+                          color: hidden ? Tokens.primaryDeep : Tokens.danger,
+                          fontSize: Tokens.textSm)),
             ),
           ],
         ),

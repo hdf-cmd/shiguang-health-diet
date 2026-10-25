@@ -1,6 +1,7 @@
 // ShiguangFlutter/lib/features/auth/login_screen.dart
 import 'package:flutter/material.dart';
 import '../../app/theme.dart';
+import '../common/breathing_capsule.dart' show LoadingSpinner;
 import '../../data/api_client.dart' show ApiException;
 
 /// 本地前置校验（与 H5 auth-error 行为一致）：返回 null 表示通过，否则为错误文案
@@ -93,9 +94,18 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: Tokens.sp4),
               FilledButton(
                   onPressed: _busy ? null : _submit,
-                  child: Text(_busy
-                      ? '请稍候…'
-                      : (_isRegister ? '注册并进入' : '登录'))),
+                  style: FilledButton.styleFrom(
+                    disabledBackgroundColor:
+                        Tokens.primaryDeep.withValues(alpha: .72),
+                    disabledForegroundColor: Colors.white,
+                  ),
+                  child: _busy
+                      ? const Row(mainAxisSize: MainAxisSize.min, children: [
+                          LoadingSpinner(),
+                          SizedBox(width: Tokens.sp2),
+                          Text('请稍候…'),
+                        ])
+                      : Text(_isRegister ? '注册并进入' : '登录')),
             ]),
           ),
         ]),

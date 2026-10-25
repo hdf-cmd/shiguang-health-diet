@@ -44,7 +44,9 @@ import '../../domain/constants.dart' show activity;
 import '../../domain/js_compat.dart' show jsFixed1, jsNumText;
 import '../../domain/metabolism.dart' show computeMetabolism;
 import '../../domain/models.dart' show Body;
+import '../common/breathing_capsule.dart' show BreathingCapsule;
 import '../common/sheet.dart' show showShiguangSheet;
+import '../common/skeleton.dart' show SkeletonBar;
 import '../exercise/exercise_controller.dart' show exerciseKcalProvider;
 import '../home/home_controller.dart'
     show healthApiProvider, summaryProvider, todayProvider;
@@ -99,8 +101,20 @@ Body _bodyOf(Map<String, dynamic> p) =>
 /// 同 try 时 setGoal 失败会谎报「已本地保存」（profile 实已存成功）；分流后
 /// setGoal 失败说「目标同步失败：msg||网络异常」（新支，updateProfile 支
 /// 现语义「已本地保存：…」不变）。
+/// 身体档案保存中：弹层保存时先关层，卡片标题旁用呼吸胶囊提示在途。
+class BodySavingNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void set(bool v) => state = v;
+}
+
+final bodySavingProvider =
+    NotifierProvider<BodySavingNotifier, bool>(BodySavingNotifier.new);
+
 Future<void> saveBodyProfile(WidgetRef ref, Map<String, Object?> bodyMap,
     void Function(String) toast) async {
+  final saving = ref.read(bodySavingProvider.notifier)..set(true);
   final api = ref.read(healthApiProvider);
   final profile = ref.read(profileProvider).value ?? const <String, dynamic>{};
   final goal = (profile['goal'] as Map?)?.cast<String, dynamic>() ?? const {};
@@ -137,6 +151,7 @@ Future<void> saveBodyProfile(WidgetRef ref, Map<String, Object?> bodyMap,
   // ——防重挂元素以旧 target 播种（首页环目标联动面）。
   ref.read(swrCacheProvider).invalidatePrefix('summary.');
   ref.invalidate(summaryProvider); // family 整族失效（首页环目标联动）
+  saving.set(false);
 }
 
 /// 身体参数卡（六值 + 代谢明细；点卡开编辑弹层 ≙ #body-card click :1658）
@@ -169,9 +184,16 @@ class BodyProfileCard extends ConsumerWidget {
                   ? const Text('身体档案获取失败，点击重试',
                       style: TextStyle(
                           fontSize: Tokens.textMd, color: Tokens.danger))
-                  : const Text('…',
-                      style: TextStyle(
-                          fontSize: Tokens.textMd, color: Tokens.ink3)))
+                  : const Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SkeletonBar(width: 90, height: 14),
+                        SizedBox(height: 10),
+                        SkeletonBar(height: 12),
+                        SizedBox(height: 8),
+                        SkeletonBar(width: 180, height: 12),
+                      ],
+                    ))
               : _cardBody(context, ref, p, ex),
         ),
       ),
@@ -208,6 +230,7 @@ class BodyProfileCard extends ConsumerWidget {
   Widget _cardBody(BuildContext context, WidgetRef ref,
       Map<String, dynamic> p, int ex) {
     final b = _bodyOf(p);
+    final saving = ref.watch(bodySavingProvider);
     final goal = (p['goal'] as Map?)?.cast<String, dynamic>() ?? const {};
     final tw = (goal['targetWeight'] as num?)?.toDouble();
     // M7-T7：≙ state.actualDeficit（:1584 第三参）。在途/失败/不足 2 天皆
@@ -231,14 +254,19 @@ class BodyProfileCard extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(
-          children: const [
-            Text('身体档案', // index.html:203 逐字
+          children: [
+            const Text('身体档案', // index.html:203 逐字
                 style: TextStyle(
                     fontSize: Tokens.textMd,
                     fontWeight: FontWeight.w700,
                     color: Tokens.ink)),
-            Spacer(),
-            Text('点击编辑 ›', // :203 .more 逐字
+            if (saving) ...[
+              const SizedBox(width: Tokens.sp2),
+              const BreathingCapsule(
+                  minWidth: 28, maxWidth: 58, height: 4, glow: false),
+            ],
+            const Spacer(),
+            const Text('点击编辑 ›', // :203 .more 逐字
                 style: TextStyle(fontSize: Tokens.textSm, color: Tokens.ink3)),
           ],
         ),

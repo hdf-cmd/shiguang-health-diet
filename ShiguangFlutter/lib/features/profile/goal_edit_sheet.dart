@@ -31,6 +31,7 @@ import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
 import '../../domain/js_compat.dart'
     show jsFixed1, jsNumber, jsNumText, jsOr, jsParseFloat;
+import '../common/breathing_capsule.dart' show LoadingSpinner;
 import '../common/sheet.dart' show showShiguangSheet;
 import '../common/sheet_toast.dart' show SheetToast;
 import '../home/home_controller.dart' show healthApiProvider;
@@ -164,7 +165,11 @@ class _GoalEditSheetState extends ConsumerState<_GoalEditSheet> {
   /// 保存（≙ app.js:1453-1465）：setGoal **单键** {targetWeight} →
   /// invalidate profileProvider（≙ 本地回写 + #goal-weight + renderMetab）→
   /// 关层 → toast「目标体重已更新」；失败层不关 + 「保存失败：msg||网络异常」。
+  bool _saving = false;
+
   Future<void> _save() async {
+    if (_saving) return;
+    setState(() => _saving = true);
     _normField(); // ≙ 按钮点击先触发输入框 change/blur（浏览器时序近似）
     final targetWeight = jsNumber(_ctl.text.trim()) ?? 0; // :1454 Number(value)
     final messenger = ScaffoldMessenger.of(context);
@@ -185,6 +190,8 @@ class _GoalEditSheetState extends ConsumerState<_GoalEditSheet> {
       _toastInSheet(
         '保存失败：${e is ApiException ? jsOr(e.message, '网络异常') : '网络异常'}',
       );
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
@@ -290,8 +297,14 @@ class _GoalEditSheetState extends ConsumerState<_GoalEditSheet> {
             const SizedBox(height: Tokens.sp4), // :351 btn margin-top --sp-4
             FilledButton(
               key: goalEditSaveKey,
-              onPressed: _save,
-              child: const Text('保存目标'), // :351 逐字
+              onPressed: _saving ? null : _save,
+              style: FilledButton.styleFrom(
+                disabledBackgroundColor: Tokens.primaryDeep.withValues(alpha: .72),
+                disabledForegroundColor: Colors.white,
+              ),
+              child: _saving
+                  ? const LoadingSpinner()
+                  : const Text('保存目标'), // :351 逐字
             ),
           ],
         ),

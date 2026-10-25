@@ -32,6 +32,7 @@ import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
 import '../common/food_thumb.dart';
 import '../common/image_pick.dart';
+import '../common/breathing_capsule.dart' show LoadingSpinner;
 import '../common/sheet.dart' show showShiguangSheet;
 import '../home/home_controller.dart' show healthApiProvider;
 import 'profile_providers.dart';
@@ -229,7 +230,14 @@ class _ProfileEditSheetState extends ConsumerState<_ProfileEditSheet> {
                   Expanded(
                     child: FilledButton.tonal( // :445 btn-soft
                       onPressed: _picking ? null : () => _pickAvatar(messenger),
-                      child: const Text('更换头像'), // 逐字
+                      child: _picking
+                          ? const Row(mainAxisSize: MainAxisSize.min, children: [
+                              LoadingSpinner(
+                                  size: 14, color: Tokens.primaryDeep),
+                              SizedBox(width: Tokens.sp2),
+                              Text('更换头像'),
+                            ])
+                          : const Text('更换头像'), // 逐字
                     ),
                   ),
                 ],
@@ -262,7 +270,18 @@ class _ProfileEditSheetState extends ConsumerState<_ProfileEditSheet> {
               FilledButton( // :455 btn-primary
                 key: peSaveKey,
                 onPressed: _saving ? null : () => _save(messenger),
-                child: const Text('保存'), // 逐字
+                style: FilledButton.styleFrom(
+                  disabledBackgroundColor:
+                      Tokens.primaryDeep.withValues(alpha: .72),
+                  disabledForegroundColor: Colors.white,
+                ),
+                child: _saving
+                    ? const Row(mainAxisSize: MainAxisSize.min, children: [
+                        LoadingSpinner(),
+                        SizedBox(width: Tokens.sp2),
+                        Text('保存中…'),
+                      ])
+                    : const Text('保存'), // 逐字
               ),
             ],
           ),

@@ -33,6 +33,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/theme.dart';
 import '../../domain/advice.dart' show buildAdvice, makeAdviceCtx;
 import '../../domain/dates.dart' show todayIso;
+import '../common/skeleton.dart' show SkeletonBar;
 import '../exercise/exercise_controller.dart' show exerciseKcalProvider;
 import '../profile/profile_providers.dart' show profileProvider, waterGoalMlOf;
 import 'home_controller.dart' show recordsProvider, summaryProvider;
@@ -69,7 +70,30 @@ class AdviceCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final summary = ref.watch(summaryProvider(date));
     final s = summary.value;
-    if (s == null) return const SizedBox.shrink(); // :351 if (!s) return
+    if (s == null) {
+      // 加载期卡位骨架：保持卡片高度，避免整卡消失造成布局跳动。
+      return Padding(
+        padding: const EdgeInsets.only(top: Tokens.sp3),
+        child: Container(
+          padding: const EdgeInsets.all(Tokens.sp4),
+          decoration: BoxDecoration(
+            color: Tokens.surface,
+            borderRadius: BorderRadius.circular(Tokens.radiusLg),
+            boxShadow: Tokens.shadowCard,
+          ),
+          child: const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SkeletonBar(width: 80, height: 14),
+              SizedBox(height: Tokens.sp3),
+              SkeletonBar(height: 12),
+              SizedBox(height: Tokens.sp2),
+              SkeletonBar(width: 220, height: 12),
+            ],
+          ),
+        ),
+      );
+    }
 
     // :352-359 makeAdviceCtx 六入参同源装配（s 此处已判非空，≙ :351 短路后的
     // state.summary）

@@ -126,6 +126,20 @@ class PrefsFoodFreqStore implements FoodFreqStore {
 final foodFreqStoreProvider = Provider<FoodFreqStore>(
     (ref) => throw UnimplementedError('组合根注入'));
 
+/// 计数加载状态：UI 据此显示呼吸胶囊/骨架。
+/// 只有真正向云端拉取时才进 [loading]；命中本地回放直接 [ready]，避免闪烁。
+enum FreqStatus { idle, loading, ready, failed }
+
+class FreqStatusNotifier extends Notifier<FreqStatus> {
+  @override
+  FreqStatus build() => FreqStatus.idle;
+
+  void set(FreqStatus s) => state = s;
+}
+
+final foodFreqStatusProvider =
+    NotifierProvider<FreqStatusNotifier, FreqStatus>(FreqStatusNotifier.new);
+
 /// 频次计数状态。keepAlive（非 autoDispose）：整 App 生命周期一份。
 /// watch 方（searchProvider family / 食物库行）在计数变化时自动重排/重绘。
 final foodFreqProvider =
@@ -163,10 +177,13 @@ class FoodFreqNotifier extends Notifier<Map<String, int>> {
     _started = true;
     final uid = await _resolveUid();
     final store = ref.read(foodFreqStoreProvider);
+    final status = ref.read(foodFreqStatusProvider.notifier);
     if (await store.isInitialized(uid)) {
       state = await store.loadCounts(uid);
+      status.set(FreqStatus.ready);
       return;
     }
+    status.set(FreqStatus.loading);
     try {
       final data = await ref.read(healthApiProvider).getFoodFreq();
       final counts = parseFoodFreqCounts(data['counts']);
@@ -174,7 +191,9 @@ class FoodFreqNotifier extends Notifier<Map<String, int>> {
       state = counts;
       await store.saveCounts(uid, counts);
       await store.markInitialized(uid);
+      status.set(FreqStatus.ready);
     } catch (_) {
+      status.set(FreqStatus.failed);
       _started = false; // 本会话内下次开弹层可再试
     }
   }

@@ -21,6 +21,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
+import '../common/breathing_capsule.dart' show LoadingSpinner;
+import '../common/skeleton.dart' show SkeletonBar;
 import '../../data/swr_cache.dart' show swrCacheProvider;
 import '../../domain/dates.dart' show todayIso;
 import '../home/home_controller.dart' show healthApiProvider;
@@ -228,9 +230,7 @@ class _WeightLogCardState extends ConsumerState<WeightLogCard> {
                       fontSize: Tokens.textSm, color: Tokens.ink2)),
               const Spacer(),
               weight.when(
-                loading: () => const Text('…',
-                    style: TextStyle(
-                        fontSize: Tokens.textLg, color: Tokens.ink3)),
+                loading: () => const SkeletonBar(width: 56, height: 20),
                 error: (_, _) => const Text('获取失败',
                     style: TextStyle(
                         fontSize: Tokens.textLg, color: Tokens.danger)),
@@ -281,7 +281,13 @@ class _WeightLogCardState extends ConsumerState<WeightLogCard> {
           // 从体脂秤同步（index.html:474 文案逐字）；进行中禁用（简报 Step 2）
           FilledButton.tonal(
             onPressed: _syncing ? null : _startSync,
-            child: const Text('⚖️ 从体脂秤同步（光脚站上秤）'),
+            child: _syncing
+                ? const Row(mainAxisSize: MainAxisSize.min, children: [
+                    LoadingSpinner(size: 14, color: Tokens.primaryDeep),
+                    SizedBox(width: Tokens.sp2),
+                    Text('⚖️ 从体脂秤同步（光脚站上秤）'),
+                  ])
+                : const Text('⚖️ 从体脂秤同步（光脚站上秤）'),
           ),
           if (_syncing)
             TextButton(
@@ -300,7 +306,13 @@ class _WeightLogCardState extends ConsumerState<WeightLogCard> {
           const SizedBox(height: Tokens.sp2),
           FilledButton(
             onPressed: _saving ? null : _saveManual,
-            child: const Text('保存'), // index.html:481 逐字
+            child: _saving
+                ? const Row(mainAxisSize: MainAxisSize.min, children: [
+                    LoadingSpinner(),
+                    SizedBox(width: Tokens.sp2),
+                    Text('保存'),
+                  ])
+                : const Text('保存'), // index.html:481 逐字
           ),
         ],
       ),

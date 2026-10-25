@@ -21,6 +21,7 @@ import '../../app/auth_state.dart';
 import '../../app/theme.dart';
 import '../common/food_thumb.dart';
 import '../common/sheet.dart' show showShiguangSheet;
+import '../common/skeleton.dart' show SkeletonBar;
 import '../common/sheet_toast.dart' show SheetToast;
 import '../notifications/reminder_scheduler.dart';
 import 'ai_provider_sheet.dart' show openAiProviderSheet;
@@ -219,11 +220,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final Widget body;
     if (p == null) {
       // 加载中/失败共用占位骨架：头像位 + 文案位
-      final tip = profile is AsyncError
+      final Widget tip = profile is AsyncError
           ? const Text('未登录信息', // 简报 Step 3 指定占位
               style: TextStyle(fontSize: Tokens.textMd, color: Tokens.ink3))
-          : const Text('…', // 加载态占位
-              style: TextStyle(fontSize: Tokens.textMd, color: Tokens.ink3));
+          : const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SkeletonBar(width: 88, height: 14),
+                SizedBox(height: 6),
+                SkeletonBar(width: 156, height: 11),
+              ],
+            );
       body = Row(
         children: [
           const _HeadAvatar(child: SizedBox.shrink()),

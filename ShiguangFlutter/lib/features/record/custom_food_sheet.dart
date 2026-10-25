@@ -53,6 +53,7 @@ import '../../domain/constants.dart';
 import '../../domain/dates.dart';
 import '../common/food_thumb.dart';
 import '../common/image_pick.dart';
+import '../common/breathing_capsule.dart' show LoadingSpinner;
 import '../common/sheet.dart' show showShiguangSheet;
 import 'record_controller.dart';
 
@@ -570,7 +571,18 @@ class _CustomFoodSheetState extends ConsumerState<_CustomFoodSheet> {
                       : () => _save(
                           true,
                           messenger), // :1276 saveCustomFood(true)
-                  child: Text('保存并记入${mealNames[widget.meal] ?? '本餐'}'), // :1220
+                  style: FilledButton.styleFrom(
+                    disabledBackgroundColor:
+                        Tokens.primaryDeep.withValues(alpha: .72),
+                    disabledForegroundColor: Colors.white,
+                  ),
+                  child: _busy
+                      ? const Row(mainAxisSize: MainAxisSize.min, children: [
+                          LoadingSpinner(),
+                          SizedBox(width: Tokens.sp2),
+                          Text('保存中…'),
+                        ])
+                      : Text('保存并记入${mealNames[widget.meal] ?? '本餐'}'), // :1220
                 ),
                 const SizedBox(height: Tokens.sp2),
                 OutlinedButton( // :557 btn-quiet（R4：Outlined 而非 tonal——
