@@ -166,21 +166,26 @@ class HealthApi {
   Future<Map<String, dynamic>> scanFood(
     String imageDataUrl, {
     AiProviderConfig? provider,
-  }) =>
-      _client.call(
-        '/ai/food-scan',
-        method: 'POST',
-        body: <String, dynamic>{
-          'image': imageDataUrl,
-          if (provider != null && provider.isUsable)
-            'provider': <String, dynamic>{
-              'id': provider.id,
-              'model': provider.model,
-              'key': provider.key,
-            },
-        },
-        timeout: const Duration(seconds: 30),
-      );
+    String? hint,
+  }) {
+    final h = (hint ?? '').trim();
+    return _client.call(
+      '/ai/food-scan',
+      method: 'POST',
+      body: <String, dynamic>{
+        'image': imageDataUrl,
+        // 菜名提示：空白即整键省略，云端按无提示走原逻辑
+        if (h.isNotEmpty) 'hint': h.length > 30 ? h.substring(0, 30) : h,
+        if (provider != null && provider.isUsable)
+          'provider': <String, dynamic>{
+            'id': provider.id,
+            'model': provider.model,
+            'key': provider.key,
+          },
+      },
+      timeout: const Duration(seconds: 30),
+    );
+  }
 
   /// 按菜名估算（M15）：云函数 /ai/food-estimate，返回
   /// {ok,dish,per100,note,quota}；provider 口径与 scanFood 完全一致

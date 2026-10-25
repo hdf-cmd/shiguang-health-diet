@@ -120,6 +120,37 @@ function validateEstimateResult(obj, rawName) {
   return { ok: true, dish: name, per100, note };
 }
 
+/* 识菜的消息体：用户可带菜名提示（可选），重试轮追加格式/能量约束。
+ * 无 hint 时与历史实现逐字一致，保证老调用零行为变化。 */
+const AI_SCAN_SYSTEM_PROMPT = [
+  "你是中文菜品营养估算器。",
+  "看图识别图中最主要的一道菜（若有多样，取占比最大的）。",
+  "估计可食部每 100g 的热量与三大营养素（不计骨头、餐具、包装）。",
+  "只输出一个 JSON 对象，不要 markdown、不要解释，格式：",
+  '{"dish":"菜名","confidence":"high|medium|low","per100":{"kcal":0,"protein":0,"carb":0,"fat":0},"note":"一句话说明"}'
+].join("\n");
+
+function buildScanMessages(imageDataUrl, rawHint, strict) {
+  const hint = typeof rawHint === "string" ? rawHint.trim().slice(0, 30) : "";
+  const base = strict
+    ? "上一次结果不合法。请严格按 JSON 输出，并保证 4P+4C+9F 与热量相差不超过 25%。"
+    : "请识别这道菜。";
+  const hintLine = hint
+    ? "\n用户提示这道菜可能是「" + hint +
+      "」。若图片与提示一致，优先使用提示中的菜名；不一致时以图片为准，并在 note 里说明。"
+    : "";
+  return [
+    { role: "system", content: AI_SCAN_SYSTEM_PROMPT },
+    {
+      role: "user",
+      content: [
+        { type: "text", text: base + hintLine },
+        { type: "image_url", image_url: { url: imageDataUrl } },
+      ],
+    },
+  ];
+}
+
 /* 文本估算的消息体：菜名作为普通文本传入，重试轮追加格式/能量约束。 */
 function buildEstimateMessages(rawName, strict) {
   const name = typeof rawName === 'string' ? rawName.trim() : '';
@@ -178,5 +209,6 @@ module.exports = {
   parseModelJson, normalizePer100, energyDeviation, validateScanResult,
   AI_PROVIDERS, validateProviderConfig, providerTarget, providerErrorMessage,
   AI_ESTIMATE_SYSTEM_PROMPT, validateEstimateResult, buildEstimateMessages,
+  buildScanMessages,
   resolveAiChannel, chatRequestBody,
 };

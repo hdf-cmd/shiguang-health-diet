@@ -612,11 +612,14 @@ class StubHealthApi implements HealthApi {
   };
   ApiException? upsertError;
 
+  String? lastScanHint;
+
   @override
   Future<Map<String, dynamic>> scanFood(
-      String imageDataUrl, {AiProviderConfig? provider}) async {
+      String imageDataUrl, {AiProviderConfig? provider, String? hint}) async {
     scanCalls++;
     lastScanProvider = provider; // M14-T5：记录透传面（桩本身不消费）
+    lastScanHint = hint; // 菜名提示透传面
     if (scanError != null) throw scanError!;
     return scanResult;
   }

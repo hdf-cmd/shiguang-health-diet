@@ -77,6 +77,10 @@ const scanTotalKey = Key('scan-total');
 @visibleForTesting
 const scanSaveKey = Key('scan-save');
 
+/// 识别前的菜名提示输入框（可选）
+@visibleForTesting
+const scanHintKey = Key('scan-hint');
+
 @visibleForTesting
 const scanPickPhotoKey = Key('scan-pick-photo');
 
@@ -115,6 +119,89 @@ final scanImagePickProvider = Provider<ScanImagePick>((ref) {
       maxDim: kScanImageMaxDim, quality: kScanImageQuality);
 });
 
+/// 识别前的输入层回包：菜名提示（可空）+ 图片来源。
+class _ScanStart {
+  const _ScanStart(this.source, this.hint);
+  final ImageSource source;
+  final String hint;
+}
+
+/// 「拍照识菜」入口层：先输菜名（可选，提升识别准确率），再选来源。
+class _ScanStartDialog extends StatefulWidget {
+  const _ScanStartDialog();
+
+  @override
+  State<_ScanStartDialog> createState() => _ScanStartDialogState();
+}
+
+class _ScanStartDialogState extends State<_ScanStartDialog> {
+  final TextEditingController _hint = TextEditingController();
+
+  @override
+  void dispose() {
+    _hint.dispose();
+    super.dispose();
+  }
+
+  void _pick(ImageSource source) {
+    Navigator.of(context).pop(_ScanStart(source, _hint.text.trim()));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: Tokens.surface,
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(Tokens.radiusLg)),
+      title: const Text('拍照识菜'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('先输入菜名可提高识别准确率（可选）',
+              style: TextStyle(fontSize: Tokens.textSm, color: Tokens.ink3)),
+          const SizedBox(height: Tokens.sp2),
+          TextField(
+            key: scanHintKey,
+            controller: _hint,
+            maxLength: 30,
+            textInputAction: TextInputAction.done,
+            decoration: const InputDecoration(
+              hintText: '例如：番茄炒蛋',
+              isDense: true,
+              counterText: '',
+            ),
+          ),
+          const SizedBox(height: Tokens.sp3),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.tonal(
+                  onPressed: () => _pick(ImageSource.camera),
+                  child: const Text('拍照'),
+                ),
+              ),
+              const SizedBox(width: Tokens.sp2),
+              Expanded(
+                child: FilledButton(
+                  onPressed: () => _pick(ImageSource.gallery),
+                  child: const Text('从相册选'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: Tokens.sp1),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消',
+                style: TextStyle(color: Tokens.ink3, fontSize: Tokens.textMd)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// 识菜入口全流程（M13-T7）：选来源 → 选图 → 识别 → 成功开确认表单 /
 /// 失败弹提示。入口层（记一笔搜索弹层 / 我的食物库）只负责传 date/meal 与
 /// recordMeal，不重复流程细节。
@@ -136,23 +223,13 @@ Future<void> openFoodScanFlow(
   required String meal,
   bool recordMeal = true,
 }) async {
-  final source = await showDialog<ImageSource>(
+  final start = await showDialog<_ScanStart>(
     context: context,
-    builder: (ctx) => SimpleDialog(
-      title: const Text('识菜照片'),
-      children: [
-        SimpleDialogOption(
-          onPressed: () => Navigator.of(ctx).pop(ImageSource.camera),
-          child: const Text('拍照'),
-        ),
-        SimpleDialogOption(
-          onPressed: () => Navigator.of(ctx).pop(ImageSource.gallery),
-          child: const Text('从相册选'),
-        ),
-      ],
-    ),
+    builder: (_) => const _ScanStartDialog(),
   );
-  if (source == null || !context.mounted) return; // 取消=静默
+  if (start == null || !context.mounted) return; // 取消=静默
+  final source = start.source;
+  final hint = start.hint;
 
   final picked = await ref.read(scanImagePickProvider)(source);
   if (!context.mounted) return;
@@ -206,12 +283,14 @@ Future<void> openFoodScanFlow(
 
   final Map<String, dynamic> scan;
   try {
-    scan = await ref.read(healthApiProvider).scanFood(img, provider: provider);
+    scan = await ref
+        .read(healthApiProvider)
+        .scanFood(img, provider: provider, hint: hint);
   } catch (e) {
     navigator.pop(); // 关识别中
     if (!context.mounted) return;
     await _showScanError(context, e,
-        date: date, meal: meal, recordMeal: recordMeal);
+        date: date, meal: meal, recordMeal: recordMeal, hint: hint);
     return;
   }
   navigator.pop(); // 关识别中
@@ -237,6 +316,7 @@ Future<void> _showScanError(
   required String date,
   required String meal,
   required bool recordMeal,
+  String hint = '',
 }) async {
   final msg = jsOr(error is ApiException ? error.message : null, '网络异常');
   final estimate = await showDialog<bool>(
@@ -266,7 +346,7 @@ Future<void> _showScanError(
   );
   if (estimate != true || !context.mounted) return;
   await _showEstimateSheet(context,
-      date: date, meal: meal, recordMeal: recordMeal);
+      date: date, meal: meal, recordMeal: recordMeal, initialName: hint);
 }
 
 /// 估算结果：done 复用识菜确认表单；manual 落既有自定义食物表单。
@@ -292,11 +372,12 @@ Future<void> _showEstimateSheet(
   required String date,
   required String meal,
   required bool recordMeal,
+  String initialName = '',
 }) async {
   final result = await showDialog<_EstimateResult>(
     context: context,
     barrierDismissible: false,
-    builder: (_) => const _EstimateDialog(),
+    builder: (_) => _EstimateDialog(initialName: initialName),
   );
   if (result == null || !context.mounted) return;
   if (result is _EstimateManual) {
@@ -329,14 +410,17 @@ Future<void> _showEstimateSheet(
 /// 按菜名估算弹窗（M15）：菜名 + 这一份克数 → 云函数估算每 100g 营养。
 /// 失败原地提示可重试；「直接手填」保留旧自定义表单入口。
 class _EstimateDialog extends ConsumerStatefulWidget {
-  const _EstimateDialog();
+  const _EstimateDialog({this.initialName = ''});
+
+  final String initialName;
 
   @override
   ConsumerState<_EstimateDialog> createState() => _EstimateDialogState();
 }
 
 class _EstimateDialogState extends ConsumerState<_EstimateDialog> {
-  final TextEditingController _name = TextEditingController();
+  late final TextEditingController _name =
+      TextEditingController(text: widget.initialName);
   final TextEditingController _grams = TextEditingController(text: '200');
   String? _error;
   bool _busy = false;

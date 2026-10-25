@@ -32,6 +32,7 @@ import 'package:shiguang_flutter/features/record/food_scan_sheet.dart'
         estimateManualKey,
         estimateNameKey,
         estimateSubmitKey,
+        scanHintKey,
         scanImagePickProvider,
         scanSaveKey;
 import 'package:shiguang_flutter/features/record/search_sheet.dart'
@@ -118,11 +119,15 @@ void main() {
         ),
       );
 
-  /// 开记一笔 → 点 📷 → 来源对话框 → 选「从相册选」，等识别链落定。
-  Future<void> tapScanFromSheet(WidgetTester tester) async {
+  /// 开记一笔 → 点 📷 → 菜名/来源层（可带 hint）→ 选「从相册选」，等识别链落定。
+  Future<void> tapScanFromSheet(WidgetTester tester, {String? hint}) async {
     await tester.tap(find.byKey(const Key('sheet-scan-open')));
     await tester.pumpAndSettle();
-    expect(find.text('识菜照片'), findsOneWidget); // 来源选择标题
+    expect(find.text('拍照识菜'), findsOneWidget); // 输入层标题
+    expect(find.byKey(scanHintKey), findsOneWidget);
+    if (hint != null) {
+      await tester.enterText(find.byKey(scanHintKey), hint);
+    }
     expect(find.text('拍照'), findsOneWidget);
     expect(find.text('从相册选'), findsOneWidget);
     await tester.tap(find.text('从相册选'));
@@ -155,13 +160,38 @@ void main() {
 
     await tester.tap(find.byKey(const Key('sheet-scan-open')));
     await tester.pumpAndSettle();
-    expect(find.text('识菜照片'), findsOneWidget);
+    expect(find.text('拍照识菜'), findsOneWidget);
 
     await tester.tapAt(const Offset(5, 5)); // 对话框外（barrier）→ null
     await tester.pumpAndSettle();
-    expect(find.text('识菜照片'), findsNothing);
+    expect(find.text('拍照识菜'), findsNothing);
     expect(api.scanCalls, 0);
     expect(find.byType(FoodScanSheet), findsNothing);
+  });
+
+  testWidgets('①c 输入菜名 → 随识别请求透传（trim）；不输入则不带', (tester) async {
+    final api = StubHealthApi();
+    await tester.pumpWidget(searchApp(api));
+    await tester.pumpAndSettle();
+
+    await tapScanFromSheet(tester, hint: ' 番茄炒蛋 ');
+    expect(api.scanCalls, 1);
+    expect(api.lastScanHint, '番茄炒蛋');
+  });
+
+  testWidgets('①d 带菜名识别失败 → 按菜名估算弹窗预填该菜名', (tester) async {
+    final api = StubHealthApi()..scanError = ApiException('网络异常');
+    await tester.pumpWidget(searchApp(api));
+    await tester.pumpAndSettle();
+
+    await tapScanFromSheet(tester, hint: '番茄炒蛋');
+    expect(api.lastScanHint, '番茄炒蛋');
+    expect(find.text('识别失败：网络异常'), findsOneWidget);
+
+    await tester.tap(find.text('按菜名估算'));
+    await tester.pumpAndSettle();
+    final field = tester.widget<TextField>(find.byKey(estimateNameKey));
+    expect(field.controller?.text, '番茄炒蛋');
   });
 
   testWidgets('② 识别失败 → 「按菜名估算」→ 估算成功开确认表单'
@@ -278,7 +308,7 @@ void main() {
 
     await tester.tap(find.byKey(libScanAddKey));
     await tester.pumpAndSettle();
-    expect(find.text('识菜照片'), findsOneWidget);
+    expect(find.text('拍照识菜'), findsOneWidget);
     await tester.tap(find.text('从相册选'));
     await tester.pumpAndSettle();
 

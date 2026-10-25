@@ -6,7 +6,7 @@ const { countNames, collectAll } = require("./freq");
 const {
   parseModelJson, validateScanResult, kAiScanDailyLimit, kAiImageMaxChars, kAiImagePrefix,
   providerErrorMessage,
-  buildEstimateMessages, validateEstimateResult, resolveAiChannel, chatRequestBody,
+  buildEstimateMessages, buildScanMessages, validateEstimateResult, resolveAiChannel, chatRequestBody,
 } = require("./ai");
 // P3：扣子智能体（纯逻辑在 coze.js，node --test 覆盖）
 const {
@@ -160,14 +160,6 @@ function profileToClient(p) {
   };
 }
 
-const AI_SYSTEM_PROMPT = [
-  "你是中文菜品营养估算器。",
-  "看图识别图中最主要的一道菜（若有多样，取占比最大的）。",
-  "估计可食部每 100g 的热量与三大营养素（不计骨头、餐具、包装）。",
-  "只输出一个 JSON 对象，不要 markdown、不要解释，格式：",
-  '{"dish":"菜名","confidence":"high|medium|low","per100":{"kcal":0,"protein":0,"carb":0,"fat":0},"note":"一句话说明"}'
-].join("\n");
-
 async function callChat(apiKey, messages, target, logTag) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 12000);
@@ -200,16 +192,9 @@ async function callChat(apiKey, messages, target, logTag) {
   }
 }
 
-async function callDeepSeek(apiKey, imageDataUrl, strict, target, logTag) {
-  return callChat(apiKey, [
-    { role: "system", content: AI_SYSTEM_PROMPT },
-    { role: "user", content: [
-      { type: "text", text: strict
-          ? "上一次结果不合法。请严格按 JSON 输出，并保证 4P+4C+9F 与热量相差不超过 25%。"
-          : "请识别这道菜。" },
-      { type: "image_url", image_url: { url: imageDataUrl } }
-    ] }
-  ], target, logTag);
+async function callDeepSeek(apiKey, imageDataUrl, strict, target, logTag, hint) {
+  return callChat(
+    apiKey, buildScanMessages(imageDataUrl, hint, strict), target, logTag);
 }
 
 /* M15：文本估算（菜名 → 每 100g 营养），与识菜共用 callChat 的超时/解析/错误口径。 */
@@ -408,6 +393,7 @@ async function handle(path, method, params, body, uid) {
   /* M13：拍照识菜。图片只用于识别，不落库。 */
   if (path === "/ai/food-scan" && method === "POST") {
     const image = String(body.image || "");
+    const hint = String(body.hint || "").trim().slice(0, 30);
     const channel = resolveAiChannel(body.provider, process.env.DEEPSEEK_API_KEY || "");
     if (!channel.ok) return { ok: false, message: channel.message };
     const { apiKey, target, logTag, isCustom } = channel;
@@ -426,7 +412,7 @@ async function handle(path, method, params, body, uid) {
     }
     let result = null, lastStatus = 0;
     for (let attempt = 0; attempt < 2 && !result; attempt++) {
-      const r = await callDeepSeek(apiKey, image, attempt > 0, target, logTag);
+      const r = await callDeepSeek(apiKey, image, attempt > 0, target, logTag, hint);
       lastStatus = r.status;
       // 401/403（Key 无效/无权限）重试必败，429（限流）重试只会加重；直接收手，
       // 错误映射仍走下方 providerErrorMessage。

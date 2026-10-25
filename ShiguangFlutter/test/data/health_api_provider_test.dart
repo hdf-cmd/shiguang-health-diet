@@ -46,6 +46,17 @@ void main() {
     expect(adapter.envelopes.last['body'].containsKey('provider'), isFalse);
   });
 
+  test('scanFood → hint 非空才进 body；空白/未传整键省略', () async {
+    await api.scanFood('data:image/jpeg;base64,AAA', hint: '番茄炒蛋');
+    expect(adapter.envelopes.last['body']['hint'], '番茄炒蛋');
+
+    await api.scanFood('data:image/jpeg;base64,AAA', hint: '   ');
+    expect(adapter.envelopes.last['body'].containsKey('hint'), isFalse);
+
+    await api.scanFood('data:image/jpeg;base64,AAA');
+    expect(adapter.envelopes.last['body'].containsKey('hint'), isFalse);
+  });
+
   test('estimateFood → /ai/food-estimate；菜名与 provider 信封同口径', () async {
     await api.estimateFood('番茄炒蛋');
     expect(adapter.envelopes.last['path'], '/ai/food-estimate');

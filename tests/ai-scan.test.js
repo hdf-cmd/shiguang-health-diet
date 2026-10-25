@@ -39,6 +39,22 @@ test('validateScanResult：dish 空、数值越界、能量不自洽分别拒绝
   assert.equal(ai.validateScanResult({ ...good, per100: { kcal: 300, protein: 1, carb: 1, fat: 1 } }).reason, 'energy');
 });
 
+test('buildScanMessages：无 hint 保持原文；有 hint 注入提示且保留 strict 前缀', () => {
+  const none = ai.buildScanMessages('data:image/jpeg;base64,AAA', '', false);
+  assert.equal(none[0].role, 'system');
+  assert.equal(none[1].content[0].text, '请识别这道菜。');
+  assert.equal(none[1].content[1].image_url.url, 'data:image/jpeg;base64,AAA');
+
+  const hinted = ai.buildScanMessages('data:image/jpeg;base64,AAA', ' 番茄炒蛋 ', false);
+  assert.match(hinted[1].content[0].text, /番茄炒蛋/);
+  assert.match(hinted[1].content[0].text, /优先使用提示中的菜名/);
+  assert.match(hinted[1].content[0].text, /以图片为准/);
+
+  const strict = ai.buildScanMessages('x', '番茄炒蛋', true);
+  assert.match(strict[1].content[0].text, /^上一次结果不合法/);
+  assert.match(strict[1].content[0].text, /番茄炒蛋/);
+});
+
 test('常量口径', () => {
   assert.equal(ai.kAiScanDailyLimit, 50);
   assert.equal(ai.kAiImageMaxChars, 280000);
