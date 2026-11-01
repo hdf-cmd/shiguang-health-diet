@@ -18,9 +18,9 @@
 
 ### AI 饮食助手配置
 
-- 云函数路由：`POST /ai/coze-chat`，入参 `{message, date?, conversationId?, useTodaySummary?}`，出参 `{ok, reply, conversationId}`。
+- 云函数路由：`POST /ai/coze-chat`，入参 `{message, date?, conversationId?, useTodaySummary?}`，出参 `{ok, reply, conversationId, channel?}`。
 - 环境变量：`COZE_BOT_ID`、`COZE_PAT` 只存 CloudBase 云函数环境变量，客户端不接触；PAT 按扣子控制台有效期轮换。
-- 扣子免费版 API 为**累计 100 条**；当前实测首字约 2.6s、整段约 7–8s，端到端流式 / 更快的模型仍在评估。
+- 扣子免费版 API 是**累计 500 次**（官方定价页口径；用完后只回英文余额提示，即使账号还有积分）。扣子失败（额度用完 / 超时 / 空正文）时自动降级到 DeepSeek 回答，走 `DEEPSEEK_API_KEY`，返回 `channel: "deepseek"`；兜底只带当天摘要，不继承多轮上下文。2026-11-01 实测兜底单轮约 1.8s。
 - 聊天只做文字多轮 + 回复朗读，不做语音输入/免手循环。
 
 ## 1.x H5 线（已停更）

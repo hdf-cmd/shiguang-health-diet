@@ -7,10 +7,12 @@ const {
   parseModelJson, validateScanResult, kAiScanDailyLimit, kAiImageMaxChars, kAiImagePrefix,
   providerErrorMessage,
   buildEstimateMessages, buildScanMessages, validateEstimateResult, resolveAiChannel, chatRequestBody,
+  buildAssistantMessages, assistantRequestBody, parseChatReply,
 } = require("./ai");
 // P3：扣子智能体（纯逻辑在 coze.js，node --test 覆盖）
 const {
   buildTodaySummaryContext, buildCozeChatBody, createCozeStreamParser,
+  isCozeQuotaError, cozeUserMessage,
 } = require("./coze");
 
 const app = cloud.init({
@@ -200,6 +202,41 @@ async function callDeepSeek(apiKey, imageDataUrl, strict, target, logTag, hint) 
 /* M15：文本估算（菜名 → 每 100g 营养），与识菜共用 callChat 的超时/解析/错误口径。 */
 async function callAiText(apiKey, name, strict, target, logTag) {
   return callChat(apiKey, buildEstimateMessages(name, strict), target, logTag);
+}
+
+/* P3 兜底：扣子不可用时用 DeepSeek 文本对话。超时收紧到 10s，
+   与扣子 25s 上限合计仍留在客户端 30s 之内。 */
+async function callAssistantAi(apiKey, context, message, logTag) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
+  try {
+    const target = { ...providerTarget("deepseek"), providerId: "deepseek" };
+    const resp = await fetch(target.url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey },
+      signal: controller.signal,
+      body: JSON.stringify(
+        assistantRequestBody(target, buildAssistantMessages(context, message))),
+    });
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => "");
+      console.log(logTag, resp.status, errText.slice(0, 200));
+      return { ok: false, status: resp.status };
+    }
+    const raw = await resp.text();
+    const reply = parseChatReply(raw);
+    if (!reply) {
+      console.log(logTag, "EMPTY", String(raw).slice(0, 120));
+      return { ok: false, status: resp.status };
+    }
+    return { ok: true, reply };
+  } catch (e) {
+    if (e && e.name === "AbortError") console.log(logTag, "TIMEOUT");
+    else console.log(logTag, "ERROR");
+    return { ok: false, status: 0 };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /* P3：扣子 v3/chat 流式调用。云函数内部收流、拼完整回复，再以非流式返回 App，
@@ -514,12 +551,26 @@ async function handle(path, method, params, body, uid) {
     const payload = buildCozeChatBody({ botId, userId: uid, content, conversationId });
     const result = await callCozeChat(pat, payload);
     console.log("COZE_TIMING route_done", Date.now() - routeStarted, result.ok ? "ok" : "fail");
-    if (!result.ok) return { ok: false, message: result.message };
-    return {
-      ok: true,
-      reply: result.reply,
-      conversationId: result.conversationId || conversationId || "",
-    };
+    if (result.ok) {
+      return {
+        ok: true,
+        reply: result.reply,
+        conversationId: result.conversationId || conversationId || "",
+      };
+    }
+    /* 扣子失败（免费版 API 额度用完、超时、空正文）→ DeepSeek 兜底。
+       兜底不继承多轮上下文：只带当天摘要，conversationId 置空由客户端重开。 */
+    const fallbackKey = String(process.env.DEEPSEEK_API_KEY || "").trim();
+    console.log("COZE_FAIL_KIND", isCozeQuotaError(result.message) ? "quota" : "other");
+    if (fallbackKey && Date.now() - routeStarted < 18000) {
+      const fb = await callAssistantAi(fallbackKey, context, message, "ASSISTANT_HTTP");
+      if (fb.ok) {
+        console.log("ASSISTANT_FALLBACK ok", Date.now() - routeStarted);
+        return { ok: true, reply: fb.reply, conversationId: "", channel: "deepseek" };
+      }
+      console.log("ASSISTANT_FALLBACK fail", fb.status);
+    }
+    return { ok: false, message: cozeUserMessage(result.message) };
   }
 
 if (path === "/foods/custom" && method === "POST") {

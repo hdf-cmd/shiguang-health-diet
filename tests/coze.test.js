@@ -109,3 +109,20 @@ test('SSE 解析：没有正文时给出固定错误', () => {
   assert.equal(r.ok, false);
   assert.equal(r.message, 'AI 助手没有返回内容');
 });
+
+test('isCozeQuotaError：识别免费额度/余额类失败，不误伤业务错误', () => {
+  assert.equal(coze.isCozeQuotaError(
+    'Insufficient coze credits balance, please wait for the quota refresh or upgrade to paid version.'), true);
+  assert.equal(coze.isCozeQuotaError('额度不足'), true);
+  assert.equal(coze.isCozeQuotaError('bot error'), false);
+  assert.equal(coze.isCozeQuotaError(''), false);
+  assert.equal(coze.isCozeQuotaError(undefined), false);
+});
+
+test('cozeUserMessage：英文额度原文不外泄，空错误有兜底', () => {
+  assert.equal(coze.cozeUserMessage(
+    'Insufficient coze credits balance, please wait for the quota refresh or upgrade to paid version.'),
+    'AI 助手额度已用完，请稍后再试');
+  assert.equal(coze.cozeUserMessage(''), 'AI 助手服务异常，请稍后再试');
+  assert.equal(coze.cozeUserMessage('bot error'), 'bot error');
+});

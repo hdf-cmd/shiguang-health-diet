@@ -218,8 +218,28 @@ function createCozeStreamParser({ onFirstText } = {}) {
   };
 }
 
+/* 额度/付费类失败：扣子免费版 API 累计次数用完后只回一句英文余额提示，
+   这类失败换 DeepSeek 兜底仍能正常回答；其余失败也走兜底，但日志要分开记。 */
+const kCozeQuotaPattern = /insufficient|credits?|quota|balance|paid version|额度|余额|付费/i;
+
+function isCozeQuotaError(message) {
+  const s = typeof message === 'string' ? message : '';
+  return s ? kCozeQuotaPattern.test(s) : false;
+}
+
+/* 面向前端的错误文案：不让英文原文直接透传给用户。 */
+function cozeUserMessage(message) {
+  const s = typeof message === 'string' ? message.trim() : '';
+  if (!s) return 'AI 助手服务异常，请稍后再试';
+  if (isCozeQuotaError(s)) return 'AI 助手额度已用完，请稍后再试';
+  if (/token|unauthor|invalid|credential/i.test(s)) return 'AI 助手授权失效，请稍后再试';
+  return s;
+}
+
 module.exports = {
   buildTodaySummaryContext,
   buildCozeChatBody,
   createCozeStreamParser,
+  isCozeQuotaError,
+  cozeUserMessage,
 };
