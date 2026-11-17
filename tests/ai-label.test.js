@@ -9,6 +9,7 @@ test('validateLabelResult：合法营养表通过，字段归一化', () => {
     brand: '伊利',
     unit: 'ml',
     servingGrams: '200',
+    confidence: 'high',
     per100: { kcal: '89', protein: '3.1', carb: '12', fat: '3.1' },
     note: '每100毫升',
   });
@@ -18,6 +19,7 @@ test('validateLabelResult：合法营养表通过，字段归一化', () => {
   assert.equal(r.unit, 'ml');
   assert.equal(r.servingGrams, 200);
   assert.deepEqual(r.per100, { kcal: 89, protein: 3.1, carb: 12, fat: 3.1 });
+  assert.equal(r.confidence, 'high');
   assert.equal(r.verify, false);
 });
 
@@ -39,7 +41,7 @@ test('validateLabelResult：全 0、越界、能量不自洽、unreadable 分别
   assert.equal(label.validateLabelResult(null).reason, 'shape');
 });
 
-test('validateLabelResult：serveGrams 越界置空，空名字允许', () => {
+test('validateLabelResult：serveGrams 越界置空，空名字允许，缺 confidence 按 low', () => {
   const r = label.validateLabelResult({
     ok: true,
     name: '',
@@ -49,6 +51,8 @@ test('validateLabelResult：serveGrams 越界置空，空名字允许', () => {
   assert.equal(r.ok, true);
   assert.equal(r.name, '');
   assert.equal(r.servingGrams, null);
+  assert.equal(r.confidence, 'low');
+  assert.equal(r.verify, true);
 });
 
 test('buildLabelScanMessages：带 hint 与严格重试提示', () => {

@@ -64,6 +64,8 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
     if (_speakingId != null) await _stopSpeak();
     if (!mounted) return;
     final epoch = _epoch;
+    // DeepSeek 没有服务端会话：带上最近 8 条历史补多轮上下文。
+    final history = _recentHistory();
     setState(() {
       _messages.add(_ChatMessage(++_seq, _ChatRole.user, text));
       _input.clear();
@@ -77,6 +79,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
             conversationId: _conversationId,
             useTodaySummary: _useTodaySummary,
             date: todayIso(),
+            history: history.isEmpty ? null : history,
           );
       if (!mounted || epoch != _epoch) return;
       final reply = '${r['reply'] ?? ''}'.trim();
@@ -96,6 +99,19 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
       });
       _scrollToBottom();
     }
+  }
+
+  /// 最近 8 条已完成的对话（不含正在发送的这条），云端会再截断一次。
+  List<Map<String, String>> _recentHistory() {
+    final sent = _messages.where((m) => m.text.trim().isNotEmpty).toList();
+    final tail = sent.length > 8 ? sent.sublist(sent.length - 8) : sent;
+    return [
+      for (final m in tail)
+        {
+          'role': m.role == _ChatRole.user ? 'user' : 'assistant',
+          'content': m.text.trim(),
+        },
+    ];
   }
 
   Future<void> _newChat() async {
@@ -289,7 +305,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
                         color: Tokens.ink)),
                 Text(
                   _useTodaySummary
-                      ? '会发送今天的饮食摘要给扣子智能体'
+                      ? '会发送今天的饮食摘要给 AI 助手'
                       : '不发送今天的饮食数据',
                   style: const TextStyle(
                       fontSize: Tokens.textXs, color: Tokens.ink3),

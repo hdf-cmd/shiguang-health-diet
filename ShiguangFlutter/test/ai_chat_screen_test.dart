@@ -73,6 +73,7 @@ void main() {
     expect(api.lastCozeUseSummary, isTrue);
     expect(api.lastCozeDate, hasLength(10));
     expect(api.lastCozeConversationId, isNull);
+    expect(api.lastCozeHistory, isNull, reason: '首轮没有历史');
     expect(find.text('今天晚餐吃什么？'), findsOneWidget);
     expect(find.text('今天的蛋白质还差 53g，晚餐加 120g 瘦牛肉。'), findsOneWidget);
 
@@ -80,6 +81,10 @@ void main() {
     await tester.tap(find.byKey(const Key('ai-chat-send')));
     await tester.pumpAndSettle();
     expect(api.lastCozeConversationId, 'conv1');
+    expect(api.lastCozeHistory, [
+      {'role': 'user', 'content': '今天晚餐吃什么？'},
+      {'role': 'assistant', 'content': '今天的蛋白质还差 53g，晚餐加 120g 瘦牛肉。'},
+    ]);
   });
 
   testWidgets('推荐问题直接发送；关闭今日摘要后 useTodaySummary=false', (tester) async {

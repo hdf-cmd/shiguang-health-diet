@@ -654,7 +654,7 @@ class StubHealthApi implements HealthApi {
     return estimateResult;
   }
 
-  /* ---------- P3 扣子饮食助手：cozeChat ---------- */
+  /* ---------- P3 AI 饮食助手：cozeChat ---------- */
 
   Map<String, dynamic> cozeResult = <String, dynamic>{
     'ok': true,
@@ -667,6 +667,7 @@ class StubHealthApi implements HealthApi {
   String? lastCozeConversationId;
   String? lastCozeDate;
   bool? lastCozeUseSummary;
+  List<Map<String, String>>? lastCozeHistory;
 
   @override
   Future<Map<String, dynamic>> cozeChat(
@@ -674,12 +675,14 @@ class StubHealthApi implements HealthApi {
     String? conversationId,
     bool useTodaySummary = true,
     String? date,
+    List<Map<String, String>>? history,
   }) async {
     cozeCalls++;
     lastCozeMessage = message;
     lastCozeConversationId = conversationId;
     lastCozeUseSummary = useTodaySummary;
     lastCozeDate = date;
+    lastCozeHistory = history;
     if (cozeError != null) throw cozeError!;
     return cozeResult;
   }

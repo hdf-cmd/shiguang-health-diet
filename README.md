@@ -1,10 +1,10 @@
 # 食光 · 健康饮食 App
 
-**当前维护版本：v2.11.0（Flutter 2.x）** ｜ 1.x H5 壳停更在 v1.4.0 ｜ 变更历史见 [CHANGELOG.md](CHANGELOG.md)
+**当前维护版本：v2.15.5（Flutter 2.x）** ｜ 1.x H5 壳停更在 v1.4.0 ｜ 变更历史见 [CHANGELOG.md](CHANGELOG.md)
 
 把每一餐，记成时光。核心闭环：**记三餐 → 算热量 → 看趋势**。
 
-- **2.x Flutter 线（当前维护）**：工程在 `ShiguangFlutter/`，Flutter 原生壳；APK 为 `食光Flutter-v2.11.0.apk`；数据走腾讯云 CloudBase（环境 `cloud1-d6g4x9h9m507b429c`）单入口云函数 `api-diet`。
+- **2.x Flutter 线（当前维护）**：工程在 `ShiguangFlutter/`，Flutter 原生壳；APK 为 `食光Flutter-v2.15.5.apk`；数据走腾讯云 CloudBase（环境 `cloud1-d6g4x9h9m507b429c`）单入口云函数 `api-diet`。
 - **1.x H5 线（已停更）**：纯静态 HTML/CSS/ES Module JS（无构建），见本目录 `index.html` + `js/` + `css/`；APK 为 `食光-v1.4.0.apk`（Kotlin WebView 壳）。
 
 ## Flutter 2.x（当前维护）
@@ -12,15 +12,20 @@
 | 模块 | 说明 |
 |------|------|
 | 核心闭环 | 登录/注册、今日餐盘、饮食记录、报告、我的；与 1.x 功能对齐 |
+| 条形码扫码 | 商品条码扫描（EAN-8/13、UPC-A、GTIN-14）；命中顺序：用户自定义绑定 → OFF 缓存 → OFF 实时。未收录时可拍包装营养成分表或手动添加，保存后条码绑定到自定义食物，下次扫码直接命中 |
+| 描述一餐 | 一句话描述吃了什么；模型只抽食物名/份量与份量词，营养来自内置库/自定义库；每项返回 top-3 候选可切换；库内无命中才按菜名估算并标「AI 估算」 |
+| 营养表识别 | 未收录商品可拍包装背面营养成分表，视觉模型读每 100g/ml 的热量/蛋白/碳水/脂肪，预填自定义食物表单，用户核对后保存并绑定条码 |
 | AI 识菜 | 拍照识别；识别失败可输入菜名 + 克数按菜名估算；支持自带 Key（DeepSeek / 通义千问 / Kimi / 智谱 / 豆包），未配置时回退内置通道 |
 | AI 饮食助手 | 扣子智能体；入口为 64dp 圆形 3D 头像「小光」（默认左下、底部 AI 字标、可拖拽并吸附左右边缘）；点按打开 **62% 底部半屏聊天**，收起即结束本次会话；可参考今日饮食摘要；助手回复支持系统 TTS 朗读 |
 | 通知/体重 | 三餐与喝水提醒、BLE 体脂秤体重同步（仅体重）等 |
 
 ### AI 饮食助手配置
 
-- 云函数路由：`POST /ai/coze-chat`，入参 `{message, date?, conversationId?, useTodaySummary?}`，出参 `{ok, reply, conversationId, channel?}`。
-- 环境变量：`COZE_BOT_ID`、`COZE_PAT` 只存 CloudBase 云函数环境变量，客户端不接触；PAT 按扣子控制台有效期轮换。
-- 扣子免费版 API 是**累计 500 次**（官方定价页口径；用完后只回英文余额提示，即使账号还有积分）。扣子失败（额度用完 / 超时 / 空正文）时自动降级到 DeepSeek 回答，走 `DEEPSEEK_API_KEY`，返回 `channel: "deepseek"`；兜底只带当天摘要，不继承多轮上下文。2026-11-01 实测兜底单轮约 1.8s。
+- 云函数路由：`POST /ai/coze-chat`，入参 `{message, date?, conversationId?, useTodaySummary?, history?}`，出参 `{ok, reply, conversationId, channel?}`。
+- **通道顺序（2.15.3 起）**：默认 DeepSeek 主通道（`DEEPSEEK_API_KEY`），扣子（`COZE_BOT_ID` / `COZE_PAT`）只作备用。扣子免费版 API 是**累计 500 次**，用完后每次先等扣子失败再无谓多付一次往返；现在扣子报额度类错误后进程内熔断 10 分钟，期间直接走 DeepSeek。需要改回扣子优先时设云函数环境变量 `ASSISTANT_PRIMARY=coze`。
+- **多轮上下文**：DeepSeek 没有服务端会话，客户端每轮带最近 8 条 `history`（单条云端再截 200 字）；扣子仍用 `conversationId`。返回 `channel` 标明本次走哪条通道。
+- 今日摘要取数从「6 次串行往返」压成「4 个并行查询 + 本地求和」，云端实测 54–102ms（原 200–290ms）。
+- 2026-11-17 实测（云函数内部计时，不含移动网络）：无摘要 0.8–1.4s，带今日摘要 1.8–2.0s；升级前同链路 7–8s（扣子在线时）/ 报「额度已用完」（扣子额度耗尽后兜底 import 缺陷）。真机 RMX5010 + 2.15.3：冷请求 2.50s、热请求 2.21s（含冷启动 1.39s 与上下文取数）。
 - 聊天只做文字多轮 + 回复朗读，不做语音输入/免手循环。
 
 ## 1.x H5 线（已停更）
@@ -39,11 +44,11 @@
 
 ### 食物库体系
 
-搜索只走 **内置库（35 条用户常菜，带图 + 权威宏量）→ 用户自定义库**；外部 API（FatSecret/USDA）已全部移除（IP 白名单与稳定性问题，见交接文档 §7）。每条内置食物含餐次归属（早餐/正餐/零食，搜索按餐次过滤；分类原则：饮料归零食、面包归早餐/零食）、配图、蛋白质/碳水/脂肪真实值，多数带 `per100` 供「按份量加」换算。自定义食物同样支持份量单位（克/毫升）与餐次归类。
+搜索只走 **内置库（36 条用户常菜，带图 + 权威宏量）→ 用户自定义库**；外部食物搜索 API（FatSecret/USDA）已全部移除（IP 白名单与稳定性问题，见交接文档 §7）。条形码查询额外接 Open Food Facts（营养数据）与用户自定义绑定；国产商品未收录时走拍营养表识别。每条内置食物含餐次归属（早餐/正餐/零食，搜索按餐次过滤；分类原则：饮料归零食、面包归早餐/零食）、配图、蛋白质/碳水/脂肪真实值，多数带 `per100` 供「按份量加」换算。自定义食物同样支持份量单位（克/毫升）与餐次归类。
 
 ## 使用
 
-- **手机（当前维护线）**：安装 `食光Flutter-v2.11.0.apk`（允许未知来源安装），注册账号即可使用。
+- **手机（当前维护线）**：安装 `食光Flutter-v2.15.5.apk`（允许未知来源安装），注册账号即可使用。
 - **手机（1.x H5，停更）**：安装 `食光-v1.4.0.apk`。
 - **电脑浏览器（1.x H5）**：`python -m http.server 8765` 后访问 `http://localhost:8765`；`file://` 下会被 CORS 拦截，需经 localhost 访问才能连真实后端。
 
@@ -52,7 +57,7 @@
 | 内容 | 路径 |
 |------|------|
 | Flutter 工程（当前维护） | `ShiguangFlutter/`（`lib/app` 外壳/主题，`lib/features` 页面，`lib/data` 接口层，`test/` 全量测试） |
-| 云函数源码 | `HealthyDiet/cloudfunctions/api-diet/`（`index.js` 路由 + `ai.js` 识菜 + `coze.js` 饮食助手 + `data/foods.js`） |
+| 云函数源码 | `HealthyDiet/cloudfunctions/api-diet/`（`index.js` 路由 + `ai.js` 识菜/估算 + `ai_meal.js` 描述一餐 + `ai_label.js` 营养表 + `barcode.js` 条码 + `services/` 路由体 + `coze.js` 饮食助手 + `data/foods.js`） |
 | Node 测试 | `tests/`（`node:test`，零依赖） |
 | 1.x H5 前端 | 本目录（`js/app.js` 入口，`js/logic.js` 领域逻辑，`js/state.js` 状态，`js/api.js` 接口层） |
 | H5 前端 assets 副本 | `HealthyDiet/app/src/main/assets/web/`（构建时 `preBuild` 自动同步） |
@@ -63,8 +68,9 @@
 ```bash
 # Flutter（当前维护）
 cd ShiguangFlutter
+dart analyze lib
 flutter test
-flutter build apk --release --split-per-abi
+flutter build apk --release
 
 # Node / 云函数测试
 node --test tests/*.test.js
@@ -76,26 +82,26 @@ npm run check:version
 cd HealthyDiet && gradlew.bat assembleRelease
 ```
 
-> 本机工作区路径含中文，Flutter release 构建若报 `app.dill` 读取失败，按 `docs/superpowers/plans` 里的 ASCII 沙盒流程构建。
+> 本机工作区路径含中文，Flutter release 构建若报 `app.dill` 读取失败，按 [AGENTS.md](AGENTS.md) 的 ASCII 沙盒流程构建：复制 `android/`、`lib/`、`assets/`、`pubspec.yaml`、**`pubspec.lock`**、`analysis_options.yaml` 到 ASCII 目录后构建，避免插件版本漂移。
 
 ## 版本管理
 
-- **Flutter 2.x**：版本号在 `ShiguangFlutter/pubspec.yaml` 的 `version`（当前 `2.11.0+21100`），同一版本的变更写入 `CHANGELOG.md`。
+- **Flutter 2.x**：版本号在 `ShiguangFlutter/pubspec.yaml` 的 `version`（当前 `2.15.2+23108`），同一版本的变更写入 `CHANGELOG.md`。
 - **1.x H5**：版本号唯一来源是 `package.json` 的 `version`，`js/version.js` 手写同步，CI 用 `npm run check:version` 拦截漂移。
 
 ## 签名
 
-release 包用本地密钥库签名，凭据放 `HealthyDiet/keystore.properties`（已入 `.gitignore`，**严禁入库**）：
+release 包用本地密钥库签名，凭据放 `ShiguangFlutter/android/key.properties`（已入 `.gitignore`，**严禁入库**）：
 
-- 密钥库：`HealthyDiet/keystore/shiguang-release.jks`（alias `shiguang`，RSA 2048，有效期 10000 天）
+- 密钥库：`ShiguangFlutter/android/shiguang-flutter-release.jks`（alias `shiguang-flutter`，RSA 2048）
 - ⚠️ **密钥库与密码一旦丢失，将无法再更新已安装的 App**（只能卸载重装），请异地备份
 - 凭据文件缺失时构建仍可进行，但产出未签名包（便于他人 clone 后编译）
 
 ## 待办
 
-1. **图片单一事实来源整改**：把 H5 `img/` 纳入仓库根目录并加入 `scripts/sync-web-assets.mjs` 的 TARGETS，解决浏览器预览图片 404 + 图片只能在 assets 里维护的问题
-2. **AI 饮食助手延迟**：首字约 2.6s、整段约 7–8s；评估端到端流式 / 更快模型
-3. 前端热更新（H5；云存储 + 版本号拉取，免重装 APK）
+1. **iOS 相机权限与打包**：当前只有 Android 线；iOS 未配 `NSCameraUsageDescription`，也未打包
+2. **营养表识别体验**：对低光、反光、倾斜拍摄较敏感；识别失败时可重拍或手动填写
+3. **AI 饮食助手延迟**：首字约 2.6s、整段约 7–8s；评估端到端流式 / 更快模型
 4. 真机手感回访（滑动阈值、长按删除发现性）；首页滚动位置偶发停底观察项
 
 ## 许可证

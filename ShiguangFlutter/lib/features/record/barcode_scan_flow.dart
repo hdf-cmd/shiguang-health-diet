@@ -19,12 +19,16 @@ class BarcodeLookupResult {
   const BarcodeLookupResult({
     required this.barcode,
     this.food,
+    this.product,
     this.notFound = false,
     this.message,
   });
 
   final String barcode;
   final Map<String, dynamic>? food;
+
+  /// 国内条码库返回的商品身份（名称/品牌/规格），没有营养。
+  final Map<String, dynamic>? product;
   final bool notFound;
   final String? message;
 }
@@ -59,15 +63,73 @@ Future<void> openBarcodeScanFlow(
     return;
   }
 
+  final product = result.product;
+  if (product != null) {
+    final name = '${product['name'] ?? ''}'.trim();
+    final brand = '${product['brand'] ?? ''}'.trim();
+    final spec = '${product['spec'] ?? ''}'.trim();
+    final meta = [brand, spec].where((e) => e.isNotEmpty).join(' · ');
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('商品已识别'),
+        content: Text(
+          '${name.isEmpty ? '未命名商品' : name}'
+          '${meta.isEmpty ? '' : '\n$meta'}\n\n'
+          '商品库没有这条商品的营养数据。拍包装背面的营养成分表即可自动填入，'
+          '保存后会绑定条码，下次扫码直接命中。',
+          style: const TextStyle(fontSize: Tokens.textSm),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop('cancel'),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop('manual'),
+            child: const Text('手动添加'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop('label'),
+            child: const Text('拍营养表'),
+          ),
+        ],
+      ),
+    );
+    if (!context.mounted) return;
+    if (choice == 'manual') {
+      await openCustomFoodSheet(
+        context,
+        date: date,
+        meal: meal,
+        initialName: name.isEmpty ? null : name,
+        initialBarcode: result.barcode,
+        onSaved: onSaved ?? () {},
+      );
+    } else if (choice == 'label') {
+      await openNutritionLabelScan(
+        context,
+        ref,
+        barcode: result.barcode,
+        date: date,
+        meal: meal,
+        initialName: name.isEmpty ? null : name,
+        onSaved: onSaved,
+      );
+    }
+    return;
+  }
+
   if (result.notFound) {
     final choice = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('条码未收录'),
         content: Text(
-          '${result.barcode}\n\n商品库里没有这条记录。可以拍包装背面的营养成分表，'
-          '自动填入名称与每 100g 营养；也可以手动填写。保存后会记住条码，'
-          '下次扫同一件商品直接命中。',
+          '${result.barcode}\n\n'
+          '${result.message ?? '商品库里没有这条记录。'}\n\n'
+          '可以拍包装背面的营养成分表，自动填入名称与每 100g 营养；也可以手动填写。'
+          '保存后会记住条码，下次扫同一件商品直接命中。',
           style: const TextStyle(fontSize: Tokens.textSm),
         ),
         actions: [
@@ -140,16 +202,20 @@ class _BarcodeScanPageState extends ConsumerState<BarcodeScanPage> {
     try {
       final r = await ref.read(healthApiProvider).lookupBarcode(code);
       if (!mounted) return;
-      final found = r['found'] == true && r['food'] is Map;
-      final food = found
+      final food = r['found'] == true && r['food'] is Map
           ? Map<String, dynamic>.from(r['food'] as Map)
           : null;
+      final product = r['found'] == true && r['product'] is Map
+          ? Map<String, dynamic>.from(r['product'] as Map)
+          : null;
+      final found = food != null || product != null;
       Navigator.of(context).pop(
         BarcodeLookupResult(
           barcode: code,
           food: food,
+          product: product,
           notFound: !found && r['ok'] == true,
-          message: food == null ? (r['message'] as String?) : null,
+          message: r['message'] as String?,
         ),
       );
     } on ApiException catch (e) {

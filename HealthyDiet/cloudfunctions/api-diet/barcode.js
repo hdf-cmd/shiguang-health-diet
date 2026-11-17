@@ -247,6 +247,32 @@ function isCacheFresh(doc, now) {
   return at > 0 && now - at < kOffCacheTtlMs;
 }
 
+/* 国内免费条码库（apizero）响应 → 商品身份。只给名称/品牌/规格，不给营养。
+ * 成功：{found:true, identity:{...}}；未收录/限流/HTTP 错误：{found:false, reason}。 */
+function parseCnIdentity(status, payload) {
+  if (status !== 200) return { found: false, reason: 'http' };
+  if (!payload || typeof payload !== 'object') return { found: false, reason: 'shape' };
+  if (payload.code !== 0) {
+    return { found: false, reason: payload.code === 4029 ? 'rate_limit' : 'http' };
+  }
+  const data = payload.data;
+  if (!data || typeof data !== 'object' || data.found !== true) {
+    return { found: false, reason: 'not_found' };
+  }
+  const name = String(data.name || '').trim().slice(0, 60);
+  if (!name) return { found: false, reason: 'name' };
+  return {
+    found: true,
+    identity: {
+      name,
+      brand: String(data.brand || '').trim().slice(0, 40),
+      manufacturer: String(data.manufacturer || '').trim().slice(0, 80),
+      spec: String(data.spec || '').trim().slice(0, 40),
+      category: String(data.category || '').trim().slice(0, 60),
+    },
+  };
+}
+
 module.exports = {
   kAllowedLengths,
   kOffCacheTtlMs,
@@ -259,5 +285,6 @@ module.exports = {
   customFoodRow,
   parseOffResponse,
   isCacheFresh,
+  parseCnIdentity,
   emojiFor,
 };

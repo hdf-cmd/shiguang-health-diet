@@ -15,6 +15,8 @@ async function handleBarcodeLookup({
   fetchOffProduct,
   readOffCache,
   writeOffCache,
+  fetchIdentity,
+  writeIdentityCache,
   now = Date.now,
 }) {
   const barcode = normalizeBarcode(code);
@@ -34,6 +36,10 @@ async function handleBarcodeLookup({
   const cached = await readOffCache(barcode);
   if (cached && cached.food && isCacheFresh(cached, now())) {
     return { ok: true, found: true, source: "cache", barcode, food: cached.food };
+  }
+  // 只有商品身份、没有营养的缓存（国内条码库）：同样 30 天有效
+  if (cached && cached.identity && isCacheFresh({ updatedAt: cached.identityAt || 0 }, now())) {
+    return { ok: true, found: true, source: "cn-name", barcode, product: cached.identity };
   }
 
   // 3) 配额：只在实际查 OFF 前扣
@@ -58,19 +64,38 @@ async function handleBarcodeLookup({
   }
 
   /* OFF 明确「没这条 / 营养不全」→ 有旧缓存就给旧缓存（stale），
-     否则按未收录返回；网络/5xx 也优先回旧缓存。 */
+     否则查国内条码库拿商品身份；网络/5xx 也先回旧缓存。 */
   const notFound = r.found === false &&
     ["not_found", "nutrition", "name"].indexOf(r.reason) > -1;
   if (cached && cached.food) {
     return { ok: true, found: true, source: "cache", stale: true, barcode, food: cached.food };
   }
+
+  const identity = await fetchIdentity(barcode);
+  if (identity && identity.found) {
+    await writeIdentityCache(barcode, identity.identity);
+    return {
+      ok: true, found: true, source: "cn-name", barcode,
+      product: identity.identity,
+      quota: { used: used + 1, limit: dailyLimit },
+    };
+  }
+
+  const identityBusy = identity && ["network", "http", "rate_limit"].indexOf(identity.reason) > -1;
+  const offBusy = r.reason === "network" || r.reason === "http";
+  const busy = identityBusy || offBusy;
   if (notFound) {
     return {
       ok: true, found: false, barcode, reason: r.reason,
-      message: r.reason === "not_found" ? "条码未收录" : "该商品营养数据不全，请手动添加",
+      message: busy ? "条码服务繁忙，请拍营养表或手动添加" : "条码未收录",
     };
   }
-  return { ok: false, code: "off_unavailable", message: "条码服务暂时不可用，请手动添加" };
+  return {
+    ok: true, found: false, barcode,
+    message: busy
+      ? "条码服务暂时不可用，请拍营养表或手动添加"
+      : "条码未收录，请拍营养表或手动添加",
+  };
 }
 
 module.exports = { handleBarcodeLookup };

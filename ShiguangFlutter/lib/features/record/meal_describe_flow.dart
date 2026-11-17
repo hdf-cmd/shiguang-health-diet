@@ -15,6 +15,7 @@ import '../../domain/models.dart' show Per100;
 import '../../domain/portion.dart' show portionMacros;
 import '../common/sheet.dart' show showShiguangSheet;
 import 'record_controller.dart';
+import 'record_toast.dart' show showAddedToast;
 
 Future<void> openMealDescribeFlow(
   BuildContext context,
@@ -364,7 +365,7 @@ class _MealReviewSheetState extends ConsumerState<_MealReviewSheet> {
       return;
     }
     final controller = ref.read(recordControllerProvider);
-    final messenger = ScaffoldMessenger.of(context);
+    final overlay = Overlay.of(context, rootOverlay: true);
     setState(() => _busy = true);
     var done = 0;
     for (var i = 0; i < picks.length; i++) {
@@ -427,9 +428,7 @@ class _MealReviewSheetState extends ConsumerState<_MealReviewSheet> {
     if (!mounted) return;
     Navigator.of(context).pop();
     if (done > 0) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('已记入 $done 项 · 可继续添加')),
-      );
+      showAddedToast(overlay, '已记入 $done 项 · 可继续添加');
     }
   }
 

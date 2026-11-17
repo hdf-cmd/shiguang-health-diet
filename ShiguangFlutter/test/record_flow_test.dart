@@ -21,6 +21,8 @@ import 'package:shiguang_flutter/features/record/record_controller.dart'
     show defaultMealAt, recordControllerProvider, recordsProvider, summaryProvider;
 import 'package:shiguang_flutter/features/record/record_screen.dart'
     show RecordScreen;
+import 'package:shiguang_flutter/features/record/record_toast.dart'
+    show kAddedToastDuration;
 
 import 'stubs/stub_health_api.dart';
 
@@ -226,6 +228,9 @@ void main() {
             .onPressed,
         isNotNull);
     expect(find.text('已添加 鸡蛋 · 可继续添加'), findsOneWidget);
+    // 提示胶囊画在根 Overlay 上（弹层之上可见、IgnorePointer 不拦点击），1.2s 自动消失
+    await tester.pump(kAddedToastDuration + const Duration(milliseconds: 50));
+    expect(find.text('已添加 鸡蛋 · 可继续添加'), findsNothing);
   });
 
   /* ---------- ③ per100 食物：份量弹层 按克加 ---------- */
@@ -247,7 +252,8 @@ void main() {
         findsOneWidget);
 
     // ± 步进（老大 09-27 反馈滑杆改加减，一档 5g）→ 预览数字必须变化
-    await tester.tap(find.text('＋'));
+    // 按按钮而非文字：测试字体的全角「＋」宽度为 0，文字中心点会落在边界上
+    await tester.tap(find.widgetWithText(OutlinedButton, '＋'));
     await tester.pumpAndSettle();
     expect(find.text('205g ≈ 238 kcal · 蛋白 5.3g / 碳水 53.1g / 脂肪 0.6g'),
         findsOneWidget); // 200→205 线性换算（portionMacros 口径）
@@ -276,6 +282,8 @@ void main() {
     expect(body['fat'], r.fat);
     expect(body['emoji'], '🍚');
     expect(body['image'], 'img/foods/rice.jpg');
+    // 提示胶囊 1.2s 自清，测试结束前走完定时器
+    await tester.pump(kAddedToastDuration + const Duration(milliseconds: 50));
   });
 
   testWidgets('③b 不步进直接确认：200g（baseG 预设）→ body kcal/三素精确等于 232/5.2/51.8/0.6',
@@ -295,6 +303,7 @@ void main() {
     expect(api.addBodies.single['protein'], 5.2);
     expect(api.addBodies.single['carb'], 51.8);
     expect(api.addBodies.single['fat'], 0.6);
+    await tester.pump(kAddedToastDuration + const Duration(milliseconds: 50));
   });
 
   /* ---------- ④ 删除：长按 → 确认 → deleteFoodRecord ---------- */

@@ -19,6 +19,7 @@ import '../../domain/models.dart' show Per100;
 import '../../domain/portion.dart' show portionMacros;
 import '../common/sheet.dart' show showShiguangSheet;
 import 'record_controller.dart';
+import 'record_toast.dart' show showAddedToast;
 
 /// 滑杆取值域与步进（简报：1-maxG 步进 5；下限取 5 保证整步格，上限沿用 H5 2000）
 const double _kMinG = 5;
@@ -119,8 +120,8 @@ class _PortionSheetState extends ConsumerState<PortionSheet> {
       'fat': r.fat,
       'image': widget.food['image'] ?? '',
     };
-    // pop 后本 State 即卸载，先捕获 messenger（SnackBar 在根 ScaffoldMessenger 层渲染）
-    final messenger = ScaffoldMessenger.of(context);
+    // pop 后本 State 即卸载，先捕获 overlay（提示胶囊画在根 Overlay 上，弹层之上可见）
+    final overlay = Overlay.of(context, rootOverlay: true);
     final pending =
         controller.addRecord(widget.date, body, pendingKey: _pendingKey);
     // addRecord 同步登记在途后立即重绘 → pending 期按钮禁用 +「请稍候…」（js:677/1902）
@@ -129,9 +130,8 @@ class _PortionSheetState extends ConsumerState<PortionSheet> {
       if (await pending) {
         if (!mounted) return;
         Navigator.of(context).pop(); // 份量弹层收起，回到搜索弹层可继续（H5 763）
-        messenger.showSnackBar(SnackBar(
-            content: Text(
-                '已添加 ${widget.food['name'] ?? ''} $g$_unit · 可继续添加')));
+        showAddedToast(overlay,
+            '已添加 ${widget.food['name'] ?? ''} $g$_unit · 可继续添加');
       }
     } on ApiException catch (e) {
       _toast('添加失败：${e.message}');

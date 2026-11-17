@@ -73,7 +73,7 @@ void main() {
         {'id': 'qwen', 'model': 'qwen-plus', 'key': 'sk-12345678'});
   });
 
-  test('cozeChat → /ai/coze-chat；message/date/useTodaySummary/conversationId', () async {
+  test('cozeChat → /ai/coze-chat；message/date/useTodaySummary/conversationId/history', () async {
     await api.cozeChat('今天晚餐吃什么？',
         date: '2026-10-20', useTodaySummary: true);
     expect(adapter.envelopes.last['path'], '/ai/coze-chat');
@@ -90,6 +90,19 @@ void main() {
       'message': '继续',
       'conversationId': 'conv1',
       'useTodaySummary': false,
+    });
+
+    await api.cozeChat('再问一句', history: [
+      {'role': 'user', 'content': '晚餐吃什么'},
+      {'role': 'assistant', 'content': '水煮虾'},
+    ]);
+    expect(adapter.envelopes.last['body'], {
+      'message': '再问一句',
+      'useTodaySummary': true,
+      'history': [
+        {'role': 'user', 'content': '晚餐吃什么'},
+        {'role': 'assistant', 'content': '水煮虾'},
+      ],
     });
   });
 }

@@ -133,6 +133,25 @@ test('customFoodRow：按 grams 反推 per100，字段与搜索行同形', () =>
   assert.equal(row.source, 'custom');
 });
 
+test('parseCnIdentity：成功返回商品身份，限流/未收录/HTTP 错误分类', () => {
+  const ok = barcode.parseCnIdentity(200, {
+    code: 0,
+    data: {
+      found: true, name: '君乐宝纯牛奶', brand: '君乐宝',
+      manufacturer: '君乐宝乳业集团股份有限公司', spec: '250毫升',
+      category: '牛奶（耐储存）',
+    },
+  });
+  assert.equal(ok.found, true);
+  assert.equal(ok.identity.name, '君乐宝纯牛奶');
+  assert.equal(ok.identity.spec, '250毫升');
+
+  assert.equal(barcode.parseCnIdentity(200, { code: 4029 }).reason, 'rate_limit');
+  assert.equal(barcode.parseCnIdentity(200, { code: 0, data: { found: false } }).reason, 'not_found');
+  assert.equal(barcode.parseCnIdentity(500, null).reason, 'http');
+  assert.equal(barcode.parseCnIdentity(200, { code: 0, data: { found: true, name: '' } }).reason, 'name');
+});
+
 test('isCacheFresh：30 天内新鲜，超期或缺失为旧', () => {
   const now = Date.now();
   assert.equal(barcode.isCacheFresh({ updatedAt: now - 1000 }, now), true);

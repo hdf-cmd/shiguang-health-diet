@@ -7,20 +7,19 @@ const {
   parseModelJson, validateScanResult, kAiScanDailyLimit, kAiImageMaxChars, kAiImagePrefix,
   providerErrorMessage,
   buildEstimateMessages, buildScanMessages, validateEstimateResult, resolveAiChannel, resolveAiChannels, chatRequestBody,
-  buildAssistantMessages, assistantRequestBody, parseChatReply,
 } = require("./ai");
 /* 条形码链路纯逻辑（校验位 / OFF 地址 / 商品映射，tests/barcode.test.js 覆盖） */
 const {
-  isBarcodeShape, buildOffProductUrl, parseOffResponse,
+  isBarcodeShape, buildOffProductUrl, parseOffResponse, parseCnIdentity,
 } = require("./barcode");
 /* 「描述一餐」纯逻辑（提示词 / 模型输出校验，tests/ai-meal.test.js 覆盖） */
 const { handleBarcodeLookup } = require("./services/barcode_route");
 const { handleMealParse } = require("./services/meal_parse_route");
 const { handleNutritionLabel } = require("./services/label_route");
+const { handleAssistantChat, createCozeCooldown } = require("./services/assistant_route");
 // P3：扣子智能体（纯逻辑在 coze.js，node --test 覆盖）
 const {
   buildTodaySummaryContext, buildCozeChatBody, createCozeStreamParser,
-  isCozeQuotaError, cozeUserMessage,
 } = require("./coze");
 
 const app = cloud.init({
@@ -30,6 +29,9 @@ const app = cloud.init({
 const auth = app.auth();
 const db = app.database();
 const _ = db.command;
+
+/* 扣子额度熔断（进程内）：配额耗尽后 10 分钟内不再调用扣子，避免每次对话白等一次失败往返。 */
+const cozeCooldown = createCozeCooldown();
 
 const GATEWAY_BASE = "https://cloud1-d6g4x9h9m507b429c.api.tcloudbasegateway.com";
 /* FATSECRET_REMOVED: 外部食物接口已移除，搜索走内置库+自定义库 */
@@ -281,38 +283,51 @@ async function readOffCache(barcode) {
   }
 }
 
-/* P3 兜底：扣子不可用时用 DeepSeek 文本对话。超时收紧到 10s，
-   与扣子 25s 上限合计仍留在客户端 30s 之内。 */
-async function callAssistantAi(apiKey, context, message, logTag) {
+/* 国内条码库（apizero）：只返回商品身份，不返回营养。免费额度和 Key 见 README。 */
+const kCnBarcodeEndpoint = 'https://v1.apizero.cn/api/barcode-lookup';
+
+async function fetchCnBarcodeIdentity(barcode) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10000);
+  const timer = setTimeout(() => controller.abort(), 8000);
+  const key = String(process.env.BARCODE_API_KEY || '').trim();
   try {
-    const target = { ...providerTarget("deepseek"), providerId: "deepseek" };
-    const resp = await fetch(target.url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey },
+    const url = new URL(kCnBarcodeEndpoint);
+    url.searchParams.set('barcode', barcode);
+    const resp = await fetch(url, {
+      headers: {
+        Accept: 'application/json',
+        ...(key ? { Authorization: 'Bearer ' + key } : {}),
+      },
       signal: controller.signal,
-      body: JSON.stringify(
-        assistantRequestBody(target, buildAssistantMessages(context, message))),
     });
-    if (!resp.ok) {
-      const errText = await resp.text().catch(() => "");
-      console.log(logTag, resp.status, errText.slice(0, 200));
-      return { ok: false, status: resp.status };
-    }
-    const raw = await resp.text();
-    const reply = parseChatReply(raw);
-    if (!reply) {
-      console.log(logTag, "EMPTY", String(raw).slice(0, 120));
-      return { ok: false, status: resp.status };
-    }
-    return { ok: true, reply };
+    const text = await resp.text().catch(() => '');
+    let payload = null;
+    try { payload = text ? JSON.parse(text) : null; } catch (_) { payload = null; }
+    const result = parseCnIdentity(resp.status, payload);
+    if (!result.found) console.log('CN_BARCODE_MISS', resp.status, result.reason);
+    return result;
   } catch (e) {
-    if (e && e.name === "AbortError") console.log(logTag, "TIMEOUT");
-    else console.log(logTag, "ERROR");
-    return { ok: false, status: 0 };
+    console.log('CN_BARCODE_ERR', e && e.name === 'AbortError' ? 'TIMEOUT' : 'NETWORK');
+    return { found: false, reason: 'network' };
   } finally {
     clearTimeout(timer);
+  }
+}
+
+async function writeIdentityCache(barcode, identity) {
+  const now = Date.now();
+  try {
+    const col = db.collection('off_products');
+    const found = await col.where({ barcode }).limit(1).get();
+    if (found.data && found.data[0]) {
+      await col.doc(found.data[0]._id).update({
+        identity, identityAt: now, updatedAt: now,
+      });
+    } else {
+      await col.add({ barcode, identity, identityAt: now, updatedAt: now });
+    }
+  } catch (e) {
+    console.log('CN_CACHE_WRITE_ERR', e && e.message ? String(e.message).slice(0, 120) : '');
   }
 }
 
@@ -325,10 +340,10 @@ function cozeStatusMessage(status) {
   return "AI 助手服务异常（HTTP " + status + "）";
 }
 
-async function callCozeChat(pat, payload) {
+async function callCozeChat(pat, payload, timeoutMs = 25000) {
   const started = Date.now();
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 25000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const resp = await fetch("https://api.coze.cn/v3/chat", {
       method: "POST",
@@ -628,59 +643,62 @@ async function handle(path, method, params, body, uid) {
     });
   }
 
-  /* P3：扣子饮食助手。云函数按 uid 取当天摘要拼上下文；PAT/BotID 只存云端环境变量。 */
+  /* P3：AI 饮食助手。默认 DeepSeek 主通道、扣子备用（额度熔断），路由体在 services/assistant_route.js。 */
   if (path === "/ai/coze-chat" && method === "POST") {
-    const routeStarted = Date.now();
-    const message = String(body.message || "").trim();
-    if (!message) return { ok: false, message: "请输入问题" };
-    if (message.length > 500) return { ok: false, message: "问题太长，请控制在 500 字以内" };
     const botId = String(process.env.COZE_BOT_ID || "").trim();
     const pat = String(process.env.COZE_PAT || "").trim();
-    if (!botId || !pat) return { ok: false, message: "AI 助手未配置" };
     const date = /^\d{4}-\d{2}-\d{2}$/.test(String(body.date || ""))
       ? String(body.date) : today();
-    const useTodaySummary = body.useTodaySummary !== false;
-    let context = "";
-    if (useTodaySummary) {
-      try {
-        const [summary, records, exercises] = await Promise.all([
-          handle("/diet/summary", "GET", { date }, {}, uid),
-          handle("/diet/records", "GET", { date }, {}, uid),
-          handle("/diet/exercises", "GET", { date }, {}, uid),
+    return handleAssistantChat({
+      uid,
+      message: body.message,
+      history: body.history,
+      useTodaySummary: body.useTodaySummary !== false,
+      /* 上下文一次并行取齐：原来 summary 内部 3 次串行 + profile 串行，共 6 次往返；
+         这里 records/exercises/profile/water 并行后本地求和，只需 1 轮。 */
+      buildContext: async () => {
+        const [records, exercises, profile, water] = await Promise.all([
+          db.collection("sg_records").where({ uid, date })
+            .orderBy("createdAt", "asc").limit(100).get(),
+          db.collection("sg_exercises").where({ uid, date })
+            .orderBy("createdAt", "asc").limit(100).get(),
+          getOrCreateProfile(uid),
+          db.collection("sg_water").where({ uid, date }).limit(1).get(),
         ]);
-        const profile = await getOrCreateProfile(uid);
-        context = buildTodaySummaryContext({ date, summary, records, exercises, profile });
-      } catch (e) {
-        // 摘要取数失败不阻断对话：Bot 会按“看不到今日记录”回答。
-        console.log("COZE_CONTEXT_ERR", e && e.message ? String(e.message).slice(0, 120) : "");
-      }
-    }
-    console.log("COZE_TIMING context", Date.now() - routeStarted);
-    const content = context ? context + "\n\n用户问题：" + message : message;
-    const conversationId = String(body.conversationId || "").trim();
-    const payload = buildCozeChatBody({ botId, userId: uid, content, conversationId });
-    const result = await callCozeChat(pat, payload);
-    console.log("COZE_TIMING route_done", Date.now() - routeStarted, result.ok ? "ok" : "fail");
-    if (result.ok) {
-      return {
-        ok: true,
-        reply: result.reply,
-        conversationId: result.conversationId || conversationId || "",
-      };
-    }
-    /* 扣子失败（免费版 API 额度用完、超时、空正文）→ DeepSeek 兜底。
-       兜底不继承多轮上下文：只带当天摘要，conversationId 置空由客户端重开。 */
-    const fallbackKey = String(process.env.DEEPSEEK_API_KEY || "").trim();
-    console.log("COZE_FAIL_KIND", isCozeQuotaError(result.message) ? "quota" : "other");
-    if (fallbackKey && Date.now() - routeStarted < 18000) {
-      const fb = await callAssistantAi(fallbackKey, context, message, "ASSISTANT_HTTP");
-      if (fb.ok) {
-        console.log("ASSISTANT_FALLBACK ok", Date.now() - routeStarted);
-        return { ok: true, reply: fb.reply, conversationId: "", channel: "deepseek" };
-      }
-      console.log("ASSISTANT_FALLBACK fail", fb.status);
-    }
-    return { ok: false, message: cozeUserMessage(result.message) };
+        const rows = records.data || [];
+        const totals = { kcal: 0, carb: 0, protein: 0, fat: 0 };
+        for (const r of rows) {
+          totals.kcal += r.kcal || 0;
+          totals.carb += r.carb || 0;
+          totals.protein += r.protein || 0;
+          totals.fat += r.fat || 0;
+        }
+        return buildTodaySummaryContext({
+          date,
+          summary: {
+            ...totals,
+            target: profile.dailyKcal,
+            water: (water.data && water.data[0] && water.data[0].cups) || 0,
+          },
+          records: rows,
+          exercises: exercises.data || [],
+          profile,
+        });
+      },
+      primary: process.env.ASSISTANT_PRIMARY === "coze" ? "coze" : "deepseek",
+      deepSeek: { apiKey: process.env.DEEPSEEK_API_KEY || "" },
+      coze: {
+        conversationId: String(body.conversationId || "").trim(),
+        cooldown: cozeCooldown,
+        call: botId && pat
+          ? async ({ content, conversationId, timeoutMs }) =>
+            callCozeChat(
+              pat,
+              buildCozeChatBody({ botId, userId: uid, content, conversationId }),
+              timeoutMs)
+          : null,
+      },
+    });
   }
 
   /* M16：条码查询。路由体在 services/barcode_route.js（可注入依赖、可单测）。 */
@@ -696,6 +714,8 @@ async function handle(path, method, params, body, uid) {
       fetchOffProduct,
       readOffCache,
       writeOffCache,
+      fetchIdentity: fetchCnBarcodeIdentity,
+      writeIdentityCache,
     });
   }
 

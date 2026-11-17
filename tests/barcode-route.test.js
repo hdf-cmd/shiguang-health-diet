@@ -29,6 +29,8 @@ function makeDeps(overrides = {}) {
     fetchOffProduct: async () => ({ ok: true, found: true, food: FOOD }),
     readOffCache: async () => null,
     writeOffCache: async () => {},
+    fetchIdentity: async () => ({ found: false, reason: 'not_found' }),
+    writeIdentityCache: async () => {},
     now: () => 1000,
   };
   return { deps: { ...base, ...overrides }, updates };
@@ -97,8 +99,9 @@ test('条码路由：网络失败无缓存时报服务不可用，有旧缓存�
     fetchOffProduct: async () => ({ ok: false, found: false, reason: 'network' }),
   });
   const noCache = await handleBarcodeLookup({ ...deps, uid: 'u1', code: BARCODE });
-  assert.equal(noCache.ok, false);
-  assert.equal(noCache.code, 'off_unavailable');
+  assert.equal(noCache.ok, true);
+  assert.equal(noCache.found, false);
+  assert.match(noCache.message, /条码服务/);
 
   const { deps: withCache } = makeDeps({
     fetchOffProduct: async () => ({ ok: false, found: false, reason: 'network' }),
@@ -108,6 +111,48 @@ test('条码路由：网络失败无缓存时报服务不可用，有旧缓存�
   assert.equal(stale.ok, true);
   assert.equal(stale.stale, true);
   assert.equal(stale.food.name, '测试牛奶');
+});
+
+test('条码路由：OFF 未收录时查国内条码库拿商品身份', async () => {
+  let cachedIdentity = null;
+  const { deps } = makeDeps({
+    fetchOffProduct: async () => ({ ok: false, found: false, reason: 'not_found' }),
+    fetchIdentity: async () => ({
+      found: true,
+      identity: { name: '君乐宝纯牛奶', brand: '君乐宝', spec: '250毫升' },
+    }),
+    writeIdentityCache: async (code, identity) => { cachedIdentity = { code, identity }; },
+  });
+  const r = await handleBarcodeLookup({ ...deps, uid: 'u1', code: BARCODE });
+  assert.equal(r.ok, true);
+  assert.equal(r.source, 'cn-name');
+  assert.equal(r.product.name, '君乐宝纯牛奶');
+  assert.equal(cachedIdentity.identity.spec, '250毫升');
+});
+
+test('条码路由：国内条码库身份缓存命中不再请求', async () => {
+  let fetched = false;
+  const { deps } = makeDeps({
+    readOffCache: async () => ({
+      identity: { name: '君乐宝纯牛奶', brand: '君乐宝', spec: '250毫升' },
+      identityAt: 900,
+    }),
+    fetchIdentity: async () => { fetched = true; return { found: false, reason: 'not_found' }; },
+  });
+  const r = await handleBarcodeLookup({ ...deps, uid: 'u1', code: BARCODE });
+  assert.equal(r.source, 'cn-name');
+  assert.equal(r.product.name, '君乐宝纯牛奶');
+  assert.equal(fetched, false);
+});
+
+test('条码路由：OFF 与国内库都未命中返回 found=false', async () => {
+  const { deps } = makeDeps({
+    fetchOffProduct: async () => ({ ok: false, found: false, reason: 'not_found' }),
+  });
+  const r = await handleBarcodeLookup({ ...deps, uid: 'u1', code: BARCODE });
+  assert.equal(r.ok, true);
+  assert.equal(r.found, false);
+  assert.match(r.message, /条码未收录/);
 });
 
 test('条码路由：配额耗尽不再请求 OFF', async () => {

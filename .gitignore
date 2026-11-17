@@ -30,5 +30,9 @@ cloud-backup/
 # Flutter
 ShiguangFlutter/.dart_tool/
 ShiguangFlutter/build/
+ShiguangFlutter/android/build/
 ShiguangFlutter/android/.gradle/
 ShiguangFlutter/.flutter-plugins*
+
+# 发布包本地分发，不入库
+食光*.apk

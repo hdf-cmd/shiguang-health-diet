@@ -32,6 +32,7 @@ import 'food_scan_sheet.dart' show openFoodScanFlow;
 import 'meal_describe_flow.dart' show openMealDescribeFlow;
 import 'freq_loading_strip.dart';
 import 'portion_sheet.dart';
+import 'record_toast.dart' show showAddedToast;
 import 'food_freq.dart';
 import 'record_controller.dart';
 
@@ -138,7 +139,8 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
     // M11-T2：toast 移到乐观位之后、回包之前（≙ H5 js/app.js:677「已添加 …
     // 可继续添加」先响，失败再补一条「添加失败」）。同键在途的丢弃支由上面
     // isInFlight 预检拦住（H5 靠 btn.disabled，同形），故此处不再判返回值。
-    _toast('已添加 ${f['name'] ?? ''} · 可继续添加');
+    showAddedToast(Overlay.of(context, rootOverlay: true),
+        '已添加 ${f['name'] ?? ''} · 可继续添加');
     try {
       await pending;
     } on ApiException catch (e) {

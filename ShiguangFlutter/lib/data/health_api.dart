@@ -270,13 +270,16 @@ class HealthApi {
         timeout: const Duration(seconds: 25),
       );
 
-  /// 扣子饮食助手（P3）：云函数内部收 SSE 后返回
-  /// {ok, reply, conversationId}；服务端最多等 25s，客户端放宽到 30s。
-  /// 今日摘要由云端按 uid 取数，客户端只传开关和日期。
-  Future<Map<String, dynamic>> cozeChat(    String message, {
+  /// AI 饮食助手（P3）：云端默认 DeepSeek 主通道、扣子备用，返回
+  /// {ok, reply, conversationId?, channel?}；服务端最坏两条通道约 27s，客户端放宽到 30s。
+  /// 今日摘要由云端按 uid 取数；[history] 传最近几轮（user/assistant），
+  /// DeepSeek 没有服务端会话，多轮上下文靠它补。
+  Future<Map<String, dynamic>> cozeChat(
+    String message, {
     String? conversationId,
     bool useTodaySummary = true,
     String? date,
+    List<Map<String, String>>? history,
   }) =>
       _client.call(
         '/ai/coze-chat',
@@ -287,6 +290,7 @@ class HealthApi {
             'conversationId': conversationId,
           'useTodaySummary': useTodaySummary,
           if (date != null && date.isNotEmpty) 'date': date,
+          if (history != null && history.isNotEmpty) 'history': history,
         },
         timeout: const Duration(seconds: 30),
       );

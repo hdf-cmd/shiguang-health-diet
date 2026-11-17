@@ -83,6 +83,7 @@ async function handleNutritionLabel({
       servingGrams: result.servingGrams,
       per100: result.per100,
       note: result.note,
+      confidence: result.confidence,
       verify: result.verify,
       channel: channel.isCustom ? "custom" : "deepseek",
       quota,

@@ -15,6 +15,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shiguang_flutter/app/shell.dart' show Shell, ShellState;
 import 'package:shiguang_flutter/app/theme.dart' show Tokens, shiguangTheme;
 import 'package:shiguang_flutter/domain/dates.dart' show localIso;
+import 'package:shiguang_flutter/features/record/record_toast.dart'
+    show kAddedToastDuration;
 import 'package:shiguang_flutter/features/home/home_controller.dart'
     show healthApiProvider, plateDateProvider;
 import 'package:shiguang_flutter/features/notifications/reminder_scheduler.dart'
@@ -223,5 +225,6 @@ void main() {
     await tester.pumpAndSettle();
     expect(api.addBodies.single['date'], container.read(plateDateProvider));
     expect(api.addBodies.single['date'], isoDaysAgo(3));
+    await tester.pump(kAddedToastDuration + const Duration(milliseconds: 50));
   });
 }
