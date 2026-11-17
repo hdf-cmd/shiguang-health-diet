@@ -2,7 +2,7 @@ name: shiguang_flutter
 description: "食光——健康饮食与体重管理 Flutter 客户端（2.0 重写线）。"
 publish_to: 'none'
 
-version: 2.13.0+23104
+version: 2.15.0+23106
 
 environment:
   sdk: ^3.13.4
@@ -26,6 +26,8 @@ dependencies:
   image_picker: ^1.2.3
   cached_network_image: ^4.0.4
   flutter_tts: ^4.2.5
+  # M16：商品条码扫描（EAN-8/13、UPC-A、GTIN-14）。相机权限见 AndroidManifest。
+  mobile_scanner: ^7.4.1
 
 dev_dependencies:
   flutter_test:

@@ -6,9 +6,17 @@ const { countNames, collectAll } = require("./freq");
 const {
   parseModelJson, validateScanResult, kAiScanDailyLimit, kAiImageMaxChars, kAiImagePrefix,
   providerErrorMessage,
-  buildEstimateMessages, buildScanMessages, validateEstimateResult, resolveAiChannel, chatRequestBody,
+  buildEstimateMessages, buildScanMessages, validateEstimateResult, resolveAiChannel, resolveAiChannels, chatRequestBody,
   buildAssistantMessages, assistantRequestBody, parseChatReply,
 } = require("./ai");
+/* 条形码链路纯逻辑（校验位 / OFF 地址 / 商品映射，tests/barcode.test.js 覆盖） */
+const {
+  isBarcodeShape, buildOffProductUrl, parseOffResponse,
+} = require("./barcode");
+/* 「描述一餐」纯逻辑（提示词 / 模型输出校验，tests/ai-meal.test.js 覆盖） */
+const { handleBarcodeLookup } = require("./services/barcode_route");
+const { handleMealParse } = require("./services/meal_parse_route");
+const { handleNutritionLabel } = require("./services/label_route");
 // P3：扣子智能体（纯逻辑在 coze.js，node --test 覆盖）
 const {
   buildTodaySummaryContext, buildCozeChatBody, createCozeStreamParser,
@@ -62,16 +70,18 @@ function emojiFor(name) {
 }
 
 
-async function searchFoods(keyword, uid, meal) {
+async function searchFoods(keyword, uid, meal, hiddenFoods) {
   const results = [];
   const kw = (keyword || "").trim();
-  const prof = await getOrCreateProfile(uid);
-  const hidden = prof.hiddenFoods || [];   // 用户从自己列表移除的内置食物 id
+  /* 描述一餐会按条逐项调本函数；把已读到的隐藏列表传进来，避免 N 次读 profile。 */
+  const hidden = Array.isArray(hiddenFoods)
+    ? hiddenFoods
+    : ((await getOrCreateProfile(uid)).hiddenFoods || []);
   // 3) 内置常见食物库（仍无结果时兜底）
   if (!results.length) {
     for (const f of BUILTIN_FOODS) {
       if (hidden.indexOf(f.id) > -1) continue;
-      if ((!kw || f.name.includes(kw)) && (!meal || !f.meals || f.meals.indexOf(meal) > -1)) results.push({ ...f });
+      if ((!kw || f.name.includes(kw)) && (!meal || !f.meals || f.meals.indexOf(meal) > -1)) results.push({ ...f, barcode: "" });
     }
   }
   // 3) 自定义食物库（关键词转义后按字面匹配：否则 '*' '(' 等元字符会让正则编译失败、搜不到自己）
@@ -102,7 +112,8 @@ async function searchFoods(keyword, uid, meal) {
       unit,
       baseG: g || 100,
       protein: doc.protein || 0, carb: doc.carb || 0, fat: doc.fat || 0,
-      per100
+      per100,
+      barcode: doc.barcode || ""
     });
   }
   return results;
@@ -162,9 +173,10 @@ function profileToClient(p) {
   };
 }
 
-async function callChat(apiKey, messages, target, logTag) {
+async function callChat(apiKey, messages, target, logTag, timeoutMs) {
+  const budget = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 12000;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 12000);
+  const timer = setTimeout(() => controller.abort(), budget);
   try {
     const resp = await fetch(target.url, {
       method: "POST",
@@ -202,6 +214,71 @@ async function callDeepSeek(apiKey, imageDataUrl, strict, target, logTag, hint) 
 /* M15：文本估算（菜名 → 每 100g 营养），与识菜共用 callChat 的超时/解析/错误口径。 */
 async function callAiText(apiKey, name, strict, target, logTag) {
   return callChat(apiKey, buildEstimateMessages(name, strict), target, logTag);
+}
+
+/* ---- 条形码：OFF 代理 + 缓存 ------------------------------------------ */
+
+const kBarcodeDailyLimit = 100;
+const kOffUserAgent = 'Shiguang/2.14 (CloudBase api-diet)';
+
+async function fetchOffOnce(barcode) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const resp = await fetch(buildOffProductUrl(barcode), {
+      headers: { 'User-Agent': kOffUserAgent, 'Accept': 'application/json' },
+      signal: controller.signal,
+    });
+    const text = await resp.text().catch(() => '');
+    let payload = null;
+    try { payload = text ? JSON.parse(text) : null; } catch (_) { payload = null; }
+    return parseOffResponse(resp.status, payload, barcode);
+  } catch (e) {
+    console.log('OFF_ERR', e && e.name === 'AbortError' ? 'TIMEOUT' : 'NETWORK');
+    return { ok: false, found: false, reason: 'network' };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/* 网络/5xx 时最多重试一次；404、200+status0、营养不全不重试。
+ * 8s × 2 + 300ms 仍在客户端 20s 预算内。 */
+async function fetchOffProduct(barcode) {
+  let last = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    last = await fetchOffOnce(barcode);
+    const retryable = last.reason === 'network' || last.reason === 'http';
+    if (!retryable) return last;
+    if (attempt === 0) await new Promise(resolve => setTimeout(resolve, 300));
+  }
+  return last;
+}
+
+/* 全局缓存（不按 uid 分区）：OFF 商品数据对所有用户相同，天然可共享。
+ * 失败不影响主链路——缓存写不进去最多下次再查一遍。 */
+async function writeOffCache(barcode, food) {
+  const now = Date.now();
+  try {
+    const col = db.collection('off_products');
+    const found = await col.where({ barcode }).limit(1).get();
+    if (found.data && found.data[0]) {
+      await col.doc(found.data[0]._id).update({ food, fetchedAt: now, updatedAt: now });
+    } else {
+      await col.add({ barcode, food, fetchedAt: now, updatedAt: now });
+    }
+  } catch (e) {
+    console.log('OFF_CACHE_WRITE_ERR', e && e.message ? String(e.message).slice(0, 120) : '');
+  }
+}
+
+async function readOffCache(barcode) {
+  try {
+    const res = await db.collection('off_products').where({ barcode }).limit(1).get();
+    return res.data && res.data[0] ? res.data[0] : null;
+  } catch (e) {
+    console.log('OFF_CACHE_READ_ERR', e && e.message ? String(e.message).slice(0, 120) : '');
+    return null;
+  }
 }
 
 /* P3 兜底：扣子不可用时用 DeepSeek 文本对话。超时收紧到 10s，
@@ -518,6 +595,39 @@ async function handle(path, method, params, body, uid) {
     };
   }
 
+  /* M16：包装营养成分表识别。路由体在 services/label_route.js。 */
+  if (path === "/ai/nutrition-label" && method === "POST") {
+    return handleNutritionLabel({
+      uid,
+      body,
+      profiles,
+      getOrCreateProfile,
+      today,
+      dailyLimit: kAiScanDailyLimit,
+      resolveAiChannels,
+      callChat,
+      parseModelJson,
+      builtinKey: process.env.DEEPSEEK_API_KEY || "",
+    });
+  }
+
+  /* M16：描述一餐。路由体在 services/meal_parse_route.js（可注入依赖、可单测）。 */
+  if (path === "/ai/meal-parse" && method === "POST") {
+    return handleMealParse({
+      uid,
+      body,
+      profiles,
+      getOrCreateProfile,
+      today,
+      dailyLimit: kAiScanDailyLimit,
+      resolveAiChannels,
+      callChat,
+      parseModelJson,
+      searchFoods,
+      builtinKey: process.env.DEEPSEEK_API_KEY || "",
+    });
+  }
+
   /* P3：扣子饮食助手。云函数按 uid 取当天摘要拼上下文；PAT/BotID 只存云端环境变量。 */
   if (path === "/ai/coze-chat" && method === "POST") {
     const routeStarted = Date.now();
@@ -573,6 +683,22 @@ async function handle(path, method, params, body, uid) {
     return { ok: false, message: cozeUserMessage(result.message) };
   }
 
+  /* M16：条码查询。路由体在 services/barcode_route.js（可注入依赖、可单测）。 */
+  if (path === "/foods/barcode" && method === "GET") {
+    return handleBarcodeLookup({
+      uid,
+      code: params.code,
+      db,
+      profiles,
+      getOrCreateProfile,
+      today,
+      dailyLimit: kBarcodeDailyLimit,
+      fetchOffProduct,
+      readOffCache,
+      writeOffCache,
+    });
+  }
+
 if (path === "/foods/custom" && method === "POST") {
     const name = String(body.name || "").trim().slice(0, 60);
     const kcal = Math.max(0, Math.round(Number(body.kcal) || 0));
@@ -586,8 +712,11 @@ if (path === "/foods/custom" && method === "POST") {
     const meals = Array.isArray(body.meals)
       ? body.meals.map(String).filter(m => ["breakfast", "lunch", "dinner", "snack"].indexOf(m) > -1).slice(0, 4)
       : [];
+    /* 条码是可选绑定：格式合法才存；不合法不阻断保存（用户只是在录食物）。 */
+    const barcode = isBarcodeShape(body.barcode) ? String(body.barcode).trim() : "";
     const doc = {
       uid, name, kcal,
+      ...(barcode ? { barcode } : {}),
       grams,                                   // 录入份量的数值（按份量加换算用）
       unit,                                    // 份量单位：g / ml
       meals,                                   // 适用餐次（空数组 = 全餐次可见）
@@ -615,12 +744,14 @@ if (path === "/foods/custom" && method === "POST") {
     const meals = Array.isArray(body.meals)
       ? body.meals.map(String).filter(m => ["breakfast", "lunch", "dinner", "snack"].indexOf(m) > -1).slice(0, 4)
       : [];
+    const barcode = isBarcodeShape(body.barcode) ? String(body.barcode).trim() : "";
     const img = String(body.image || "");
     if (img && (!kAiImagePrefix.test(img) || img.length > kAiImageMaxChars)) {
       return { ok: false, message: "图片格式不支持或过大" };
     }
     const fields = {
       kcal, grams, unit, meals,
+      ...(barcode ? { barcode } : {}),
       protein: +p0.toFixed(1), carb: +c0.toFixed(1), fat: +f0.toFixed(1),
       portion: String(body.portion || (grams ? grams + unit : "1 份")).slice(0, 60),
       emoji: String(body.emoji || "") || emojiFor(name),
@@ -633,6 +764,8 @@ if (path === "/foods/custom" && method === "POST") {
       // 扫码没有归类意图：更新已有条目时保留原有 meals，不清空用户餐次标签
       const patch = { ...fields };
       delete patch.meals;
+      // 没带条码的 upsert 不得抹掉已有绑定
+      if (!barcode) delete patch.barcode;
       await db.collection("custom_foods").doc(found.data[0]._id).update(patch);
       return { ok: true, id: found.data[0]._id, updated: true, emoji };
     }
@@ -655,14 +788,16 @@ if (path === "/foods/custom" && method === "POST") {
     }));
   }
 
-  /* 修改自定义食物的餐次归类（管理界面点击餐次标签） */
+  /* 修改自定义食物的餐次归类 / 条码绑定（管理界面点击餐次标签、补绑条码） */
   if (path.startsWith("/foods/custom/") && method === "PUT") {
     const id = path.split("/").pop();
     const meals = Array.isArray(body.meals)
       ? body.meals.map(String).filter(m => ["breakfast", "lunch", "dinner", "snack"].indexOf(m) > -1).slice(0, 4)
       : [];
-    await db.collection("custom_foods").where({ uid, _id: id }).update({ meals, updatedAt: Date.now() });
-    return { ok: true, id, meals };
+    const patch = { meals, updatedAt: Date.now() };
+    if (isBarcodeShape(body.barcode)) patch.barcode = String(body.barcode).trim();
+    await db.collection("custom_foods").where({ uid, _id: id }).update(patch);
+    return { ok: true, id, meals, ...(patch.barcode ? { barcode: patch.barcode } : {}) };
   }
 
   /* 删除自定义食物 */

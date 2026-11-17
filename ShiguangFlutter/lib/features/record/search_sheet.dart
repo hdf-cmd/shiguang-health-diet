@@ -26,8 +26,10 @@ import '../../domain/constants.dart';
 import '../common/food_thumb.dart';
 import '../common/sheet.dart' show showShiguangSheet;
 import '../common/skeleton.dart' show SkeletonBar;
+import 'barcode_scan_flow.dart' show openBarcodeScanFlow;
 import 'custom_food_sheet.dart';
 import 'food_scan_sheet.dart' show openFoodScanFlow;
+import 'meal_describe_flow.dart' show openMealDescribeFlow;
 import 'freq_loading_strip.dart';
 import 'portion_sheet.dart';
 import 'food_freq.dart';
@@ -206,8 +208,35 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
                       meal: widget.meal,
                     ),
                   ),
-                  OutlinedButton(
+                  // M16：扫码 / 描述一餐与拍照并列，图标按钮不额外占一行高度；
+                  // 文字说明放 tooltip，避免小屏弹层被固定行挤出。
+                  IconButton(
+                    key: const ValueKey('sheet-barcode-open'),
+                    tooltip: '扫商品条码',
+                    icon: const Icon(Icons.qr_code_scanner_rounded),
+                    onPressed: () => openBarcodeScanFlow(
+                      context,
+                      ref,
+                      date: widget.date,
+                      meal: widget.meal,
+                      onSaved: _requeryResults,
+                    ),
+                  ),
+                  IconButton(
+                    key: const ValueKey('sheet-describe-open'),
+                    tooltip: '描述一餐',
+                    icon: const Icon(Icons.auto_awesome_rounded),
+                    onPressed: () => openMealDescribeFlow(
+                      context,
+                      ref,
+                      date: widget.date,
+                      meal: widget.meal,
+                    ),
+                  ),
+                  IconButton(
                     key: const ValueKey('sheet-cf-open'),
+                    tooltip: '自定义食物',
+                    icon: const Icon(Icons.add_circle_outline_rounded),
                     onPressed: () => openCustomFoodSheet(
                       context,
                       date: widget.date,
@@ -215,10 +244,6 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
                       initialName: _keyword,
                       onSaved: _requeryResults,
                     ),
-                    child: const Text('＋ 自定义', // index.html:276 逐字
-                        style: TextStyle(
-                            fontSize: Tokens.textSm,
-                            color: Tokens.primaryDeep)),
                   ),
                 ],
               ),

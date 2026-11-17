@@ -51,11 +51,13 @@ import '../../data/api_client.dart' show ApiException;
 import '../../data/swr_cache.dart' show swrCacheProvider;
 import '../../domain/constants.dart';
 import '../../domain/dates.dart';
+import '../../domain/meal_describe.dart' show servingNutritionFromPer100;
 import '../common/food_thumb.dart';
 import '../common/image_pick.dart';
 import '../common/breathing_capsule.dart' show LoadingSpinner;
 import '../common/sheet.dart' show showShiguangSheet;
 import 'record_controller.dart';
+import 'barcode_util.dart' show isBarcodeShape;
 
 /// 选图注入面（≙ T5 AvatarPicker 做法）：入参来源，返回压缩 dataURL/失败态。
 typedef CustomFoodImagePicker = Future<PickedImageData> Function(
@@ -130,6 +132,10 @@ Future<void> openCustomFoodSheet(
   required String date,
   required String meal,
   String? initialName,
+  String? initialBarcode,
+  double? initialGrams,
+  Map<String, dynamic>? initialPer100,
+  String? initialUnit,
   required void Function() onSaved,
   CustomFoodImagePicker pickImage = _defaultPickImage,
 }) {
@@ -143,6 +149,10 @@ Future<void> openCustomFoodSheet(
       date: date,
       meal: meal,
       initialName: initialName,
+      initialBarcode: initialBarcode,
+      initialGrams: initialGrams,
+      initialPer100: initialPer100,
+      initialUnit: initialUnit,
       onSaved: onSaved,
       pickImage: pickImage,
     ),
@@ -194,6 +204,10 @@ class _CustomFoodSheet extends ConsumerStatefulWidget {
     required this.date,
     required this.meal,
     required this.initialName,
+    required this.initialBarcode,
+    required this.initialGrams,
+    required this.initialPer100,
+    required this.initialUnit,
     required this.onSaved,
     required this.pickImage,
   });
@@ -201,6 +215,10 @@ class _CustomFoodSheet extends ConsumerStatefulWidget {
   final String date;
   final String meal;
   final String? initialName;
+  final String? initialBarcode;
+  final double? initialGrams;
+  final Map<String, dynamic>? initialPer100;
+  final String? initialUnit;
   final void Function() onSaved;
   final CustomFoodImagePicker pickImage;
 
@@ -217,6 +235,9 @@ class _CustomFoodSheetState extends ConsumerState<_CustomFoodSheet> {
   final TextEditingController _protein = TextEditingController();
   final TextEditingController _carb = TextEditingController();
   final TextEditingController _fat = TextEditingController();
+  /// M16：扫到未收录条码时预填，保存后下次扫同一商品直接命中。
+  late final TextEditingController _barcode =
+      TextEditingController(text: widget.initialBarcode ?? '');
 
   /// 挂层即冻结当前本地时刻（M5-T8 结转 A①）：widget.date 为空时兜底用
   /// 「打开弹层那一刻」的当日，而非保存瞬间的 todayIso()——挂层跨午夜
@@ -229,6 +250,32 @@ class _CustomFoodSheetState extends ConsumerState<_CustomFoodSheet> {
   bool _picking = false; // 选图在途
 
   String _unit = 'g'; // :1173 默认克
+
+  @override
+  void initState() {
+    super.initState();
+    _unit = widget.initialUnit == 'ml' ? 'ml' : 'g';
+    _applyInitialNutrition();
+  }
+
+  /// 包装营养表识别或外部预填：按「每 100g/ml → 这一份」换算成表单值。
+  void _applyInitialNutrition() {
+    final per100 = widget.initialPer100;
+    final grams = widget.initialGrams;
+    if (per100 == null) {
+      if (grams != null && grams > 0) _grams.text = _fmtNum(grams);
+      return;
+    }
+    final s = servingNutritionFromPer100(per100, grams: grams);
+    _grams.text = _fmtNum(s.grams);
+    _kcal.text = s.kcal.round().toString();
+    _protein.text = _fmtNum(s.protein);
+    _carb.text = _fmtNum(s.carb);
+    _fat.text = _fmtNum(s.fat);
+  }
+
+  static String _fmtNum(num v) =>
+      v == v.roundToDouble() ? '${v.round()}' : v.toStringAsFixed(1);
 
   /// :1174/1218 三档类别，入参餐次映射：breakfast→早餐 / snack→零食 / 其余→正餐
   late String _mealKind = switch (widget.meal) {
@@ -247,6 +294,7 @@ class _CustomFoodSheetState extends ConsumerState<_CustomFoodSheet> {
     _protein.dispose();
     _carb.dispose();
     _fat.dispose();
+    _barcode.dispose();
     super.dispose();
   }
 
@@ -314,6 +362,11 @@ class _CustomFoodSheetState extends ConsumerState<_CustomFoodSheet> {
       _toast(messenger, '请填热量，或先填三大营养素自动算');
       return;
     }
+    final barcode = _barcode.text.trim();
+    if (barcode.isNotEmpty && !isBarcodeShape(barcode)) {
+      _toast(messenger, '条码需为 8–14 位数字');
+      return;
+    }
     final portion = grams != 0 ? '$grams$_unit' : '1 份'; // :1236
     final meals = cfMealMap[_mealKind] ?? const <String>[]; // :1237
     final controller = ref.read(recordControllerProvider);
@@ -332,6 +385,7 @@ class _CustomFoodSheetState extends ConsumerState<_CustomFoodSheet> {
           'fat': fat,
           'portion': portion,
           'image': _imageData,
+          if (barcode.isNotEmpty) 'barcode': barcode,
         });
         _addedToLib = true;
         // M9-T4 写路径「先删键再刷新」：食物库会话缓存键随入库失效
@@ -417,6 +471,20 @@ class _CustomFoodSheetState extends ConsumerState<_CustomFoodSheet> {
                   key: cfNameKey,
                   maxLength: 30, // :514
                   decoration: _field('如：妈妈牌红烧肉'), // :514 逐字
+                ),
+                const SizedBox(height: Tokens.sp3),
+                // M16：条码（可选）。手动添加未收录商品时预填，绑定后扫码直接命中。
+                const Text('商品条码', style: _label),
+                const Text('可选，8–14 位数字', style: _sub),
+                const SizedBox(height: Tokens.sp1),
+                TextField(
+                  controller: _barcode,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(14),
+                  ],
+                  decoration: _field('如：4006381333931'),
                 ),
                 const SizedBox(height: Tokens.sp3),
                 // 一份份量 + 克|毫升（:517-526）

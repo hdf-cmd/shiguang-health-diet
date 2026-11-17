@@ -4,6 +4,10 @@
          登录必挂（x86_64 release 模拟器实测：debug 登录成功、release 稳定「操作失
          败」）。网络是本应用核心能力，必须进 main manifest 全 build type 生效。 -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- M16 扫码：条码扫描需要相机。无相机设备不拦安装，入口降级为手动输入。 -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
     <!-- 体脂秤同步（BLE，M4-T3）：语义对照 H5 壳 HealthyDiet/app/src/main/AndroidManifest.xml:8-12。
          12+（API 31+）用新蓝牙运行时权限且声明与位置无关；11 及以下走 legacy 对 + 精确定位。
          flutter_blue_plus 官方 plugin manifest 为空（刻意为之），权限必须在此全量声明。 -->

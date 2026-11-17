@@ -189,6 +189,44 @@ function resolveAiChannel(custom, builtinKey) {
   };
 }
 
+/* 渠道降级链：自带配置优先，失败后回退内置 DeepSeek（如果配置了）。
+   与 resolveAiChannel 的区别：后者只选一个，前者返回可依次尝试的数组。
+   自带配置非法时不让整条链路直接失败——内置通道能答就仍然答，只把
+   customError 带回日志。 */
+function resolveAiChannels(custom, builtinKey) {
+  const channels = [];
+  let customError = '';
+  if (custom) {
+    const v = validateProviderConfig(custom);
+    if (v.ok) {
+      const target = providerTarget(v.id);
+      channels.push({
+        apiKey: v.key,
+        target: { url: target.url, model: v.model, providerId: v.id },
+        logTag: 'AI_PROVIDER_HTTP ' + v.id,
+        isCustom: true,
+      });
+    } else {
+      customError = v.message;
+    }
+  }
+  const key = typeof builtinKey === 'string' ? builtinKey.trim() : '';
+  if (key) {
+    const target = providerTarget('deepseek');
+    channels.push({
+      apiKey: key,
+      target: { ...target, providerId: 'deepseek' },
+      logTag: 'DEEPSEEK_HTTP',
+      isCustom: false,
+    });
+  }
+  return {
+    channels,
+    customError,
+    message: channels.length ? '' : (customError || '识别服务未配置'),
+  };
+}
+
 /* 请求体（识菜/文本估算共用）。deepseek-flash 是推理模型，思考链与正文共用
    max_tokens；不关思考时实测评测会出现 content 为空/截断（finish_reason=length）。
    关闭思考只对 DeepSeek 生效，其他厂商不带未知字段。 */
@@ -251,6 +289,6 @@ module.exports = {
   AI_PROVIDERS, validateProviderConfig, providerTarget, providerErrorMessage,
   AI_ESTIMATE_SYSTEM_PROMPT, validateEstimateResult, buildEstimateMessages,
   buildScanMessages,
-  resolveAiChannel, chatRequestBody,
+  resolveAiChannel, resolveAiChannels, chatRequestBody,
   AI_ASSISTANT_SYSTEM_PROMPT, buildAssistantMessages, assistantRequestBody, parseChatReply,
 };

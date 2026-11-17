@@ -209,11 +209,71 @@ class HealthApi {
         timeout: const Duration(seconds: 20),
       );
 
+  /// 包装营养成分表识别（M16）：云函数读图后返回
+  /// `{ok,name,brand,unit,servingGrams,per100,note,verify,quota}`。
+  /// 图片只用于识别、不落库；provider 口径与 [scanFood] 一致。
+  Future<Map<String, dynamic>> scanNutritionLabel(
+    String imageDataUrl, {
+    AiProviderConfig? provider,
+    String? hint,
+  }) {
+    final h = (hint ?? '').trim();
+    return _client.call(
+      '/ai/nutrition-label',
+      method: 'POST',
+      body: <String, dynamic>{
+        'image': imageDataUrl,
+        if (h.isNotEmpty) 'hint': h.length > 30 ? h.substring(0, 30) : h,
+        if (provider != null && provider.isUsable)
+          'provider': <String, dynamic>{
+            'id': provider.id,
+            'model': provider.model,
+            'key': provider.key,
+          },
+      },
+      timeout: const Duration(seconds: 35),
+    );
+  }
+
+  /* ---------- M16：条码查询 + 描述一餐 ---------- */
+
+  /// 条码查询（M16）。云端顺序：用户自定义绑定 → OFF 缓存 → OFF 实时。
+  /// 返回 `{ok, found, source, food?, message?, code?}`；`found=false` 是正常
+  /// 业务结果（条码未收录），不是异常。只有 live OFF 才计每日配额。
+  Future<Map<String, dynamic>> lookupBarcode(String code) => _client.call(
+        '/foods/barcode',
+        params: <String, dynamic>{'code': code},
+        timeout: const Duration(seconds: 20),
+      );
+
+  /// 描述一餐（M16）：模型只抽食物名与份量，云端再逐条命中内置/自定义库，
+  /// 返回 `{ok, items:[{query,quantity,unit,portion,match}], channel, quota}`。
+  /// provider 口径与 [scanFood] 完全一致：可用才整键带，未配置整键省略。
+  Future<Map<String, dynamic>> parseMealText(
+    String text, {
+    AiProviderConfig? provider,
+    String? meal,
+  }) =>
+      _client.call(
+        '/ai/meal-parse',
+        method: 'POST',
+        body: <String, dynamic>{
+          'text': text,
+          if (meal != null && meal.isNotEmpty) 'meal': meal,
+          if (provider != null && provider.isUsable)
+            'provider': <String, dynamic>{
+              'id': provider.id,
+              'model': provider.model,
+              'key': provider.key,
+            },
+        },
+        timeout: const Duration(seconds: 25),
+      );
+
   /// 扣子饮食助手（P3）：云函数内部收 SSE 后返回
   /// {ok, reply, conversationId}；服务端最多等 25s，客户端放宽到 30s。
   /// 今日摘要由云端按 uid 取数，客户端只传开关和日期。
-  Future<Map<String, dynamic>> cozeChat(
-    String message, {
+  Future<Map<String, dynamic>> cozeChat(    String message, {
     String? conversationId,
     bool useTodaySummary = true,
     String? date,

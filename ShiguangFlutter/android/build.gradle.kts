@@ -1,5 +1,9 @@
 allprojects {
     repositories {
+        // 国内网络：优先阿里云镜像，官方源作为兜底。
+        maven("https://maven.aliyun.com/repository/google")
+        maven("https://maven.aliyun.com/repository/public")
+        maven("https://maven.aliyun.com/repository/gradle-plugin")
         google()
         mavenCentral()
     }
