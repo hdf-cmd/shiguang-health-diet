@@ -151,6 +151,16 @@ void main() {
       expect(r.skipped.single.reason, MiSkipReason.zeroAmount);
     });
 
+    test('云端内容签名命中（老数据无 externalId）→ alreadyImported', () {
+      final r = mapMiWorkouts(
+        workouts: [workout(id: 'new', distanceM: 2834, kcal: 190)],
+        weightKg: 76,
+        importedSignatures: const {'2026-11-18|run|2.83|190'},
+      );
+      expect(r.candidates, isEmpty);
+      expect(r.skipped.single.reason, MiSkipReason.alreadyImported);
+    });
+
     test('已导入 externalId 命中 → alreadyImported', () {
       final r = mapMiWorkouts(
         workouts: [workout(id: 'done', distanceM: 3000)],

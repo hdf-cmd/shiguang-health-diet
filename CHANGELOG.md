@@ -5,6 +5,21 @@
 
 > 两条产品线共用本文件：**1.x = H5 WebView 壳**（`食光-vX.Y.Z.apk`，已停更在 1.4.0）；**2.x = Flutter 原生壳**（`食光Flutter-vX.Y.Z.apk`，当前在维护）。
 
+## [2.16.3] - 2026-11-18
+
+### 修复
+- **手环运动重复导入**：正式版/调试版共用同一账号、各自本地账本，导致同一批运动被重复写入。修复分三层：
+  - 云端 `POST /diet/exercises` 支持 `externalId` 幂等（uid+externalId 已存在直接返回成功）
+  - 云端新增 `GET /diet/exercises/external-ids`：同步前拉取窗口内已有 externalId + 内容签名（`date|key|amount|kcal`，兜底无 externalId 的老数据）
+  - 客户端同步前合并云端去重键，导入时携带 externalId；老数据按签名去重
+- 清理本账号 2026-11-13～11-18 的 6 条重复运动记录（13 → 7）
+
+### 验证
+- 云端 `node --test tests` 210 项全绿（新增 9 条运动幂等用例）
+- `dart analyze lib` 0 问题；`flutter test` 681 项全绿
+- 云函数已重新部署：Nodejs18.15 / 60s / 256MB / Handler index.main / Active
+- 真机 RMX5010：正式版重新同步不再产生重复记录
+
 ## [2.16.2] - 2026-11-18
 
 ### 修复

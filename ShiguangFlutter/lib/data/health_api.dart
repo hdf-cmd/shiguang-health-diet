@@ -118,6 +118,22 @@ class HealthApi {
   Future<Map<String, dynamic>> addExercise(Map<String, dynamic> record) =>
       _client.call('/diet/exercises', method: 'POST', body: record);
 
+  /// 窗口内已入库的运动去重键（手环同步幂等：重装/多包后合并账本用）。
+  /// 返回 externalIds + 内容签名（date|key|amount|kcal，兜底老数据）。
+  Future<({Set<String> externalIds, Set<String> signatures})>
+      getExerciseExistingKeys(List<String> dates) async {
+    final data = await _client.callValue('/diet/exercises/external-ids',
+        params: <String, dynamic>{'dates': dates.join(',')});
+    Set<String> listOf(String key) {
+      if (data is! Map) return const <String>{};
+      final v = data[key];
+      if (v is! List) return const <String>{};
+      return v.map((e) => '$e').where((s) => s.isNotEmpty).toSet();
+    }
+
+    return (externalIds: listOf('externalIds'), signatures: listOf('signatures'));
+  }
+
   /// 删除运动记录（js/api.js:327 deleteExercise：DELETE /diet/exercises/:id）
   Future<Map<String, dynamic>> deleteExercise(String id) =>
       _client.call('/diet/exercises/:id',

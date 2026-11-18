@@ -17,6 +17,7 @@ const { handleBarcodeLookup } = require("./services/barcode_route");
 const { handleMealParse } = require("./services/meal_parse_route");
 const { handleNutritionLabel } = require("./services/label_route");
 const { handleAssistantChat, createCozeCooldown } = require("./services/assistant_route");
+const { addExercise, listExistingKeys } = require("./services/exercise_route");
 // P3：扣子智能体（纯逻辑在 coze.js，node --test 覆盖）
 const {
   buildTodaySummaryContext, buildCozeChatBody, createCozeStreamParser,
@@ -851,26 +852,19 @@ if (path === "/foods/custom" && method === "POST") {
       .where({ uid, date }).orderBy("createdAt", "asc").limit(100).get();
     return (res.data || []).map(r => ({
       id: r._id, key: r.key, name: r.name, emoji: r.emoji,
-      amount: r.amount, unit: r.unit, kcal: r.kcal
+      amount: r.amount, unit: r.unit, kcal: r.kcal,
+      // 手环云同步的幂等键：客户端重装/多包后据此合并去重账本
+      externalId: r.externalId || "",
     }));
   }
 
   if (path === "/diet/exercises" && method === "POST") {
-    const kcal = Math.max(0, Math.round(Number(body.kcal) || 0));
-    if (!kcal) return { ok: false, message: "消耗热量无效" };
-    const doc = {
-      uid,
-      date: body.date || today(),
-      key: String(body.key || "").slice(0, 20),
-      name: String(body.name || "运动").slice(0, 60),
-      emoji: String(body.emoji || "🏃"),
-      amount: Number(body.amount) || 0,
-      unit: body.unit === "km" ? "km" : "min",
-      kcal,
-      createdAt: Date.now()
-    };
-    const added = await db.collection("sg_exercises").add(doc);
-    return { ok: true, id: added.id, ...doc };
+    return addExercise(db, uid, body, today());
+  }
+
+  if (path === "/diet/exercises/external-ids" && method === "GET") {
+    const dates = String(params.dates || "").split(",").filter(Boolean);
+    return listExistingKeys(db, uid, dates);
   }
 
   if (path.startsWith("/diet/exercises/") && method === "DELETE") {

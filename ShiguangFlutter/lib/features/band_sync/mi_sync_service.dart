@@ -42,6 +42,7 @@ class MiSyncService {
     required this.importStore,
     required this.dailyStore,
     required this.addExercise,
+    this.fetchExistingKeys,
     this.sessionStore,
     MiCloudClient Function()? clientFactory,
   }) : clientFactory = clientFactory ?? (() => MiCloudClient(MiDioHttp()));
@@ -51,6 +52,10 @@ class MiSyncService {
   final MiDailyActivityStore dailyStore;
   final MiSessionStore? sessionStore;
   final Future<Map<String, dynamic>> Function(Map<String, dynamic>) addExercise;
+
+  /// 窗口内云端已入库去重键（重装/多包后合并本机账本，防重复导入）。
+  final Future<({Set<String> externalIds, Set<String> signatures})> Function(
+      List<String> dates)? fetchExistingKeys;
   final MiCloudClient Function() clientFactory;
 
   bool _running = false;
@@ -109,6 +114,10 @@ class MiSyncService {
       days = gap.clamp(7, 30);
     }
     final start = now.subtract(Duration(days: days - 1));
+    final windowDates = [
+      for (var i = days - 1; i >= 0; i--)
+        localDateOf(DateTime(now.year, now.month, now.day - i)),
+    ];
 
     try {
       final daily = await client.fetchDailyActivity(
@@ -119,17 +128,31 @@ class MiSyncService {
     }
     final workouts = await client.fetchWorkouts(
         session: session, start: start, end: now);
+    // 本机账本 + 云端已有去重键：重装/双包后不会再次导入同一批运动。
+    final importedIds = await importStore.load();
+    var importedSignatures = <String>{};
+    if (fetchExistingKeys != null) {
+      try {
+        final keys = await fetchExistingKeys!(windowDates);
+        importedIds.addAll(keys.externalIds);
+        importedSignatures = keys.signatures;
+      } catch (_) {
+        // 云端清单失败只影响去重精度，不阻断同步。
+      }
+    }
     final result = mapMiWorkouts(
       workouts: workouts,
       weightKg: weightKg,
-      importedIds: await importStore.load(),
+      importedIds: importedIds,
+      importedSignatures: importedSignatures,
     );
     final done = <String>[];
     final dates = <String>{};
     String? error;
     for (final c in result.candidates) {
       try {
-        final res = await addExercise(c.payload);
+        final res = await addExercise(
+            <String, dynamic>{...c.payload, 'externalId': c.externalId});
         if (res['ok'] == false) {
           error = '${res['message'] ?? '导入失败'}';
           break;
@@ -168,5 +191,7 @@ final miSyncServiceProvider = Provider<MiSyncService>((ref) {
     dailyStore: ref.watch(miDailyActivityStoreProvider),
     sessionStore: ref.watch(miSessionStoreProvider),
     addExercise: ref.watch(healthApiProvider).addExercise,
+    fetchExistingKeys:
+        (dates) => ref.read(healthApiProvider).getExerciseExistingKeys(dates),
   );
 });

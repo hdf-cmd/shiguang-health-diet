@@ -102,6 +102,7 @@ MiImportResult mapMiWorkouts({
   required List<MiWorkout> workouts,
   required num? weightKg,
   Set<String> importedIds = const <String>{},
+  Set<String> importedSignatures = const <String>{},
 }) {
   final candidates = <MiImportCandidate>[];
   final skipped = <MiSkippedWorkout>[];
@@ -169,6 +170,14 @@ MiImportResult mapMiWorkouts({
     }
     if (kcal <= 0) {
       skip(MiSkipReason.zeroKcal);
+      continue;
+    }
+
+    // 云端内容签名（date|key|amount|kcal）：老数据没有 externalId 时兜底去重。
+    final date = localDateOf(w.startAt);
+    final cloudSignature = '$date|${lib.key}|$amount|$kcal';
+    if (importedSignatures.contains(cloudSignature)) {
+      skip(MiSkipReason.alreadyImported);
       continue;
     }
 

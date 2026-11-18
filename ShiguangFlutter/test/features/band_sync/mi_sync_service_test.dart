@@ -159,6 +159,7 @@ void main() {
     expect(out!.error, isNull);
     expect(out.imported, 1); // 跳绳类型不支持被跳过
     expect(added.single['key'], 'run');
+    expect(added.single['externalId'], startsWith('mi:'));
     expect(creds.value!.passToken, 'NEW'); // 轮换 token 已落盘
     final daily = await MiDailyActivityStore().load();
     expect(daily.isNotEmpty, true);
@@ -166,6 +167,30 @@ void main() {
     final ledger = await MiImportStore().load();
     expect(ledger, hasLength(1));
     expect(svc.lastOkAt, isNotNull);
+  });
+
+  test('云端已有 externalId：即使本机账本为空也不重复导入', () async {
+    final http = FakeHttp()
+      ..workouts = [
+        sportRecord('outdoor_running', 'outdoor_running', 1794990000, 200),
+      ];
+    var calls = 0;
+    final svc = MiSyncService(
+      credentials: FakeCreds(const MiCredentials(userId: '1', passToken: 'P')),
+      importStore: MiImportStore(),
+      dailyStore: MiDailyActivityStore(),
+      addExercise: (p) async {
+        calls++;
+        return {'ok': true};
+      },
+      fetchExistingKeys: (dates) async => (
+          externalIds: {'mi:1_outdoor_running_1794990000'},
+          signatures: <String>{}),
+      clientFactory: () => MiCloudClient(http),
+    );
+    final out = await svc.run(weightKg: 76);
+    expect(out!.imported, 0);
+    expect(calls, 0);
   });
 
   test('已导入的记录不重复导入', () async {
