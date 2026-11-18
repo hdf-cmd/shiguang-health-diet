@@ -7,6 +7,7 @@ import 'app/shell.dart';
 import 'app/theme.dart';
 import 'data/swr_cache.dart' show swrCacheProvider;
 import 'features/auth/login_screen.dart';
+import 'features/band_sync/mi_auto_sync.dart' show startMiAutoSync;
 
 Future<void> main() async {
   // M5-T8 结转 C：绑定必须先于任何插件面。flutter_local_notifications 22.3.1
@@ -26,6 +27,8 @@ Future<void> main() async {
   // init→sync(on: enabled())，fire-and-forget——内部已 try/catch，不挡启动。
   // 测试环境不走 main()，插件面天然零波及（调度动作单测用 FakePort）。
   bootstrapReminders(container);
+  // M17：手环云同步自动接线（已绑定时冷启动/回前台静默同步，失败不打扰）。
+  startMiAutoSync(container);
   // M11-T3：冷启动磁盘播种——必须在这里、runApp 之前 await。
   // 放 AuthGate.bootstrap 里有两个实测后果：① widget 测试的 pumpAndSettle 不驱动
   // 真实平台通道 IO，登录态用例整批停在 splash（auth_expiry 实测）；② 首帧已经

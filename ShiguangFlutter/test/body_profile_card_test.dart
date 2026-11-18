@@ -170,7 +170,7 @@ void main() {
     expect(find.textContaining('BMR×系数1.55'), findsOneWidget); // :1599 ex=0 支
     expect(find.textContaining('消耗2179−缺口500'), findsOneWidget); // :1600 ex=0 支
     expect(find.textContaining(m.etaText), findsOneWidget); // etaText 原文
-    expect(find.textContaining('按预设缺口 500 kcal 估算'), findsOneWidget); // :metabolism eta 预设支片段（eta 含当日日期，取稳定段）
+    expect(find.textContaining('按目标缺口 500 kcal 估算'), findsOneWidget); // :metabolism eta 预设支片段（eta 含当日日期，取稳定段）
     expect(find.textContaining(m.rangeText), findsOneWidget); // rangeText 原文
   });
 

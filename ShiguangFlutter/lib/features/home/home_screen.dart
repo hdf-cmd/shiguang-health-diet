@@ -37,16 +37,22 @@
 // 记录页呈现。M8-③：盘子卡卡内横滑切日（M7-T1 裁定的「不移植面」翻案——
 // 胶囊小字「右滑看历史」自本批起言行一致）：右滑=前一天、左滑=后一天，
 // 阈值 ±60px，走 shiftPlateDate（未来闸/三态文案自动生效）。
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
+import '../../data/mi_cloud_client.dart' show MiDailyActivity;
+import '../../data/mi_daily_activity_store.dart' show miDailyActivityProvider;
 import '../../data/swr_cache.dart' show swrCacheProvider;
 import '../../domain/constants.dart' show exerciseLib;
 import '../../domain/dates.dart' show dateLabelOf, todayIso;
 import '../../domain/exercise.dart' show isRepRecord;
 import '../../domain/js_compat.dart' show jsNumText;
+import '../../domain/metabolism.dart' show computeMetabolism;
+import '../../domain/models.dart' show Body;
 import '../common/stagger.dart' show Stagger;
 import '../exercise/exercise_controller.dart'
     show deleteExerciseRecord, exerciseKcalProvider, exercisesProvider;
@@ -297,19 +303,54 @@ class _PlateCard extends ConsumerWidget {
     final s = summary.value;
     // H5 renderRing 入参先 Math.round 语义取整（本仓整数呈现口径同源）
     final kcal = s?.kcal.round() ?? 0;
-    final target = s?.target.round() ?? 0;
+    final cloudTarget = s?.target.round() ?? 0;
+    // 手表口径：当天有手表活动热量 → TDEE = BMR + 手表活动，额度不再叠加
+    // 运动（全天活动已含运动）；无手表数据回落云端系数口径（旧行为）。
+    final watchMap = ref.watch(miDailyActivityProvider).maybeWhen(
+          data: (m) => m,
+          orElse: () => const <String, MiDailyActivity>{},
+        );
+    // 有手表数据那天：TDEE = BMR + max(手表活动, 运动记录)；
+    // 无手表数据的日期保持旧公式（云端 target + 运动），手动记录照常生效。
+    final watchKcal = watchMap[date]?.activeKcal ?? 0;
+    final profile = ref.watch(profileProvider).maybeWhen(
+          data: (v) => v,
+          orElse: () => null,
+        );
+    var watchTdee = 0;
+    var watchOn = false;
+    num watchActive = 0;
+    var effectiveTarget = cloudTarget;
+    num configuredDeficit = 0;
+    final active = math.max(watchKcal, ex);
+    if (watchKcal > 0 && profile != null) {
+      final bodyMap = profile['body'];
+      if (bodyMap is Map) {
+        final body = Body.fromMap(bodyMap.cast<String, Object?>());
+        final goal = profile['goal'];
+        final tw =
+            goal is Map ? (goal['targetWeight'] as num?)?.toDouble() : null;
+        final m = computeMetabolism(body, tw, null, null, active);
+        watchTdee = m.tdee;
+        watchActive = active;
+        effectiveTarget = m.suggest.round();
+        configuredDeficit = body.deficit;
+        watchOn = true;
+      }
+    }
+    final extra = watchOn ? 0 : ex;
     final ring = s == null
         ? _PlateRingSkeleton()
         : PlateRing(
             kcal: kcal,
-            target: target,
+            target: effectiveTarget,
             carb: s.carb.round(),
             protein: s.protein.round(),
             fat: s.fat.round(),
-            exerciseKcal: ex,
+            exerciseKcal: extra,
           );
-    // budget = target + ex（app.js:299；M3 恒 0 口子已由实例参数闭环）
-    final budget = s == null ? '—' : '${target + ex}';
+    final budgetInt = effectiveTarget + extra;
+    final budget = s == null ? '—' : '$budgetInt';
     return _homeCard(
       child: Column(
         key: const ValueKey('plate-card'),
@@ -330,17 +371,21 @@ class _PlateCard extends ConsumerWidget {
                     _goalLine('已摄入', s == null ? '—' : '$kcal'),
                     const SizedBox(height: Tokens.sp3),
                     _goalLine('运动消耗', s == null ? '—' : '$ex'),
-                    // note（app.js:306-309 两支逐字；M6-T3 起 ex>0 支可真实到达，
-                    // ex=0 支为 M3 已落文案）。加载期无 target 不显。
+                    // note：手表支按「手表消耗 − 缺口」；无手表数据沿用旧文案。
                     if (s != null) ...[
                       const SizedBox(
                         height: Tokens.sp2,
                       ), // .goal-note margin-top
                       Text(
                         key: const ValueKey('ring-note'),
-                        ex > 0
-                            ? '额度 ${target + ex} = 基准 $target + 运动 $ex kcal'
-                            : '基准目标 $target kcal · 记运动后额度自动上调',
+                        watchOn
+                            ? '额度 $budgetInt = 消耗 $watchTdee（BMR+活动 $watchActive）'
+                                ' − 缺口 ${watchTdee - effectiveTarget} kcal'
+                                '${configuredDeficit > watchTdee - effectiveTarget ? '（预设 $configuredDeficit，受 BMR 下限限制）' : ''}'
+                                '${watchKcal >= ex ? ' · 手表活动口径' : ' · 按运动记录口径'}'
+                            : (ex > 0
+                                ? '额度 ${effectiveTarget + ex} = 基准 $effectiveTarget + 运动 $ex kcal'
+                                : '基准目标 $effectiveTarget kcal · 记运动后额度自动上调'),
                         style: const TextStyle(
                           fontSize: Tokens.textXs,
                           color: Tokens.ink3,
@@ -360,8 +405,11 @@ class _PlateCard extends ConsumerWidget {
               padding: const EdgeInsets.only(top: Tokens.sp4),
               child: Text(
                 key: const ValueKey('nutrient-note'),
-                '营养素目标 = 基准 $target × 供能比 50%/25%/25% ÷ (4/4/9) kcal，'
-                '不含运动额度；热量额度含运动，两者基数不同',
+                watchOn
+                    ? '营养素目标 = 基准 $effectiveTarget × 供能比 50%/25%/25% ÷ '
+                        '(4/4/9) kcal；热量额度按手表全天消耗，不含额外运动'
+                    : '营养素目标 = 基准 $effectiveTarget × 供能比 50%/25%/25% ÷ '
+                        '(4/4/9) kcal，不含运动额度；热量额度含运动，两者基数不同',
                 style: const TextStyle(
                   fontSize: Tokens.textXs,
                   color: Tokens.ink3,

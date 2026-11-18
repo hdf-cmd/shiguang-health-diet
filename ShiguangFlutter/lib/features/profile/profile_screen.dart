@@ -19,6 +19,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/auth_state.dart';
 import '../../app/theme.dart';
+import '../band_sync/band_sync_sheet.dart' show openBandSyncSheet;
 import '../common/food_thumb.dart';
 import '../common/sheet.dart' show showShiguangSheet;
 import '../common/skeleton.dart' show SkeletonBar;
@@ -190,6 +191,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               key: const Key('ai-settings'),
               onPressed: () => openAiProviderSheet(context, ref),
               child: const Text('AI 识菜设置'),
+            ),
+            const SizedBox(height: Tokens.sp3),
+            // M17：手环数据同步入口（小米云通道，官方 App 连接不受影响）。
+            FilledButton.tonal(
+              key: const Key('band-import-open'),
+              onPressed: () => openBandSyncSheet(context, ref),
+              child: const Text('手环数据同步'),
             ),
             const SizedBox(height: Tokens.sp3),
             // 退出登录（index.html:456「退出登录」，danger 色）

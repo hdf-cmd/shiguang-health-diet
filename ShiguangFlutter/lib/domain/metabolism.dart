@@ -23,6 +23,7 @@ class MetabResult {
     required this.bmi,
     required this.etaText,
     required this.rangeText,
+    this.tdeeFromWatch = false,
   });
 
   final int bmr;
@@ -34,6 +35,9 @@ class MetabResult {
   final double bmi;
   final String etaText;
   final String rangeText;
+
+  /// true = TDEE 用「BMR + 手表全天活动热量」实测口径；false = 活动系数估算。
+  final bool tdeeFromWatch;
 }
 
 /// 宏量目标（g）：按 50% 碳水 / 25% 蛋白 / 25% 脂肪 供能比估算
@@ -61,12 +65,17 @@ class MacroGoals {
 /// Mifflin-St Jeor 代谢计算（对齐 js/logic.js computeMetabolism）。
 /// [targetWeight] 为 null（JS undefined）或 0（JS falsy）时按当前体重；
 /// [actualInfo] 传 { avgDeficit, days }；[now] 为可注入时钟（JS 内部用 Date.now()）。
+/// [watchActiveKcal] 为手表当日活动热量：>0 时 TDEE = BMR + 手表活动
+/// （实测口径），否则回落 BMR × 活动系数（估算口径）。
 MetabResult computeMetabolism(Body b, double? targetWeight,
-    [Map? actualInfo, DateTime? now]) {
+    [Map? actualInfo, DateTime? now, num? watchActiveKcal]) {
   final W = b.weightKg, H = b.heightCm, A = b.age;
   final bmr = jsRound(10 * W + 6.25 * H - 5 * A + (b.gender == 'male' ? 5 : -161));
   final f = (activity[b.activity] ?? activity['light']!).f;
-  final tdee = jsRound(bmr * f);
+  final watch =
+      (watchActiveKcal != null && watchActiveKcal > 0) ? watchActiveKcal : null;
+  final tdee = watch != null ? jsRound(bmr + watch) : jsRound(bmr * f);
+  final tdeeFromWatch = watch != null;
   final floor = b.gender == 'male' ? 1500 : 1200;
   final suggest = math.max(tdee - b.deficit, math.max(floor, bmr));
   final realDeficit = tdee - suggest; // 预设缺口（建议值）
@@ -78,15 +87,19 @@ MetabResult computeMetabolism(Body b, double? targetWeight,
   final days0 = actualInfo == null ? null : actualInfo['days'] as num?;
   final useActual = actualInfo != null && (avgDeficit ?? 0) > 0 && (days0 ?? 0) >= 2;
   final effDeficit = useActual ? avgDeficit! : realDeficit;
+  // 预计时间用「用户预设档位」而非当日有效缺口：手表口径下 TDEE 随时间波动，
+  // 用当日有效缺口会让预计时间在一天内剧烈跳动。真实摄入满 2 天后转实际缺口。
+  final presetDeficit = b.deficit;
+  final etaDeficit = useActual ? avgDeficit! : presetDeficit;
   final String etaText;
   if (need <= 0) {
     etaText = '已达标或目标不低于当前体重，维持当前摄入即可';
-  } else if (effDeficit <= 0) {
+  } else if (etaDeficit <= 0) {
     etaText = useActual
         ? '近期实际摄入无缺口（吃动持平），无法减重，可适当控制饮食或增加运动'
         : '当前摄入无缺口，无法减重，请提高缺口档位';
   } else {
-    final days = jsCeil(need * kcalPerKg / effDeficit);
+    final days = jsCeil(need * kcalPerKg / etaDeficit);
     final weeks = jsCeil(days / 7);
     final d = (now ?? DateTime.now()).add(Duration(days: days));
     final months = jsRound(days / 30.44);
@@ -97,8 +110,8 @@ MetabResult computeMetabolism(Body b, double? targetWeight,
         '减到 ${jsNumText(targetWeight ?? W)}kg';
     text += useActual
         ? ' · 按近 ${jsNumText(days0!)} 天实际日均缺口 ${jsNumText(effDeficit)} kcal 估算'
-        : ' · 按预设缺口 ${jsNumText(effDeficit)} kcal 估算（记录满 2 天后转为实际缺口）';
-    if (effDeficit * 7 / kcalPerKg > 1) text += ' · 减重偏快，建议降为温和缺口';
+        : ' · 按目标缺口 ${jsNumText(etaDeficit)} kcal 估算（记录满 2 天后转为实际缺口）';
+    if (etaDeficit * 7 / kcalPerKg > 1) text += ' · 减重偏快，建议降为温和缺口';
     etaText = text;
   }
   final lo = (18.5 * math.pow(H / 100, 2)).toStringAsFixed(1);
@@ -113,6 +126,7 @@ MetabResult computeMetabolism(Body b, double? targetWeight,
     bmi: bmi,
     etaText: etaText,
     rangeText: '合理体重区间 $lo–$hi kg（BMI 18.5–23.9）',
+    tdeeFromWatch: tdeeFromWatch,
   );
 }
 

@@ -39,6 +39,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/theme.dart';
 import '../../data/api_client.dart' show ApiException;
+import '../../data/mi_cloud_client.dart' show MiDailyActivity;
+import '../../data/mi_daily_activity_store.dart' show miDailyActivityProvider;
 import '../../data/swr_cache.dart' show swrCacheProvider;
 import '../../domain/constants.dart' show activity;
 import '../../domain/js_compat.dart' show jsFixed1, jsNumText;
@@ -239,7 +241,18 @@ class BodyProfileCard extends ConsumerWidget {
           data: (v) => v,
           orElse: () => null,
         );
-    final m = computeMetabolism(b, tw, actual);
+    // 手表口径：今日有全天活动热量 → TDEE = BMR + 手表活动（运动已含）。
+    final today = ref.watch(todayProvider);
+    final watchMap = ref.watch(miDailyActivityProvider).maybeWhen(
+          data: (v) => v,
+          orElse: () => const <String, MiDailyActivity>{},
+        );
+    final watchKcal = watchMap[today]?.activeKcal ?? 0;
+    // 有手表数据：TDEE = BMR + max(手表活动, 运动记录)；否则旧公式（含运动）。
+    final active = math.max(watchKcal, ex);
+    final m = computeMetabolism(b, tw, actual, null, watchKcal > 0 ? active : null);
+    final watchOn = m.tdeeFromWatch;
+    final exShown = watchOn ? 0 : ex;
     // useActual 闸在 computeMetabolism 内部（avgDeficit>0 && days≥2，
     // :87-88 logic.js），m.useActual==true 时 actual 必非空——:1601/:1604
     // 读 actualDeficit.days 两支各自解构，null 期走预设支。
@@ -349,9 +362,11 @@ class BodyProfileCard extends ConsumerWidget {
                 // 否则 ex>0/0 两支（M6-T3 已可真实到达）
                 m.useActual
                     ? '缺口为近 $daysText 天实际日均 · 预设 ${jsNumText(m.realDeficit)}'
-                    : ex > 0
-                        ? '含今日运动 $ex kcal · 基准 ${jsNumText(m.suggest)}'
-                        : '基准目标 ${jsNumText(m.suggest)} kcal',
+                    : watchOn
+                        ? '手表口径 · 基准 ${jsNumText(m.suggest)} kcal'
+                        : ex > 0
+                            ? '含今日运动 $ex kcal · 基准 ${jsNumText(m.suggest)}'
+                            : '基准目标 ${jsNumText(m.suggest)} kcal',
                 style:
                     const TextStyle(fontSize: Tokens.textXs, color: Tokens.ink3)),
           ],
@@ -363,22 +378,28 @@ class BodyProfileCard extends ConsumerWidget {
             '10×${jsNumText(b.weightKg)}+6.25×${jsNumText(b.heightCm)}−5×${jsNumText(b.age)}${b.gender == 'male' ? '+5' : '−161'}'), // :1598
         _metabLine(
             '每日消耗 TDEE', // :218
-            '${jsNumText(m.tdee + ex)} kcal', // :1588 值含 ex（H5 tdee+ex）
-            'BMR×系数${jsNumText(af)}${ex > 0 ? '＋今日运动$ex' : ''}'), // :1599 两支逐字
+            '${jsNumText(m.tdee + exShown)} kcal',
+            watchOn
+                ? 'BMR＋实测活动${jsNumText(active)}（手表/记录取大）'
+                : 'BMR×系数${jsNumText(af)}${ex > 0 ? '＋今日运动$ex' : ''}'),
         _metabLine(
             '今日建议摄入', // :219
-            '${jsNumText(m.suggest + ex)} kcal', // :1591 值含 ex（与首页环额度同源）
-            '消耗${jsNumText(m.tdee)}−缺口${jsNumText(m.realDeficit)}${ex > 0 ? '＋运动$ex' : ''}'), // :1600 两支逐字
+            '${jsNumText(m.suggest + exShown)} kcal', // :1591 值含 ex（与首页环额度同源）
+            watchOn
+                ? '手表消耗${jsNumText(m.tdee)}−缺口${jsNumText(m.realDeficit)}'
+                : '消耗${jsNumText(m.tdee)}−缺口${jsNumText(m.realDeficit)}${ex > 0 ? '＋运动$ex' : ''}'), // :1600 两支逐字
         _metabLine(
             '每日缺口', // :220
             '${jsNumText(m.effDeficit)} kcal', // useActual 时 effDeficit=avgDeficit（metabolism.dart）
             m.useActual
                 ? '近$daysText天均值(消耗−摄入)' // :1601 useActual 支逐字
-                : '预设缺口 ${jsNumText(m.realDeficit)}'), // :1601 非 useActual 支逐字
+                : (watchOn && b.deficit > m.realDeficit
+                    ? '预设 ${jsNumText(b.deficit)} · 受 BMR 下限限制'
+                    : '预设缺口 ${jsNumText(m.realDeficit)}')), // :1601 非 useActual 支
         _metabLine(
             '今日运动', // index.html:219 DOM 第 5 行（每日缺口之后）
             '${jsNumText(ex)} kcal', // :1589 常驻（值 0 也显「0 kcal」）
-            '今日运动记录累计'), // :1602 注记常驻逐字
+            watchOn ? '今日运动记录累计（已含在手表消耗）' : '今日运动记录累计'), // :1602 注记常驻逐字
         const SizedBox(height: Tokens.sp2),
         Text(m.etaText, // :1606-1608 原文
             style: const TextStyle(fontSize: Tokens.textXs, color: Tokens.ink2)),

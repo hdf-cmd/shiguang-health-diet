@@ -59,6 +59,13 @@ android {
     }
 
     buildTypes {
+        // M17：debug 包独立 applicationId（com.healthydiet.shiguang_flutter.debug），
+        // 装 debug 验证手环导入时不覆盖手机上日常用的 release 包，两包共存、
+        // Health Connect 授权各自独立。
+        debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
             signingConfig = if (hasReleaseKeystore) {
                 signingConfigs.getByName("release")

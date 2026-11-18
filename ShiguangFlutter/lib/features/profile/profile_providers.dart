@@ -11,10 +11,13 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../data/mi_cloud_client.dart' show MiDailyActivity;
+import '../../data/mi_daily_activity_store.dart' show miDailyActivityProvider;
 import '../../data/swr_cache.dart' show swrCacheProvider;
 import '../../data/swr_disk.dart' show swrDiskProvider;
 import '../../domain/dates.dart' show localIso;
-import '../../domain/deficit.dart' show avgDeficitFromRows;
+import '../../domain/deficit.dart'
+    show avgDeficitFromRowsSmart;
 import '../../domain/metabolism.dart' show computeMetabolism;
 import '../../domain/models.dart' show Body;
 import '../exercise/exercise_controller.dart' show exerciseKcalProvider;
@@ -160,9 +163,14 @@ class ActualDeficitNotifier extends AsyncNotifier<Map<String, Object>?> {
           orElse: () => 0, // 在途/失败 ≙ H5 loadSummary 前 state.summary 缺省
         );
     final todayEx = ref.watch(exerciseKcalProvider(today));
+    // 手表每日活动（当日缓存，同步后 invalidate 触发本 provider 重算）。
+    final watchMap = ref.watch(miDailyActivityProvider).maybeWhen(
+          data: (m) => m,
+          orElse: () => const <String, MiDailyActivity>{},
+        );
     if (p == null) return null;
     final uid = (p['id'] as String?) ?? ''; // ≙ currentUid() :1479 || ''
-    return _refreshAndCompute(p, uid, today, todayKcal, todayEx);
+    return _refreshAndCompute(p, uid, today, todayKcal, todayEx, watchMap);
   }
 
   /// 在途历史拉取去重：profile/summary/exercise 依赖各自 loading→data 会让
@@ -175,7 +183,7 @@ class ActualDeficitNotifier extends AsyncNotifier<Map<String, Object>?> {
   /// 已被内部 catch 消化，保留该支为 H5 同构兜底）。
   Future<Map<String, Object>?> _refreshAndCompute(
       Map<String, dynamic> p, String uid, String today, num todayKcal,
-      [num todayEx = 0]) async {
+      [num todayEx = 0, Map<String, MiDailyActivity> watchMap = const {}]) async {
     final store = ref.read(actualDeficitStoreProvider);
     Map<String, dynamic>? cache = await store.load(uid);
     if (cache == null || cache['date'] != today) {
@@ -191,7 +199,7 @@ class ActualDeficitNotifier extends AsyncNotifier<Map<String, Object>?> {
         await store.save(uid, Map<String, dynamic>.from(fresh)); // :1559
       }
     }
-    return _avgFromCache(cache, today, todayKcal, todayEx); // :1562
+    return _avgFromCache(cache, today, todayKcal, todayEx, p, watchMap); // :1562
   }
 
   /// ≙ fetchDeficitHistory :1520-1541（见逐行注）。
@@ -246,7 +254,8 @@ class ActualDeficitNotifier extends AsyncNotifier<Map<String, Object>?> {
   /// ≙ computeAvgDeficit :1543-1550：历史 rows + 今日实时行 → 域均值
   /// （<2 天 null 闸在 deficit.dart，minDays 缺省 2 ≙ H5 调用面省参）。
   Map<String, Object>? _avgFromCache(
-      Map<String, dynamic>? cache, String today, num todayKcal, num todayEx) {
+      Map<String, dynamic>? cache, String today, num todayKcal, num todayEx,
+      Map<String, dynamic> p, Map<String, MiDailyActivity> watchMap) {
     if (cache == null) return null;
     final h = cache['history'];
     if (h is! List) return null; // ≙ :1544 !cache.history
@@ -259,6 +268,16 @@ class ActualDeficitNotifier extends AsyncNotifier<Map<String, Object>?> {
       // :1547-1548 今日行 intake=summary.kcal、exKcal=state.exerciseKcal||0
       rows.add({'date': today, 'intake': todayKcal, 'exKcal': todayEx});
     }
-    return avgDeficitFromRows(tdee, rows); // :1549
+    // 手表优先：有全天活动的日期 TDEE = BMR + 手表活动（运动已含），
+    // 无手表数据的日期回落缓存 tdee + 运动（旧口径）。
+    final b = Body.fromMap(
+        ((p['body'] ?? const <String, dynamic>{}) as Map).cast<String, Object?>());
+    final bmr = computeMetabolism(b, null).bmr;
+    final watchKcalByDate = <String, num>{
+      for (final e in watchMap.entries)
+        if (e.value.activeKcal > 0) e.key: e.value.activeKcal,
+    };
+    return avgDeficitFromRowsSmart(
+        tdee, bmr, watchKcalByDate, rows); // :1549
   }
 }

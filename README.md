@@ -1,10 +1,10 @@
 # 食光 · 健康饮食 App
 
-**当前维护版本：v2.15.5（Flutter 2.x）** ｜ 1.x H5 壳停更在 v1.4.0 ｜ 变更历史见 [CHANGELOG.md](CHANGELOG.md)
+**当前维护版本：v2.16.0（Flutter 2.x）** ｜ 1.x H5 壳停更在 v1.4.0 ｜ 变更历史见 [CHANGELOG.md](CHANGELOG.md)
 
 把每一餐，记成时光。核心闭环：**记三餐 → 算热量 → 看趋势**。
 
-- **2.x Flutter 线（当前维护）**：工程在 `ShiguangFlutter/`，Flutter 原生壳；APK 为 `食光Flutter-v2.15.5.apk`；数据走腾讯云 CloudBase（环境 `cloud1-d6g4x9h9m507b429c`）单入口云函数 `api-diet`。
+- **2.x Flutter 线（当前维护）**：工程在 `ShiguangFlutter/`，Flutter 原生壳；APK 为 `食光Flutter-v2.16.0.apk`；数据走腾讯云 CloudBase（环境 `cloud1-d6g4x9h9m507b429c`）单入口云函数 `api-diet`。
 - **1.x H5 线（已停更）**：纯静态 HTML/CSS/ES Module JS（无构建），见本目录 `index.html` + `js/` + `css/`；APK 为 `食光-v1.4.0.apk`（Kotlin WebView 壳）。
 
 ## Flutter 2.x（当前维护）
@@ -17,9 +17,10 @@
 | 营养表识别 | 未收录商品可拍包装背面营养成分表，视觉模型读每 100g/ml 的热量/蛋白/碳水/脂肪，预填自定义食物表单，用户核对后保存并绑定条码 |
 | AI 识菜 | 拍照识别；识别失败可输入菜名 + 克数按菜名估算；支持自带 Key（DeepSeek / 通义千问 / Kimi / 智谱 / 豆包），未配置时回退内置通道 |
 | AI 饮食助手 | 默认 DeepSeek 主通道、扣子备用（扣子额度类错误后熔断 10 分钟，`ASSISTANT_PRIMARY=coze` 可切回扣子优先）；入口为 64dp 圆形 3D 头像「小光」（默认左下、底部 AI 字标、可拖拽并吸附左右边缘）；点按打开 **62% 底部半屏聊天**，收起即结束本次会话；可参考今日饮食摘要；助手回复支持系统 TTS 朗读 |
+| 手环数据同步 | 绑定小米账号后自动从云端同步：每日活动（步数/距离/全天活动热量）驱动 **TDEE = BMR + 实测活动**、额度与预计时间；单次运动（跑步/骑行/游泳等）去重后自动导入运动记录。打开 App 自动同步（会话缓存复用，401 才重登；窗口 7–30 天动态扩展）。Health Connect 通道实测国行不写入，已弃用 |
 | 通知/体重 | 三餐与喝水提醒、BLE 体脂秤体重同步（仅体重）等 |
 
-质量门禁：云端 `node --test tests` 202 项、Flutter `flutter test` 626 项、`dart analyze lib test` 全绿。
+质量门禁：云端 `node --test tests` 202 项、Flutter `flutter test` 675 项、`dart analyze lib test` 全绿。
 
 ### AI 饮食助手配置
 
@@ -88,7 +89,7 @@ cd HealthyDiet && gradlew.bat assembleRelease
 
 ## 版本管理
 
-- **Flutter 2.x**：版本号在 `ShiguangFlutter/pubspec.yaml` 的 `version`（当前 `2.15.5+23111`），同一版本的变更写入 `CHANGELOG.md`。
+- **Flutter 2.x**：版本号在 `ShiguangFlutter/pubspec.yaml` 的 `version`（当前 `2.16.0+23112`），同一版本的变更写入 `CHANGELOG.md`。
 - **1.x H5**：版本号唯一来源是 `package.json` 的 `version`，`js/version.js` 手写同步，CI 用 `npm run check:version` 拦截漂移。
 
 ## 签名
