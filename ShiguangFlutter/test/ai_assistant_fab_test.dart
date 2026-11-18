@@ -69,6 +69,15 @@ void main() {
     expect(find.byType(AiChatScreen), findsNothing);
   });
 
+  testWidgets('拖到顶部停在标题区之下（不压问候/页标题）', (tester) async {
+    await tester.pumpWidget(harness());
+    await tester.drag(find.byKey(const Key('ai-fab')), const Offset(0, -2000));
+    await tester.pumpAndSettle();
+    final rect = tester.getRect(find.byKey(const Key('ai-fab')));
+    expect(rect.top,
+        closeTo(AiAssistantFab.headerReserve, 0.01));
+  });
+
   testWidgets('再拖回左侧松手吸附左边缘', (tester) async {
     await tester.pumpWidget(harness());
     await tester.drag(find.byKey(const Key('ai-fab')), const Offset(600, 0));

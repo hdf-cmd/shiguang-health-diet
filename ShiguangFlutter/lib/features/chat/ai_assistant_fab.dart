@@ -16,6 +16,9 @@ class AiAssistantFab extends StatefulWidget {
   /// 记录页底部「＋ 记一笔」= 52 高 + sp3 下边距；再留 sp3，头像不压主操作。
   static const bottomGap = 52.0 + Tokens.sp3 * 2;
 
+  /// 标题区预留：头像拖到顶部时停在问候/页标题之下，不压标题文字。
+  static const headerReserve = 176.0;
+
   @override
   State<AiAssistantFab> createState() => _AiAssistantFabState();
 }
@@ -52,7 +55,7 @@ class _AiAssistantFabState extends State<AiAssistantFab> {
         final minX = AiAssistantFab.horizontalMargin;
         final maxX = math.max(
             minX, constraints.maxWidth - AiAssistantFab.size - minX);
-        final minY = topInset + Tokens.sp2;
+        final minY = topInset + AiAssistantFab.headerReserve;
         final maxY = math.max(
             minY,
             constraints.maxHeight -

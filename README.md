@@ -1,10 +1,10 @@
 # 食光 · 健康饮食 App
 
-**当前维护版本：v2.16.1（Flutter 2.x）** ｜ 1.x H5 壳停更在 v1.4.0 ｜ 变更历史见 [CHANGELOG.md](CHANGELOG.md)
+**当前维护版本：v2.16.2（Flutter 2.x）** ｜ 1.x H5 壳停更在 v1.4.0 ｜ 变更历史见 [CHANGELOG.md](CHANGELOG.md)
 
 把每一餐，记成时光。核心闭环：**记三餐 → 算热量 → 看趋势**。
 
-- **2.x Flutter 线（当前维护）**：工程在 `ShiguangFlutter/`，Flutter 原生壳；APK 为 `食光Flutter-v2.16.1.apk`；数据走腾讯云 CloudBase（环境 `cloud1-d6g4x9h9m507b429c`）单入口云函数 `api-diet`。
+- **2.x Flutter 线（当前维护）**：工程在 `ShiguangFlutter/`，Flutter 原生壳；APK 为 `食光Flutter-v2.16.2.apk`；数据走腾讯云 CloudBase（环境 `cloud1-d6g4x9h9m507b429c`）单入口云函数 `api-diet`。
 - **1.x H5 线（已停更）**：纯静态 HTML/CSS/ES Module JS（无构建），见本目录 `index.html` + `js/` + `css/`；APK 为 `食光-v1.4.0.apk`（Kotlin WebView 壳）。
 
 ## Flutter 2.x（当前维护）
@@ -89,7 +89,7 @@ cd HealthyDiet && gradlew.bat assembleRelease
 
 ## 版本管理
 
-- **Flutter 2.x**：版本号在 `ShiguangFlutter/pubspec.yaml` 的 `version`（当前 `2.16.1+23113`），同一版本的变更写入 `CHANGELOG.md`。
+- **Flutter 2.x**：版本号在 `ShiguangFlutter/pubspec.yaml` 的 `version`（当前 `2.16.2+23114`），同一版本的变更写入 `CHANGELOG.md`。
 - **1.x H5**：版本号唯一来源是 `package.json` 的 `version`，`js/version.js` 手写同步，CI 用 `npm run check:version` 拦截漂移。
 
 ## 签名
@@ -104,9 +104,8 @@ release 包用本地密钥库签名，凭据放 `ShiguangFlutter/android/key.pro
 
 1. **iOS 相机权限与打包**：当前只有 Android 线；iOS 未配 `NSCameraUsageDescription`，也未打包
 2. **AI 助手端到端流式**：当前非流式（整段 1.8–2.0s），评估 CloudBase 侧 SSE 与客户端流式解析，把首字压到 1s 内
-3. **小光入口吸附范围**：头像可拖到页面顶部压住标题（如实测「记录」页），需限制在标题栏以下、TabBar 以上
-4. **真机手感回访**（滑动阈值、长按删除发现性）；首页滚动位置偶发停底观察项
-5. **营养表低光/反光**：已有拍摄预览与 confidence 兜底，仍待更多实拍样本验证
+3. **真机手感回访**（滑动阈值、长按删除发现性）；首页滚动位置偶发停底观察项
+4. **营养表低光/反光**：已有拍摄预览与 confidence 兜底，仍待更多实拍样本验证
 
 ## 许可证
 
