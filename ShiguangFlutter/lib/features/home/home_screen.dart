@@ -62,6 +62,7 @@ import '../profile/profile_providers.dart' show profileProvider;
 import 'advice_card.dart' show AdviceCard;
 import 'home_controller.dart';
 import 'plate_ring.dart';
+import 'steps_card.dart' show StepsCard;
 import 'water_card.dart' show WaterCard;
 
 /* ---------- M7-T1 plate-head（≙ index.html:71-75 + app.js:201-224） ---------- */
@@ -219,6 +220,9 @@ class HomeScreen extends ConsumerWidget {
             // 首页卡序变 盘子→建议→水→运动。
             // 运动卡（index.html:133-137，H5 首页末位卡；复核注释见文件头）
             Stagger(index: 4, child: HomeExerciseCard(date: date)),
+            const SizedBox(height: Tokens.sp3),
+            // 步数卡（M17 增件）：小米云每日活动缓存，随所选日期联动。
+            Stagger(index: 5, child: StepsCard(date: date)),
           ],
         ],
       ),
